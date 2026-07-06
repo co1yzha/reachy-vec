@@ -85,6 +85,14 @@ class FakeCamera:
         return next(self._it, None)
 
 
+class FakeBody:
+    def __init__(self):
+        self.motions: list[str] = []
+
+    def perform(self, motion: str) -> None:
+        self.motions.append(motion)
+
+
 class FakeFaceMatcher:
     """Scripted observations + constant embeddings."""
 

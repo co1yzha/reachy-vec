@@ -1,0 +1,140 @@
+"""The Oracle loop: face-triggered greeting, voice Q&A, robot-led enrollment.
+
+Synchronous state machine; all dependencies injected for testability.
+sight() is polled; transcriber.listen_once(timeout) blocks and paces the loop.
+"""
+
+import logging
+import time
+from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
+
+APOLOGY = "Sorry, my brain isn't responding right now."
+OFFER = "Hi! I don't think we've met. Would you like me to remember you? Say yes or no."
+
+
+def _is_yes(text: str | None) -> bool:
+    return text is not None and "yes" in text.lower()
+
+
+def _clean_name(text: str) -> str:
+    return text.strip().strip(".!?,").title()
+
+
+class OracleLoop:
+    def __init__(
+        self,
+        *,
+        sight,
+        transcriber,
+        speaker,
+        body,
+        answer_fn,
+        enroll_capture,
+        store,
+        clock=time.time,
+        greet_cooldown_s: float = 7200.0,
+        silence_timeout_s: float = 30.0,
+        unknown_stable_polls: int = 3,
+    ):
+        self._sight = sight
+        self._transcriber = transcriber
+        self._speaker = speaker
+        self._body = body
+        self._answer_fn = answer_fn
+        self._enroll_capture = enroll_capture
+        self._store = store
+        self._clock = clock
+        self._greet_cooldown_s = greet_cooldown_s
+        self._silence_timeout_s = silence_timeout_s
+        self._unknown_stable_polls = unknown_stable_polls
+
+    # -- public ---------------------------------------------------------
+
+    def run_once(self) -> str:
+        """One interaction: wait for a face, converse or enroll, return event.
+
+        With scripted sights (tests) a None observation ends the wait as
+        "no-face"; production wraps run_once in run_forever, which retries.
+        """
+        unknown_streak = 0
+        while True:
+            obs = self._sight()
+            if obs is None:
+                return "no-face"
+            if obs.person_id is not None:
+                self._converse(obs.person_id, obs.name)
+                return "conversation"
+            unknown_streak += 1
+            if unknown_streak >= self._unknown_stable_polls:
+                return self._offer_enroll()
+
+    def run_forever(self) -> None:
+        self._body.perform("idle")
+        while True:
+            event = self.run_once()
+            if event != "no-face":
+                logger.info("interaction ended: %s", event)
+            time.sleep(0.5)
+
+    # -- states ----------------------------------------------------------
+
+    def _converse(self, person_id: str, name: str) -> None:
+        if self._cooldown_expired(person_id):
+            self._speaker.speak(f"Hi {name}! What can I help you with?")
+            self._body.perform("greet")
+            self._record_greeting(person_id)
+        else:
+            self._body.perform("acknowledge")
+        while True:
+            self._body.perform("listen")
+            question = self._transcriber.listen_once(self._silence_timeout_s)
+            if question is None:
+                self._body.perform("goodbye")
+                return
+            try:
+                answer = self._answer_fn(question)
+                self._speaker.speak(answer.text)
+                self._body.perform("nod")
+            except Exception:
+                logger.exception("answer_fn failed")
+                self._speaker.speak(APOLOGY)
+
+    def _offer_enroll(self) -> str:
+        self._speaker.speak(OFFER)
+        if not _is_yes(self._transcriber.listen_once(10)):
+            self._speaker.speak("No problem! I'm around if you need me.")
+            return "enroll-declined"
+        for _attempt in range(2):
+            self._speaker.speak("Great! What's your name?")
+            heard = self._transcriber.listen_once(10)
+            if heard is None:
+                continue
+            name = _clean_name(heard)
+            self._speaker.speak(f"Nice to meet you, {name} - did I get that right?")
+            if _is_yes(self._transcriber.listen_once(10)):
+                self._speaker.speak("Hold still while I take a good look at you.")
+                person_id = self._enroll_capture(name)
+                if person_id is None:
+                    self._speaker.speak("I couldn't see you well - let's try another time.")
+                    return "enroll-declined"
+                self._record_greeting(person_id)
+                self._speaker.speak(f"All set, {name}! Ask me anything.")
+                self._body.perform("greet")
+                return "enrolled"
+        self._speaker.speak("Let's try again another time.")
+        return "enroll-declined"
+
+    # -- helpers ----------------------------------------------------------
+
+    def _cooldown_expired(self, person_id: str) -> bool:
+        last = self._store.get_last_greeted(person_id)
+        if last is None:
+            return True
+        elapsed = self._clock() - datetime.fromisoformat(last).timestamp()
+        return elapsed >= self._greet_cooldown_s
+
+    def _record_greeting(self, person_id: str) -> None:
+        now_iso = datetime.fromtimestamp(self._clock(), tz=timezone.utc).isoformat()
+        self._store.set_last_greeted(person_id, now_iso)
