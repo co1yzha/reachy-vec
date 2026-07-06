@@ -10,7 +10,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="REACHY_VEC_", env_file=".env")
+    model_config = SettingsConfigDict(
+        env_prefix="REACHY_VEC_", env_file=".env", extra="ignore"
+    )
 
     # Robot (wireless Reachy Mini on the local network); None = simulator/headless
     robot_host: str | None = None
