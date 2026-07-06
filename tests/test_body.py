@@ -1,0 +1,43 @@
+from reachy_vec.body.motions import MOTIONS, Keyframe
+from reachy_vec.body.robot import Body, NullBody, RobotBody
+
+EXPECTED = {"greet", "nod", "listen", "idle", "acknowledge", "goodbye"}
+
+
+def test_all_motions_defined_and_well_formed():
+    assert set(MOTIONS) == EXPECTED
+    for name, frames in MOTIONS.items():
+        assert frames, name
+        for kf in frames:
+            assert isinstance(kf, Keyframe)
+            assert kf.duration > 0
+            assert len(kf.antennas) == 2
+            assert set(kf.head) <= {"x", "y", "z", "roll", "pitch", "yaw"}
+
+
+def test_null_body_is_silent_noop():
+    body: Body = NullBody()
+    body.perform("greet")  # must not raise
+    body.perform("nonexistent")  # unknown motions are ignored, not fatal
+
+
+class RecordingMini:
+    def __init__(self):
+        self.calls = []
+
+    def goto_target(self, head=None, antennas=None, duration=0.5):
+        self.calls.append((head is not None, tuple(antennas), duration))
+
+
+def test_robot_body_plays_each_keyframe():
+    mini = RecordingMini()
+    body = RobotBody(mini)
+    body.perform("nod")
+    assert len(mini.calls) == len(MOTIONS["nod"])
+    assert all(duration > 0 for _, _, duration in mini.calls)
+
+
+def test_robot_body_ignores_unknown_motion():
+    mini = RecordingMini()
+    RobotBody(mini).perform("moonwalk")
+    assert mini.calls == []
