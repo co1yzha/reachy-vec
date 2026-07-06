@@ -31,7 +31,7 @@
 - Consumes: `Observation` (1c), `Answer` (Phase 0 rag), fakes (`FakeSpeaker`, `FakeTranscriber`, `FakeFaceMatcher`) from conftest.
 - Produces: `OracleLoop(*, sight, transcriber, speaker, body, answer_fn, enroll_capture, store, clock=time.time, greet_cooldown_s=7200.0, silence_timeout_s=30.0, unknown_stable_polls=3)` with `run_once() -> str` (returns a terminal event: `"conversation"`, `"enrolled"`, `"enroll-declined"`, `"no-face"`) and `run_forever()`. Signatures: `sight() -> Observation | None`; `answer_fn(question: str) -> Answer`; `enroll_capture(name: str) -> str | None`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/conftest.py`:
 
@@ -147,12 +147,12 @@ def test_no_face_at_all(tmp_path):
     assert loop.run_once() == "no-face"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_oracle.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'reachy_vec.brain.oracle'`.
 
-- [ ] **Step 3: Write the state machine**
+- [x] **Step 3: Write the state machine**
 
 `src/reachy_vec/brain/oracle.py`:
 
@@ -316,12 +316,12 @@ Add to `Settings` in `src/reachy_vec/config.py`:
     silence_timeout_s: float = 30.0   # end conversation after this much quiet
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest -q`
 Expected: all PASS. (If `test_cooldown_suppresses_spoken_greeting` needs it, expose `_record_greeting` usage exactly as tested — it is intentionally exercised directly.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/reachy_vec/brain/oracle.py src/reachy_vec/config.py tests/conftest.py tests/test_oracle.py
@@ -339,7 +339,7 @@ git commit -m "feat: Oracle state machine - greeting, Q&A, robot-led enrollment"
 - Consumes: everything above plus `make_body` (1a), `MicTranscriber`/`make_speaker` (1b), `WebcamCamera`/`InsightFaceMatcher`/`enroll_person` (1c), Phase 0 `Store`/`BgeEmbedder`/`rag.answer`.
 - Produces: working `reachy-vec run` — the Phase 1 milestone.
 
-- [ ] **Step 1: Implement the command**
+- [x] **Step 1: Implement the command**
 
 Replace `src/reachy_vec/cli/run.py` with:
 
@@ -402,11 +402,11 @@ def run() -> None:
         typer.echo("\nBye.")
 ```
 
-- [ ] **Step 2: Full suite**
+- [x] **Step 2: Full suite**
 
 Run: `uv run pytest -q` — expected: all PASS.
 
-- [ ] **Step 3: Manual milestone smoke test**
+- [x] **Step 3: Manual milestone smoke test**
 
 Prereqs: docs ingested (Phase 0), yourself enrolled (1c smoke), daemon running (`uv run mjpython .venv/bin/reachy-mini-daemon --sim`), `OPENAI_API_KEY` in `.env`, camera + mic permissions granted.
 
@@ -416,7 +416,7 @@ uv run reachy-vec run
 
 Expected sequence: you walk into frame → sim robot greets ("Hi <name>!" + greet motion in the viewer) → you ask a question about your ingested docs → spoken answer → stay silent 30s → goodbye nod → back to idle. Then cover the camera, have a colleague (or your phone photo won't work — insightface anti-trivial) appear → enrollment offer → complete the yes/name/confirm flow.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/reachy_vec/cli/run.py

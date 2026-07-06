@@ -31,7 +31,7 @@
 - Consumes: existing `Store` (Phase 0).
 - Produces: `FACE_EMBEDDING_DIM = 512` (in `schemas.py`); `FaceRow(LanceModel)`: `embedding_id: str, person_id: str, name: str, vector: Vector(512), created_at: str`; `Store.add_face_rows(rows: list[FaceRow])`, `Store.match_face(vector: list[float], k: int = 5) -> tuple[str, str, float] | None` ((person_id, name, cosine score of best row of majority person) or None if table empty), `Store.people_count() -> int` (distinct persons), `Store.get_last_greeted(person_id: str) -> str | None`, `Store.set_last_greeted(person_id: str, when_iso: str)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_people_store.py`:
 
@@ -91,12 +91,12 @@ def test_greeting_roundtrip(tmp_path):
     assert store.get_last_greeted("p1") == "2026-07-06T12:00:00+00:00"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_people_store.py -v`
 Expected: FAIL with `ImportError: cannot import name 'FACE_EMBEDDING_DIM'`.
 
-- [ ] **Step 3: Extend the schemas**
+- [x] **Step 3: Extend the schemas**
 
 Append to `src/reachy_vec/store/schemas.py`:
 
@@ -119,7 +119,7 @@ class GreetingRow(LanceModel):
 
 (and update the module docstring: docs + people + greetings implemented; memories/messages remain future.)
 
-- [ ] **Step 4: Extend the store**
+- [x] **Step 4: Extend the store**
 
 In `src/reachy_vec/store/db.py`, import `FaceRow, GreetingRow`, add table constants `PEOPLE_TABLE = "people"`, `GREETINGS_TABLE = "greetings"`, a generic `_table(name, schema)` helper mirroring `_docs()`, and:
 
@@ -175,7 +175,7 @@ Refactor `_docs()` to use `_table(DOCS_TABLE, DocChunk)`:
         return self._table(DOCS_TABLE, DocChunk)
 ```
 
-- [ ] **Step 5: Run tests, then commit**
+- [x] **Step 5: Run tests, then commit**
 
 Run: `uv run pytest -q` — expected: all PASS (adjust to `.to_list()`-based approaches if a lancedb API differs; keep the produced signatures identical).
 
@@ -200,7 +200,7 @@ git commit -m "feat: people and greetings tables with cosine face matching"
 - Consumes: `Store.add_face_rows`, `Store.match_face` (Task 1).
 - Produces: `Camera` protocol with `read() -> "np.ndarray | None"`; `WebcamCamera(index: int)`; `Observation` dataclass `(person_id: str | None, name: str | None, score: float)` where `person_id=None` means unknown-face-present; `FaceMatcher` protocol with `observe(frame) -> Observation | None` (None = no face at all) and `embed(frame) -> list[float] | None`; `InsightFaceMatcher(store, threshold)`; `enroll_person(name, camera, matcher, store, prompts, n_frames=5) -> str | None` (returns person_id, None if capture failed); working `reachy-vec enroll NAME`.
 
-- [ ] **Step 1: Add dependencies**
+- [x] **Step 1: Add dependencies**
 
 ```bash
 uv add insightface onnxruntime opencv-python
@@ -208,7 +208,7 @@ uv add insightface onnxruntime opencv-python
 
 (Remove `insightface` from the `perception` extra; `speechbrain` stays there for Phase 2.)
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Append to `tests/conftest.py`:
 
@@ -276,12 +276,12 @@ def test_observation_unknown_vs_known():
     assert unknown.person_id is None and known.person_id == "p1"
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_face.py -v`
 Expected: FAIL with `ImportError: cannot import name 'Observation'`.
 
-- [ ] **Step 4: Write camera and face modules**
+- [x] **Step 4: Write camera and face modules**
 
 `src/reachy_vec/perception/camera.py`:
 
@@ -422,7 +422,7 @@ def enroll_person(
     return person_id
 ```
 
-- [ ] **Step 5: Wire settings and the enroll CLI**
+- [x] **Step 5: Wire settings and the enroll CLI**
 
 In `src/reachy_vec/config.py`, add to `Settings`:
 
@@ -462,7 +462,7 @@ def enroll(name: str) -> None:
     typer.echo(f"Enrolled {name} ({person_id}) with face data.")
 ```
 
-- [ ] **Step 6: Run tests, then commit**
+- [x] **Step 6: Run tests, then commit**
 
 Run: `uv run pytest -q` — expected: all PASS.
 
@@ -471,7 +471,7 @@ git add pyproject.toml uv.lock src/reachy_vec/perception/ src/reachy_vec/cli/enr
 git commit -m "feat: webcam face recognition, enrollment, and matcher protocol"
 ```
 
-- [ ] **Step 7: Manual smoke test (needs webcam permission)**
+- [x] **Step 7: Manual smoke test (needs webcam permission)**
 
 ```bash
 uv run reachy-vec enroll "YourName"          # first run downloads buffalo_s (~120 MB)

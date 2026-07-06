@@ -29,7 +29,7 @@
 **Interfaces:**
 - Produces: `Keyframe` dataclass `(head: dict[str, float], antennas: tuple[float, float], duration: float)`; `MOTIONS: dict[str, list[Keyframe]]` with keys exactly `{"greet", "nod", "listen", "idle", "acknowledge", "goodbye"}`; `Body` protocol with `perform(motion: str) -> None`; `NullBody` (no-op); `RobotBody(mini)` playing keyframes; `make_body() -> Body` factory. 1d consumes `Body.perform` and `make_body`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_body.py`:
 
@@ -79,12 +79,12 @@ def test_robot_body_ignores_unknown_motion():
     assert mini.calls == []
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_body.py -v`
 Expected: FAIL with `ImportError` (no `MOTIONS`/`Keyframe` yet).
 
-- [ ] **Step 3: Write the motions**
+- [x] **Step 3: Write the motions**
 
 Replace `src/reachy_vec/body/motions.py` with:
 
@@ -136,7 +136,7 @@ MOTIONS: dict[str, list[Keyframe]] = {
 }
 ```
 
-- [ ] **Step 4: Write the bodies**
+- [x] **Step 4: Write the bodies**
 
 Replace `src/reachy_vec/body/robot.py` with:
 
@@ -195,12 +195,12 @@ def make_body() -> Body:
         return NullBody()
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `uv run pytest -q`
 Expected: all PASS.
 
-- [ ] **Step 6: Manual smoke test (sim viewer)**
+- [x] **Step 6: Manual smoke test (sim viewer)**
 
 ```bash
 uv run mjpython .venv/bin/reachy-mini-daemon --sim --no-media &   # viewer opens
@@ -217,7 +217,7 @@ pkill -f reachy-mini-daemon
 
 Expected: each motion visibly plays in the viewer. Also verify degradation: run the same python snippet with no daemon — it should print warnings and finish without error.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/reachy_vec/body/motions.py src/reachy_vec/body/robot.py tests/test_body.py

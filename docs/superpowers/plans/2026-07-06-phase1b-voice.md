@@ -28,7 +28,7 @@
 **Interfaces:**
 - Produces: `Speaker` protocol with `speak(text: str) -> None`; `SaySpeaker(run=subprocess.run)`; `make_speaker() -> Speaker`. 1d consumes both.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_speak.py`:
 
@@ -62,12 +62,12 @@ def test_make_speaker_unimplemented_backend_raises(monkeypatch):
         make_speaker()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_speak.py -v`
 Expected: FAIL with `ImportError: cannot import name 'SaySpeaker'`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Replace `src/reachy_vec/audio/speak.py` with:
 
@@ -110,7 +110,7 @@ def make_speaker() -> Speaker:
     )
 ```
 
-- [ ] **Step 4: Run tests, then commit**
+- [x] **Step 4: Run tests, then commit**
 
 Run: `uv run pytest -q` — expected: all PASS.
 
@@ -131,7 +131,7 @@ git commit -m "feat: Speaker protocol with macOS say backend"
 **Interfaces:**
 - Produces: `Transcriber` protocol with `listen_once(timeout_s: float) -> str | None` (None = silence until timeout); `MicTranscriber(model_size: str, sample_rate: int = 16000)`; helper `collect_utterance(chunks, is_speech, max_silence_chunks) -> list | None` (pure, unit-tested). `FakeTranscriber` and `FakeSpeaker` added to `tests/conftest.py`. 1d consumes the protocol and fakes.
 
-- [ ] **Step 1: Add dependencies**
+- [x] **Step 1: Add dependencies**
 
 ```bash
 uv add sounddevice silero-vad faster-whisper
@@ -139,7 +139,7 @@ uv add sounddevice silero-vad faster-whisper
 
 (They move from the `perception` extra to main deps — `run` needs them at runtime. Remove `faster-whisper` and `sounddevice` from the `perception` extra in `pyproject.toml` in this commit.)
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Append to `tests/conftest.py`:
 
@@ -199,12 +199,12 @@ def test_fake_transcriber_scripts_then_silence():
     assert t.listen_once(5) is None
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_listen.py -v`
 Expected: FAIL with `ImportError: cannot import name 'collect_utterance'`.
 
-- [ ] **Step 4: Write the implementation**
+- [x] **Step 4: Write the implementation**
 
 Replace `src/reachy_vec/audio/listen.py` with:
 
@@ -302,7 +302,7 @@ class MicTranscriber:
         return text or None
 ```
 
-- [ ] **Step 5: Run tests, then commit**
+- [x] **Step 5: Run tests, then commit**
 
 Run: `uv run pytest -q` — expected: all PASS.
 
@@ -311,7 +311,7 @@ git add pyproject.toml uv.lock src/reachy_vec/audio/listen.py tests/conftest.py 
 git commit -m "feat: Transcriber with silero-VAD segmentation and faster-whisper STT"
 ```
 
-- [ ] **Step 6: Manual smoke test (speak + echo; needs mic permission)**
+- [x] **Step 6: Manual smoke test (speak + echo; needs mic permission)**
 
 ```bash
 uv run python -c "
