@@ -38,16 +38,16 @@ Build a team-facing embodied assistant on a **Reachy Mini (wireless, Raspberry P
 
 ### Components
 
+Each component is a subpackage under `src/reachy_vec/`:
+
 | Component | Responsibility | Key tech |
 |---|---|---|
-| `body` | Robot I/O: audio in/out, camera frames, motion primitives (greet, nod, track, droop) | reachy-mini SDK |
-| `perception` | Face detection/recognition, speaker identification, identity fusion (face+voice → person) | insightface, speechbrain ECAPA |
-| `listen` | VAD, wake word, streaming STT | faster-whisper, silero-vad |
-| `speak` | TTS output routed to robot speaker | kokoro / macOS say / API TTS |
-| `brain` | Conversation loop, intent routing (Q&A / note / message), RAG prompting | Claude API |
-| `store` | LanceDB tables: `people`, `docs`, `memories`, `messages` | lancedb |
-| `enroll` | CLI to enroll a teammate (capture face + voice samples) | — |
-| `ingest` | CLI to ingest team docs into the KB | — |
+| `body/` | Robot I/O: connection/streaming (`robot.py`), motion primitives — greet, nod, track, droop (`motions.py`) | reachy-mini SDK |
+| `perception/` | Face recognition (`face.py`), speaker ID (`voice.py`), identity fusion (`fusion.py`) | insightface, speechbrain ECAPA |
+| `audio/` | VAD + wake word + streaming STT (`listen.py`), TTS to robot speaker (`speak.py`) | faster-whisper, silero-vad |
+| `brain/` | Intent routing (`intents.py`), RAG prompting (`rag.py`), conversation loop (`loop.py`) | Claude API |
+| `store/` | LanceDB connection (`db.py`) and table schemas (`schemas.py`): `people`, `docs`, `memories`, `messages` | lancedb |
+| `cli/` | One file per command: `chat`, `ingest`, `enroll`, `run` | typer |
 
 ### Data model (LanceDB tables)
 

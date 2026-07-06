@@ -33,12 +33,18 @@ uv run reachy-vec --help
 
 ```
 src/reachy_vec/
-  config.py      # settings (robot host, model choices, data dir)
-  store.py       # LanceDB tables: people, docs, memories, messages
-  brain.py       # conversation loop, intent routing, RAG prompting
-  body.py        # robot I/O: audio, camera, motion primitives
-  perception.py  # face ID + speaker ID → identity fusion
-  listen.py      # VAD, wake word, streaming STT
-  speak.py       # TTS out through the robot speaker
-  cli.py         # entry points: chat, ingest, enroll
+  config.py        # settings (robot host, model choices, data dir)
+  store/           # persistence: LanceDB connection + table schemas
+    schemas.py, db.py
+  brain/           # reasoning: intent routing, RAG, conversation loop
+    intents.py, rag.py, loop.py
+  body/            # robot I/O: connection/streaming + motion primitives
+    robot.py, motions.py
+  perception/      # identity: face ID + speaker ID + fusion
+    face.py, voice.py, fusion.py
+  audio/           # audio front-end and output
+    listen.py, speak.py
+  cli/             # entry points, one file per command
+    chat.py, ingest.py, enroll.py, run.py
+tests/
 ```

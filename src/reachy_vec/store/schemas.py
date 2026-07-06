@@ -1,4 +1,4 @@
-"""LanceDB store: one embedded database for all vectors.
+"""LanceDB table schemas.
 
 Tables:
 - people:   person_id, name, face_embeddings, voice_embeddings, preferences
