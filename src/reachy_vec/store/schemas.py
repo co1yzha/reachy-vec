@@ -1,8 +1,17 @@
 """LanceDB table schemas.
 
-Tables:
-- people:   person_id, name, face_embeddings, voice_embeddings, preferences
-- docs:     chunk_id, text, embedding, source, ingested_at
-- memories: memory_id, person_id, text, embedding, timestamp
-- messages: message_id, from_person, to_person, text, created_at, delivered_at
+Phase 0 uses only `docs`. The people/memories/messages tables arrive with
+Phases 1-3 and will be defined here when implemented.
 """
+
+from lancedb.pydantic import LanceModel, Vector
+
+from reachy_vec.store.embeddings import EMBEDDING_DIM
+
+
+class DocChunk(LanceModel):
+    chunk_id: str
+    text: str
+    vector: Vector(EMBEDDING_DIM)
+    source: str
+    ingested_at: str  # ISO-8601 UTC timestamp
