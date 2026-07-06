@@ -60,6 +60,13 @@ class MicTranscriber:
 
             self._whisper = WhisperModel(self._model_size, compute_type="int8")
 
+    def warm_up(self) -> None:
+        """Load models and run a throwaway transcription so the first real
+        utterance doesn't pay the cold-start cost mid-conversation."""
+        self._load()
+        silence = np.zeros(self._sample_rate, dtype=np.float32)
+        list(self._whisper.transcribe(silence, language="en")[0])
+
     def listen_once(self, timeout_s: float) -> str | None:
         import sounddevice as sd
         import torch

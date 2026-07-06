@@ -34,9 +34,15 @@ def run() -> None:
     embedder = BgeEmbedder(settings.embedding_model)
     client = OpenAI()
 
+    typer.echo("Warming up models (STT, faces, embeddings)...")
+    transcriber = MicTranscriber()
+    transcriber.warm_up()
+    matcher.observe(camera.read())   # loads insightface before the loop
+    embedder.embed(["warm up"])      # loads the BGE model
+
     loop = OracleLoop(
         sight=lambda: matcher.observe(camera.read()),
-        transcriber=MicTranscriber(),
+        transcriber=transcriber,
         speaker=speaker,
         body=make_body(),
         answer_fn=lambda q: answer(

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # Models
     llm_model: str = "gpt-4o"
-    stt_model: str = "small"  # faster-whisper size
+    stt_model: str = "base"  # faster-whisper size; ~3x faster than "small", similar accuracy for short questions
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     tts_backend: str = "say"  # say (works today) | fish-speech (planned primary) | openvoice
     voice_sample: Path | None = None  # reference audio for voice cloning
