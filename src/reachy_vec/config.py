@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     face_threshold: float = 0.45  # cosine similarity; below = unknown
     camera_index: int = 0
 
+    # RAG
+    rag_min_score: float = 0.5  # cosine gate: below = labeled general-knowledge fallback
+
     # Interaction
     greet_cooldown_s: float = 7200.0  # full spoken greeting at most every 2h
     silence_timeout_s: float = 30.0   # end conversation after this much quiet

@@ -61,6 +61,37 @@ def test_answer_puts_retrieved_context_and_question_in_prompt(tmp_path):
     assert "when does the pipeline run?" in user_message
 
 
+def test_weak_retrieval_falls_back_to_general_knowledge(tmp_path, monkeypatch):
+    monkeypatch.setattr("reachy_vec.brain.rag.settings.rag_min_score", 1.01)  # force weak
+    store = seeded_store(tmp_path)
+    client = FakeLLMClient(reply="Not from our team docs, but Paris.")
+    result = answer(
+        "capital of France?",
+        store=store,
+        embedder=FakeEmbedder(),
+        client=client,
+        model="gpt-4o",
+    )
+    assert result.sources == []
+    system_message = client.chat.completions.last_kwargs["messages"][0]["content"]
+    assert "Not from our team docs" in system_message
+
+
+def test_strong_retrieval_stays_grounded(tmp_path, monkeypatch):
+    monkeypatch.setattr("reachy_vec.brain.rag.settings.rag_min_score", 0.5)
+    store = seeded_store(tmp_path)
+    client = FakeLLMClient(reply="Nightly.")
+    result = answer(
+        "the pipeline runs nightly",  # exact chunk text -> score ~1.0
+        store=store,
+        embedder=FakeEmbedder(),
+        client=client,
+        model="gpt-4o",
+        k=1,
+    )
+    assert result.sources == ["c1.md"]
+
+
 def test_answer_with_empty_store_says_no_context(tmp_path):
     store = Store(tmp_path / "lancedb")
     result = answer(
