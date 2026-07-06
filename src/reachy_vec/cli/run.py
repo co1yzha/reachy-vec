@@ -8,7 +8,7 @@ def run() -> None:
     from dotenv import load_dotenv
     from openai import OpenAI
 
-    from reachy_vec.audio.listen import MicTranscriber
+    from reachy_vec.audio.listen import MicTranscriber, make_transcriber
     from reachy_vec.audio.speak import make_speaker
     from reachy_vec.body.robot import make_body
     from reachy_vec.brain.oracle import OracleLoop
@@ -34,9 +34,13 @@ def run() -> None:
     embedder = BgeEmbedder(settings.embedding_model)
     client = OpenAI()
 
+    titles = store.demo_titles()
+    vocab_prompt = f"Vocabulary: {', '.join(titles)}" if titles else None
+
     typer.echo("Warming up models (STT, faces, embeddings)...")
-    transcriber = MicTranscriber()
-    transcriber.warm_up()
+    transcriber = make_transcriber(client=client, initial_prompt=vocab_prompt)
+    if isinstance(transcriber, MicTranscriber):
+        transcriber.warm_up()
     matcher.observe(camera.read())   # loads insightface before the loop
     embedder.embed(["warm up"])      # loads the BGE model
 

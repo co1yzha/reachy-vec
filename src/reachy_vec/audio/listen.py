@@ -1,10 +1,13 @@
-"""Mic capture -> VAD-segmented utterance -> text (faster-whisper).
+"""Mic capture -> VAD-segmented utterance -> text.
 
-collect_utterance is pure and unit-tested; MicTranscriber does the device
-and model work and is covered by the manual smoke test only.
+collect_utterance is pure and unit-tested. _AudioCapture owns the mic + VAD;
+MicTranscriber transcribes locally (faster-whisper), OpenAITranscriber via
+the OpenAI API (gpt-4o-transcribe). Select with settings.stt_backend.
 """
 
+import io
 import logging
+import wave
 from typing import Callable, Iterator, Protocol
 
 import numpy as np
@@ -41,37 +44,25 @@ def collect_utterance(chunks: Iterator, is_speech: Callable, max_silence_chunks:
     return collected or None
 
 
-class MicTranscriber:
-    """Blocks on the default input device; lazy-loads VAD + whisper models."""
+class _AudioCapture:
+    """Shared mic + VAD front-end; lazy-loads the VAD model."""
 
-    def __init__(self, model_size: str | None = None, sample_rate: int = SAMPLE_RATE):
-        self._model_size = model_size or settings.stt_model
+    def __init__(self, sample_rate: int = SAMPLE_RATE):
         self._sample_rate = sample_rate
         self._vad = None
-        self._whisper = None
 
-    def _load(self):
+    def _load_vad(self):
         if self._vad is None:
             from silero_vad import load_silero_vad
 
             self._vad = load_silero_vad()
-        if self._whisper is None:
-            from faster_whisper import WhisperModel
 
-            self._whisper = WhisperModel(self._model_size, compute_type="int8")
-
-    def warm_up(self) -> None:
-        """Load models and run a throwaway transcription so the first real
-        utterance doesn't pay the cold-start cost mid-conversation."""
-        self._load()
-        silence = np.zeros(self._sample_rate, dtype=np.float32)
-        list(self._whisper.transcribe(silence, language="en")[0])
-
-    def listen_once(self, timeout_s: float) -> str | None:
+    def _capture(self, timeout_s: float) -> np.ndarray | None:
+        """Record one VAD-segmented utterance; None if silence until timeout."""
         import sounddevice as sd
         import torch
 
-        self._load()
+        self._load_vad()
         chunk_samples = int(self._sample_rate * CHUNK_S)
         max_chunks = int(timeout_s / CHUNK_S)
         max_silence = int(0.8 / CHUNK_S)  # 0.8 s of quiet ends the utterance
@@ -89,10 +80,88 @@ class MicTranscriber:
             return prob > 0.5
 
         collected = collect_utterance(frames(), is_speech, max_silence)
-        if collected is None:
+        return np.concatenate(collected) if collected else None
+
+
+class MicTranscriber(_AudioCapture):
+    """Local STT: faster-whisper, lazily loaded."""
+
+    def __init__(
+        self,
+        model_size: str | None = None,
+        sample_rate: int = SAMPLE_RATE,
+        initial_prompt: str | None = None,
+    ):
+        super().__init__(sample_rate)
+        self._model_size = model_size or settings.stt_model
+        self._initial_prompt = initial_prompt
+        self._whisper = None
+
+    def _load(self):
+        self._load_vad()
+        if self._whisper is None:
+            from faster_whisper import WhisperModel
+
+            self._whisper = WhisperModel(self._model_size, compute_type="int8")
+
+    def warm_up(self) -> None:
+        """Load models and run a throwaway transcription so the first real
+        utterance doesn't pay the cold-start cost mid-conversation."""
+        self._load()
+        silence = np.zeros(self._sample_rate, dtype=np.float32)
+        list(self._whisper.transcribe(silence, language="en")[0])
+
+    def listen_once(self, timeout_s: float) -> str | None:
+        self._load()
+        audio = self._capture(timeout_s)
+        if audio is None:
             return None
-        audio = np.concatenate(collected)
-        segments, _info = self._whisper.transcribe(audio, language="en")
+        segments, _info = self._whisper.transcribe(
+            audio, language="en", initial_prompt=self._initial_prompt
+        )
         text = " ".join(seg.text.strip() for seg in segments).strip()
         logger.info("heard: %r", text)
         return text or None
+
+
+class OpenAITranscriber(_AudioCapture):
+    """Cloud STT: gpt-4o-transcribe. Best accuracy; ~1s network latency."""
+
+    def __init__(self, client, initial_prompt: str | None = None):
+        super().__init__()
+        self._client = client
+        self._initial_prompt = initial_prompt
+
+    def listen_once(self, timeout_s: float) -> str | None:
+        audio = self._capture(timeout_s)
+        if audio is None:
+            return None
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(self._sample_rate)
+            w.writeframes((audio * 32767).astype(np.int16).tobytes())
+        buf.seek(0)
+        buf.name = "speech.wav"  # the SDK needs a filename hint
+        try:
+            kwargs = {"model": "gpt-4o-transcribe", "file": buf}
+            if self._initial_prompt:
+                kwargs["prompt"] = self._initial_prompt
+            result = self._client.audio.transcriptions.create(**kwargs)
+        except Exception:
+            logger.exception("OpenAI transcription failed")
+            return None
+        text = result.text.strip()
+        logger.info("heard (openai): %r", text)
+        return text or None
+
+
+def make_transcriber(client=None, initial_prompt: str | None = None) -> Transcriber:
+    if settings.stt_backend == "openai":
+        if client is None:
+            from openai import OpenAI
+
+            client = OpenAI()
+        return OpenAITranscriber(client, initial_prompt=initial_prompt)
+    return MicTranscriber(initial_prompt=initial_prompt)
