@@ -29,6 +29,28 @@ uv sync
 uv run reachy-vec --help
 ```
 
+### macOS one-time fix (simulator + media)
+
+uv-managed virtualenvs don't ship `libpython3.12.dylib` where MuJoCo's
+`mjpython` and GStreamer expect it. After (re)creating `.venv`, run:
+
+```bash
+ln -sf ~/.local/share/uv/python/cpython-3.12.9-macos-aarch64-none/lib/libpython3.12.dylib .venv/lib/
+```
+
+### Running the simulator (no robot needed)
+
+```bash
+# with the MuJoCo 3D viewer window (macOS requires mjpython for the GUI):
+uv run mjpython .venv/bin/reachy-mini-daemon --sim
+
+# headless (tests/CI):
+uv run reachy-mini-daemon --sim --headless
+```
+
+Dashboard: http://localhost:8000. If the daemon reports a weird state after
+a crashed run, a stale process may hold port 8000: `pkill -f reachy-mini-daemon`.
+
 ## Layout
 
 ```
