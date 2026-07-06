@@ -2,6 +2,6 @@
 
 Modules:
 - intents: classify each utterance as Q&A, note-taking, or messaging
-- rag:     retrieve context from docs + memories, build the Claude prompt
+- rag:     retrieve context from docs + memories, build the LLM prompt
 - loop:    the conversation state machine tying it all together
 """

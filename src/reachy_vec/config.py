@@ -1,7 +1,7 @@
 """Settings for the brain, loaded from environment / .env.
 
 Environment variables use the REACHY_VEC_ prefix, e.g. REACHY_VEC_ROBOT_HOST.
-ANTHROPIC_API_KEY is read by the anthropic SDK directly.
+OPENAI_API_KEY is read by the openai SDK directly.
 """
 
 from pathlib import Path
@@ -16,9 +16,11 @@ class Settings(BaseSettings):
     robot_host: str | None = None
 
     # Models
-    llm_model: str = "claude-sonnet-5"
+    llm_model: str = "gpt-4o"
     stt_model: str = "small"  # faster-whisper size
     embedding_model: str = "BAAI/bge-small-en-v1.5"
+    tts_backend: str = "fish-speech"  # fish-speech | openvoice | say (dev fallback)
+    voice_sample: Path | None = None  # reference audio for voice cloning
 
     # Storage
     data_dir: Path = Path("data")

@@ -7,8 +7,8 @@ faces, voices) in one embedded LanceDB store.
 
 **Architecture:** the robot (Raspberry Pi 5) is a thin body streaming
 audio/video over WiFi; the brain runs on a Mac (Apple silicon) — face ID
-(insightface), speaker ID (ECAPA), STT (faster-whisper), RAG via the Claude
-API, and TTS back out through the robot's speaker.
+(insightface), speaker ID (ECAPA), STT (faster-whisper), RAG via the OpenAI
+API, and voice-cloned TTS (fish-speech) back out through the robot's speaker.
 
 See [the design spec](docs/superpowers/specs/2026-07-06-team-familiar-design.md)
 for aims, architecture, and the phased roadmap.

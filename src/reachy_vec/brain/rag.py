@@ -1,1 +1,1 @@
-"""Retrieval-augmented generation: search docs + memories, prompt Claude (Phase 0)."""
+"""Retrieval-augmented generation: search docs + memories, prompt the LLM (Phase 0)."""

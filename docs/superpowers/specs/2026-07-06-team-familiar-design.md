@@ -26,8 +26,8 @@ Build a team-facing embodied assistant on a **Reachy Mini (wireless, Raspberry P
 │  speaker, motion    │           │   (insightface) + speaker ID │
 └─────────────────────┘           │   (ECAPA voice embeddings)   │
                                   │  STT: faster-whisper (local) │
-                                  │  LLM: Claude API + RAG       │
-                                  │  TTS: local (or API)         │
+                                  │  LLM: OpenAI API + RAG       │
+                                  │  TTS: fish-speech (cloned)   │
                                   │  Store: LanceDB (embedded)   │
                                   └──────────────────────────────┘
 ```
@@ -44,8 +44,8 @@ Each component is a subpackage under `src/reachy_vec/`:
 |---|---|---|
 | `body/` | Robot I/O: connection/streaming (`robot.py`), motion primitives — greet, nod, track, droop (`motions.py`) | reachy-mini SDK |
 | `perception/` | Face recognition (`face.py`), speaker ID (`voice.py`), identity fusion (`fusion.py`) | insightface, speechbrain ECAPA |
-| `audio/` | VAD + wake word + streaming STT (`listen.py`), TTS to robot speaker (`speak.py`) | faster-whisper, silero-vad |
-| `brain/` | Intent routing (`intents.py`), RAG prompting (`rag.py`), conversation loop (`loop.py`) | Claude API |
+| `audio/` | VAD + wake word + streaming STT (`listen.py`), TTS to robot speaker (`speak.py`) | faster-whisper, silero-vad, fish-speech |
+| `brain/` | Intent routing (`intents.py`), RAG prompting (`rag.py`), conversation loop (`loop.py`) | OpenAI API |
 | `store/` | LanceDB connection (`db.py`) and table schemas (`schemas.py`): `people`, `docs`, `memories`, `messages` | lancedb |
 | `cli/` | One file per command: `chat`, `ingest`, `enroll`, `run` | typer |
 
@@ -97,4 +97,6 @@ Each component is a subpackage under `src/reachy_vec/`:
 - **Custom stack over OpenClaw/ClawBody/NemoClaw:** multi-user identity and team KB are first-class here and absent there; NemoClaw solves deployment safety, not perception or attribution, and is NVIDIA-GPU oriented.
 - **LanceDB over MongoDB:** embedded, zero-ops, fast on-device vector search; one store for docs, memories, and biometric embeddings. MongoDB not required by the user.
 - **Mac as brain:** wireless Reachy's Pi 5 can't run whisper + face ID + embeddings in real time; Apple silicon can, and dev happens on macOS anyway.
+- **OpenAI as LLM:** user has an OpenAI API key; the RAG layer is provider-agnostic enough to swap later.
+- **TTS = fish-speech first, openvoice fallback:** fish-speech (OpenAudio S1-mini) has the best voice-clone quality and active development; its risk is latency on Apple silicon MPS, mitigated by short spoken responses. OpenVoice v2 is lighter/faster but lower quality and dormant. Backend is pluggable via `settings.tts_backend` (`fish-speech` / `openvoice` / macOS `say` for dev), with `settings.voice_sample` as the cloning reference.
 - **Consent note:** face/voice enrollment is explicit and opt-in per teammate; embeddings stay local in LanceDB.
