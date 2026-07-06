@@ -11,15 +11,16 @@ dependencies = [
     "pydantic-settings>=2.5",
     "typer>=0.12",
     "sentence-transformers>=3.0",
+    "sounddevice>=0.5.5",
+    "silero-vad>=6.2.1",
+    "faster-whisper>=1.2.1",
 ]
 
 [project.optional-dependencies]
 # Phase 1+ — perception and audio models (heavy; install when hardware work starts)
 perception = [
-    "faster-whisper>=1.0",
     "insightface>=0.7",
     "speechbrain>=1.0",
-    "sounddevice>=0.5",
 ]
 
 [project.scripts]

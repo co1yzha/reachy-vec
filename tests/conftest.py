@@ -53,3 +53,23 @@ class FakeLLMClient:
 
     def __init__(self, reply: str = "canned answer"):
         self.chat = FakeChat(reply)
+
+
+class FakeSpeaker:
+    """Records spoken lines."""
+
+    def __init__(self):
+        self.spoken: list[str] = []
+
+    def speak(self, text: str) -> None:
+        self.spoken.append(text)
+
+
+class FakeTranscriber:
+    """Returns scripted utterances, then None (silence)."""
+
+    def __init__(self, utterances: list[str]):
+        self._it = iter(utterances)
+
+    def listen_once(self, timeout_s: float) -> str | None:
+        return next(self._it, None)
