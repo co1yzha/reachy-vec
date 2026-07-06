@@ -37,6 +37,34 @@ class Store:
     def doc_count(self) -> int:
         return self._docs().count_rows()
 
+    def search_docs_scored(
+        self, query_vector: list[float], k: int = 5
+    ) -> list[tuple[DocChunk, float]]:
+        """Like search_docs, with cosine similarity scores (1.0 = identical)."""
+        if self.doc_count() == 0:
+            return []
+        rows = self._docs().search(query_vector).metric("cosine").limit(k).to_list()
+        return [
+            (
+                DocChunk(**{k_: row[k_] for k_ in DocChunk.model_fields}),
+                1.0 - row["_distance"],
+            )
+            for row in rows
+        ]
+
+    def delete_docs_by_source_prefix(self, prefix: str) -> None:
+        escaped = prefix.replace("'", "''")
+        self._docs().delete(f"source LIKE '{escaped}%'")
+
+    def demo_titles(self, limit: int = 30) -> list[str]:
+        """Distinct demo titles (sources with the 'demo: ' prefix stripped)."""
+        sources = {
+            r["source"]
+            for r in self._docs().to_arrow().to_pylist()
+            if r["source"].startswith("demo: ")
+        }
+        return sorted(s.removeprefix("demo: ") for s in sources)[:limit]
+
     # -- people + greetings (Phase 1) --------------------------------------
 
     def add_face_rows(self, rows: list[FaceRow]) -> None:
