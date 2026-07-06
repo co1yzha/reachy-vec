@@ -17,6 +17,7 @@ dependencies = [
     "insightface>=1.0.1",
     "onnxruntime>=1.27.0",
     "opencv-python>=5.0.0.93",
+    "pymongo>=4.17.0",
 ]
 
 [project.optional-dependencies]
