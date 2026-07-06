@@ -73,3 +73,27 @@ class FakeTranscriber:
 
     def listen_once(self, timeout_s: float) -> str | None:
         return next(self._it, None)
+
+
+class FakeCamera:
+    """Serves scripted 'frames' (any object; fakes below don't inspect them)."""
+
+    def __init__(self, frames: list):
+        self._it = iter(frames)
+
+    def read(self):
+        return next(self._it, None)
+
+
+class FakeFaceMatcher:
+    """Scripted observations + constant embeddings."""
+
+    def __init__(self, observations: list, embedding: list[float] | None = None):
+        self._it = iter(observations)
+        self._embedding = embedding
+
+    def observe(self, frame):
+        return next(self._it, None)
+
+    def embed(self, frame):
+        return self._embedding

@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     tts_backend: str = "say"  # say (works today) | fish-speech (planned primary) | openvoice
     voice_sample: Path | None = None  # reference audio for voice cloning
 
+    # Perception
+    face_threshold: float = 0.45  # cosine similarity; below = unknown
+    camera_index: int = 0
+
     # Storage
     data_dir: Path = Path("data")
 

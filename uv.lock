@@ -2559,8 +2559,11 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "faster-whisper" },
+    { name = "insightface" },
     { name = "lancedb" },
+    { name = "onnxruntime" },
     { name = "openai" },
+    { name = "opencv-python" },
     { name = "pydantic-settings" },
     { name = "reachy-mini", extra = ["mujoco"] },
     { name = "sentence-transformers" },
@@ -2571,7 +2574,6 @@ dependencies = [
 
 [package.optional-dependencies]
 perception = [
-    { name = "insightface" },
     { name = "speechbrain" },
 ]
 
@@ -2583,9 +2585,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "faster-whisper", specifier = ">=1.2.1" },
-    { name = "insightface", marker = "extra == 'perception'", specifier = ">=0.7" },
+    { name = "insightface", specifier = ">=1.0.1" },
     { name = "lancedb", specifier = ">=0.15" },
+    { name = "onnxruntime", specifier = ">=1.27.0" },
     { name = "openai", specifier = ">=1.50" },
+    { name = "opencv-python", specifier = ">=5.0.0.93" },
     { name = "pydantic-settings", specifier = ">=2.5" },
     { name = "reachy-mini", extras = ["mujoco"], specifier = ">=1.8.4" },
     { name = "sentence-transformers", specifier = ">=3.0" },

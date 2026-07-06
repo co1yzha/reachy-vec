@@ -14,13 +14,15 @@ dependencies = [
     "sounddevice>=0.5.5",
     "silero-vad>=6.2.1",
     "faster-whisper>=1.2.1",
+    "insightface>=1.0.1",
+    "onnxruntime>=1.27.0",
+    "opencv-python>=5.0.0.93",
 ]
 
 [project.optional-dependencies]
 # Phase 1+ — perception and audio models (heavy; install when hardware work starts)
 perception = [
-    "insightface>=0.7",
-    "speechbrain>=1.0",
+    "speechbrain>=1.0",  # speaker ID, Phase 2
 ]
 
 [project.scripts]
