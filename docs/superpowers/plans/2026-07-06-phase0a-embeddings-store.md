@@ -30,7 +30,7 @@
 **Interfaces:**
 - Produces: `Embedder` protocol with `embed(texts: list[str]) -> list[list[float]]`; `BgeEmbedder(model_name: str)` implementing it; `EMBEDDING_DIM = 384` constant importable from `reachy_vec.store.embeddings`; `FakeEmbedder` and `FakeLLMClient` importable from `tests.conftest` (the LLM fake is consumed by plan 0c but lives here so conftest is written once).
 
-- [ ] **Step 1: Add the sentence-transformers dependency**
+- [x] **Step 1: Add the sentence-transformers dependency**
 
 ```bash
 uv add "sentence-transformers>=3.0"
@@ -38,7 +38,7 @@ uv add "sentence-transformers>=3.0"
 
 Expected: `uv.lock` updated, resolve succeeds.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `tests/conftest.py`:
 
@@ -122,12 +122,12 @@ def test_fake_embedder_is_deterministic_and_conforms():
     assert first[0] != first[1]
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_embeddings.py -v`
 Expected: FAIL with `ImportError: cannot import name 'EMBEDDING_DIM'` (module has no such names yet).
 
-- [ ] **Step 4: Write minimal implementation**
+- [x] **Step 4: Write minimal implementation**
 
 Replace `src/reachy_vec/store/embeddings.py` (create it) with:
 
@@ -166,12 +166,12 @@ class BgeEmbedder:
 
 (`BgeEmbedder` is exercised for real in plan 0c's manual smoke test, not in unit tests — the model download is ~130 MB.)
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `uv run pytest tests/ -v`
 Expected: all PASS (including the existing CLI smoke test).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pyproject.toml uv.lock src/reachy_vec/store/embeddings.py tests/conftest.py tests/test_embeddings.py
@@ -191,7 +191,7 @@ git commit -m "feat: embedder protocol with BGE implementation and test fakes"
 - Consumes: `EMBEDDING_DIM` from Task 1.
 - Produces: `DocChunk(LanceModel)` with fields `chunk_id: str, text: str, vector: Vector(384), source: str, ingested_at: str`; `Store(db_path: Path)` with methods `add_doc_chunks(chunks: list[DocChunk]) -> None`, `search_docs(query_vector: list[float], k: int = 5) -> list[DocChunk]`, `doc_count() -> int`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_store.py`:
 
@@ -241,12 +241,12 @@ def test_search_empty_table_returns_no_hits(tmp_path):
     assert store.search_docs(query_vector) == []
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_store.py -v`
 Expected: FAIL with `ImportError` (no `Store` / `DocChunk` defined yet).
 
-- [ ] **Step 3: Write the schemas**
+- [x] **Step 3: Write the schemas**
 
 Replace `src/reachy_vec/store/schemas.py` with:
 
@@ -270,7 +270,7 @@ class DocChunk(LanceModel):
     ingested_at: str  # ISO-8601 UTC timestamp
 ```
 
-- [ ] **Step 4: Write the store**
+- [x] **Step 4: Write the store**
 
 Replace `src/reachy_vec/store/db.py` with:
 
@@ -308,12 +308,12 @@ class Store:
         return self._docs().count_rows()
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_store.py -v`
 Expected: 3 PASS. If `to_pydantic` is not available in the installed lancedb version, use `.to_list()` and construct `DocChunk(**{k: row[k] for k in DocChunk.model_fields})` per row instead — keep the return type `list[DocChunk]`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/reachy_vec/store/schemas.py src/reachy_vec/store/db.py tests/test_store.py

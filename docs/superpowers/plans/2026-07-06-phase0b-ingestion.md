@@ -29,7 +29,7 @@
 - Consumes: `Store.add_doc_chunks`, `DocChunk`, `Embedder` (plan 0a).
 - Produces: `chunk_text(text: str, max_chars: int = 1000) -> list[str]`; `ingest_path(path: Path, store: Store, embedder: Embedder) -> int` (returns number of chunks written).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_ingestion.py`:
 
@@ -81,12 +81,12 @@ def test_ingest_single_file(tmp_path):
     assert ingest_path(f, store, FakeEmbedder()) == 1
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_ingestion.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'reachy_vec.store.ingestion'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `src/reachy_vec/store/ingestion.py`:
 
@@ -164,12 +164,12 @@ def ingest_path(path: Path, store: Store, embedder: Embedder) -> int:
     return written
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_ingestion.py -v`
 Expected: 5 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/reachy_vec/store/ingestion.py tests/test_ingestion.py
@@ -188,7 +188,7 @@ git commit -m "feat: chunking and ingestion pipeline for team docs"
 - Consumes: `ingest_path` (Task 1), `Store`, `BgeEmbedder` (plan 0a), `settings` from `reachy_vec.config`.
 - Produces: working `reachy-vec ingest PATH` command; `make_embedder() -> Embedder` seam in `reachy_vec.cli.ingest` (monkeypatched by tests, reused as the pattern for 0c's chat command).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_cli.py`:
 
@@ -218,12 +218,12 @@ def test_ingest_command_rejects_missing_path(tmp_path):
     assert result.exit_code != 0
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_cli.py -v`
 Expected: new tests FAIL (`AttributeError`: `reachy_vec.cli.ingest` has no `make_embedder`); the original `--help` test still passes.
 
-- [ ] **Step 3: Implement the ingest command**
+- [x] **Step 3: Implement the ingest command**
 
 Replace `src/reachy_vec/cli/ingest.py` with:
 
@@ -253,19 +253,19 @@ def ingest(path: Path) -> None:
     typer.echo(f"Ingested {count} chunk{suffix} into {settings.lancedb_dir}.")
 ```
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
 
 Run: `uv run pytest -v`
 Expected: all PASS.
 
-- [ ] **Step 5: Guard the data directory**
+- [x] **Step 5: Guard the data directory**
 
 `reachy-vec ingest` creates `data/lancedb` in the repo by default. Check it is ignored:
 
 Run: `git check-ignore data/ || echo NOT-IGNORED`
 If `NOT-IGNORED`: append a `data/` line to `.gitignore` and include it in the commit.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/reachy_vec/cli/ingest.py tests/test_cli.py .gitignore

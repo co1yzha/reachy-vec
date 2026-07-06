@@ -30,7 +30,7 @@
 - Consumes: `Store.search_docs`, `Embedder`, `FakeLLMClient` (plan 0a).
 - Produces: `Answer` dataclass with `text: str, sources: list[str]`; `answer(question: str, *, store: Store, embedder: Embedder, client, model: str, k: int = 5) -> Answer`. `client` is any object with `chat.completions.create(model=..., messages=...)` returning an openai-shaped response.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_rag.py`:
 
@@ -108,12 +108,12 @@ def test_answer_with_empty_store_says_no_context(tmp_path):
     assert "knowledge base is empty" in result.text
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_rag.py -v`
 Expected: FAIL with `ImportError: cannot import name 'Answer'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Replace `src/reachy_vec/brain/rag.py` with:
 
@@ -175,12 +175,12 @@ def answer(
     )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_rag.py -v`
 Expected: 3 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/reachy_vec/brain/rag.py tests/test_rag.py
@@ -199,7 +199,7 @@ git commit -m "feat: RAG answer over the docs table via OpenAI chat API"
 - Consumes: `answer` / `Answer` (Task 1), `Store`, `Embedder` (plan 0a).
 - Produces: `chat_loop(*, store, embedder, client, model, input_fn=input, print_fn=print) -> None` — REPL that exits on `exit`, `quit`, or EOF, and prints each answer followed by its sources.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_loop.py`:
 
@@ -275,12 +275,12 @@ def test_loop_skips_blank_lines(tmp_path):
     assert all("canned answer" not in line for line in printed)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_loop.py -v`
 Expected: FAIL with `ImportError: cannot import name 'chat_loop'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Replace `src/reachy_vec/brain/loop.py` with:
 
@@ -319,12 +319,12 @@ def chat_loop(
             print_fn(f"        (sources: {', '.join(result.sources)})")
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_loop.py -v`
 Expected: 3 PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/reachy_vec/brain/loop.py tests/test_loop.py
@@ -342,7 +342,7 @@ git commit -m "feat: terminal chat loop over the RAG layer"
 - Consumes: `chat_loop` (Task 2), `Store`, `BgeEmbedder` (plan 0a), `settings` from `reachy_vec.config`.
 - Produces: working `reachy-vec chat` command — the Phase 0 milestone.
 
-- [ ] **Step 1: Implement the chat command**
+- [x] **Step 1: Implement the chat command**
 
 Replace `src/reachy_vec/cli/chat.py` with:
 
@@ -371,17 +371,17 @@ def chat() -> None:
     )
 ```
 
-- [ ] **Step 2: Run the full suite**
+- [x] **Step 2: Run the full suite**
 
 Run: `uv run pytest -v`
 Expected: all PASS (the command is covered by the existing `--help` smoke test; its body is real-dependency wiring exercised in Step 4).
 
-- [ ] **Step 3: Verify empty-KB guard**
+- [x] **Step 3: Verify empty-KB guard**
 
 Run: `REACHY_VEC_DATA_DIR=/tmp/reachy-empty uv run reachy-vec chat`
 Expected: prints `Knowledge base is empty - run 'reachy-vec ingest <path>' first.` and exits with code 1.
 
-- [ ] **Step 4: Manual end-to-end smoke test (real models, needs OPENAI_API_KEY; requires plan 0b done)**
+- [x] **Step 4: Manual end-to-end smoke test (real models, needs OPENAI_API_KEY; requires plan 0b done)**
 
 ```bash
 mkdir -p /tmp/team-docs
@@ -394,7 +394,7 @@ uv run reachy-vec chat
 
 Expected: first run downloads the BGE model (~130 MB), then answers correctly.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/reachy_vec/cli/chat.py
