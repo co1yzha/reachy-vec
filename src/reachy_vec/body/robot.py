@@ -41,11 +41,18 @@ class RobotBody:
 
 
 def make_body() -> Body:
-    """Connect to the daemon if possible; otherwise degrade to NullBody."""
+    """Connect to the daemon if possible; otherwise degrade to NullBody.
+
+    Registers an atexit disconnect: ReachyMini keeps non-daemon threads
+    alive, which would otherwise hang interpreter shutdown.
+    """
     try:
+        import atexit
+
         from reachy_mini import ReachyMini
 
         mini = ReachyMini(media_backend="no_media")
+        atexit.register(mini.client.disconnect)
         return RobotBody(mini)
     except Exception as exc:  # daemon down, robot absent, etc.
         logger.warning("No robot/daemon available (%s); running body-less.", exc)
