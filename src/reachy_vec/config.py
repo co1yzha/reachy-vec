@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     silence_timeout_s: float = 30.0   # end conversation after this much quiet
     idle_sleep_s: float = 300.0       # no faces for this long -> robot sleeps
 
+    # Weather (Open-Meteo, no API key); default: Liverpool, UK
+    weather_lat: float = 53.4084
+    weather_lon: float = -2.9916
+
     # Storage
     data_dir: Path = Path("data")
 

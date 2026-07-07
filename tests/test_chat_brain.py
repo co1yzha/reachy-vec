@@ -240,6 +240,47 @@ def test_send_message_to_unknown_recipient_refused(tmp_path):
     assert "don't know anyone called Carol" in tool_result["content"]
 
 
+def test_get_weather_tool_reports_conditions(tmp_path):
+    tool_call = FakeToolCall("get_weather", "{}")
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("It's 18 degrees and partly cloudy out there!"),
+        ]
+    )
+    brain = make_brain(tmp_path, client)
+    brain._weather_fetch = lambda: {
+        "temperature_2m": 18.2,
+        "apparent_temperature": 17.1,
+        "weather_code": 2,
+        "wind_speed_10m": 14.0,
+    }
+    reply = brain.respond("what's the weather like?", speaker_name="Yang")
+    assert "18" in reply
+    tool_result = client.chat.completions.calls[1]["messages"][-1]
+    assert "18.2" in tool_result["content"]
+    assert "partly cloudy" in tool_result["content"]
+
+
+def test_get_weather_failure_is_friendly(tmp_path):
+    tool_call = FakeToolCall("get_weather", "{}")
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("Couldn't check, sorry!"),
+        ]
+    )
+    brain = make_brain(tmp_path, client)
+
+    def broken():
+        raise OSError("network down")
+
+    brain._weather_fetch = broken
+    brain.respond("weather?")
+    tool_result = client.chat.completions.calls[1]["messages"][-1]
+    assert "couldn't reach the weather service" in tool_result["content"]
+
+
 def test_near_duplicate_memories_are_skipped(tmp_path):
     client = FakeLLMClient(reply="ok")
     brain = make_brain(tmp_path, client)

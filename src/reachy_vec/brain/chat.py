@@ -81,6 +81,14 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_weather",
+            "description": "Get the current live weather outside the lab.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "send_message",
             "description": (
                 "Relay a message to an enrolled teammate; it is spoken to them "
@@ -106,6 +114,32 @@ SUMMARY_PROMPT = (
 )
 
 MAX_HISTORY_MESSAGES = 20
+
+# WMO weather interpretation codes (Open-Meteo), condensed
+WEATHER_CODES = {
+    0: "clear sky", 1: "mainly clear", 2: "partly cloudy", 3: "overcast",
+    45: "fog", 48: "freezing fog",
+    51: "light drizzle", 53: "drizzle", 55: "heavy drizzle",
+    61: "light rain", 63: "rain", 65: "heavy rain",
+    66: "freezing rain", 67: "heavy freezing rain",
+    71: "light snow", 73: "snow", 75: "heavy snow", 77: "snow grains",
+    80: "light showers", 81: "showers", 82: "violent showers",
+    85: "snow showers", 86: "heavy snow showers",
+    95: "thunderstorm", 96: "thunderstorm with hail", 99: "thunderstorm with heavy hail",
+}
+
+
+def fetch_open_meteo(lat: float, lon: float) -> dict:
+    """Current conditions from Open-Meteo (no API key)."""
+    import urllib.request
+
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m"
+    )
+    with urllib.request.urlopen(url, timeout=5) as response:
+        return json.loads(response.read())["current"]
 
 CONTEXT_TEMPLATE = """[Team knowledge context - relevance scores 0..1]
 {context}
@@ -144,6 +178,11 @@ class ChatBrain:
         self._person_id: str | None = None
         self._person_name: str | None = None
         self._exchanges = 0
+        from reachy_vec.config import settings
+
+        self._weather_fetch = lambda: fetch_open_meteo(
+            settings.weather_lat, settings.weather_lon
+        )
 
     # -- conversation lifecycle --------------------------------------------
 
@@ -233,6 +272,7 @@ class ChatBrain:
             "open_url": self._tool_open_url,
             "save_note": self._tool_save_note,
             "send_message": self._tool_send_message,
+            "get_weather": self._tool_get_weather,
         }
         handler = handlers.get(call.function.name)
         result = handler(args) if handler else "unknown tool"
@@ -259,6 +299,19 @@ class ChatBrain:
         self._store_memories([note])
         logger.info("save_note for %s: %r", self._person_name, note)
         return f"noted: {note}"
+
+    def _tool_get_weather(self, args: dict) -> str:
+        try:
+            current = self._weather_fetch()
+        except Exception:
+            logger.exception("weather fetch failed")
+            return "couldn't reach the weather service right now"
+        condition = WEATHER_CODES.get(current.get("weather_code"), "unknown conditions")
+        return (
+            f"current weather: {current.get('temperature_2m')}C "
+            f"(feels like {current.get('apparent_temperature')}C), {condition}, "
+            f"wind {current.get('wind_speed_10m')} km/h"
+        )
 
     def _tool_send_message(self, args: dict) -> str:
         if not self._person_id:
