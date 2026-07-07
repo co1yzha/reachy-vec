@@ -81,6 +81,8 @@ Walk through the checklist:
 | Say "remember that I ..." | "Noted" — stored; verify it survives to the next visit |
 | Leave, return later, ask "what was I working on?" | Recalls memories from earlier visits |
 | Nobody in frame for 5 min | Robot slumps to sleep; wakes when you appear |
+| Say "tell <enrolled teammate> ..." | Queued; spoken to them when they next appear |
+| Ask "what's the weather like?" | Live conditions for the lab location (Open-Meteo) |
 
 ## Troubleshooting
 

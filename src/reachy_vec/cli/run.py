@@ -67,6 +67,14 @@ def run(
         transcriber.warm_up()
     matcher.observe(camera.read())   # loads insightface before the loop
     embedder.embed(["warm up"])      # loads the BGE model
+    try:                             # open the TLS connection to OpenAI
+        client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=1,
+        )
+    except Exception:
+        pass  # no network now != no network later; the loop will surface it
 
     if preview:
         from reachy_vec.perception.preview import PreviewSight

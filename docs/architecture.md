@@ -29,7 +29,8 @@ summary.
   captured frame), `greetings` (per-person last-greeted timestamps),
   `memories` (per-person notes: saved via the save_note tool or distilled
   automatically when a conversation ends, recalled by vector search each
-  turn). `messages` arrives in Phase 3.
+  turn), `messages` (queued relays, delivered by voice on the recipient's
+  next recognized sighting).
 - **Everything heavy is behind a protocol with a test fake** (`Embedder`,
   `Body`, `Transcriber`, `Speaker`, `FaceMatcher`, `Camera`) — the whole
   state machine runs in pytest without devices, models, or network.
@@ -57,9 +58,12 @@ THINKING (ChatBrain): embed question → scored LanceDB search → context +
   │   visit) → one LLM call with the Reachy personality prompt. The model
   │   judges relevance: grounded answer naming the demo, or a general-
   │   knowledge answer with a casual not-from-our-docs signal (none for
-  │   chit-chat). Follow-ups work via history.
-  │   Tool calls (open_url → default browser on the Mac, http(s) only)
-  │   add a second LLM round-trip — actions only, not answers.
+  │   chit-chat). Follow-ups work via history. Replies STREAM: each
+  │   sentence is spoken as it generates (~1s to first sentence).
+  │   Tools (second LLM round-trip, actions only): open_url (browser,
+  │   http(s) only), save_note (remember about this person), send_message
+  │   (relay to an enrolled teammate on next sighting), get_weather
+  │   (Open-Meteo, no key, lab location from settings).
   │   OpenAI error → spoken apology, keep listening
   ▼
 SPEAKING: `say` + nod → back to LISTENING
