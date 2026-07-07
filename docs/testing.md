@@ -28,7 +28,8 @@ uv run reachy-vec chat
 
 - "what demos do we have about food insecurity?" → grounded answer citing
   `demo: Liverpool City Food Mapping` etc.
-- "what is the capital of France?" → starts with "Not from our team docs, but".
+- "what is the capital of France?" → answers with a light signal that it's
+  outside the team library (e.g. "off the top of my head...").
 
 ### 2. Voice echo (mic + speaker)
 
@@ -73,7 +74,7 @@ Walk through the checklist:
 |---|---|
 | Walk into webcam frame | Spoken "Hi <name>!" + greet motion in the viewer |
 | Ask about a demo | Spoken grounded answer, nod |
-| Ask something off-library | "Not from our team docs, but..." |
+| Ask something off-library | Helpful answer with a casual not-from-our-docs signal |
 | Stay quiet 30 s | Goodbye nod, back to idle |
 | Return immediately | Silent head-turn only (greeting cooldown) |
 | Un-enrolled person, ~3 s in frame | Enrollment offer → yes → name → confirm → captures |
