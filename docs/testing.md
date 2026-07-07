@@ -59,8 +59,13 @@ First run triggers the camera permission prompt.
 uv run mjpython .venv/bin/reachy-mini-daemon --sim
 
 # terminal 2 — the brain:
-uv run reachy-vec run
+uv run reachy-vec run --preview   # --preview opens a "Reachy sees" window
 ```
+
+The preview window shows the webcam feed with a box around the detected
+face: green = recognized (name + score), orange = unknown, gray =
+borderline. It only refreshes while the robot is scanning for faces —
+it freezes during listening/speaking; that's normal.
 
 Walk through the checklist:
 
