@@ -81,6 +81,11 @@ Walk through the checklist:
 
 ## Troubleshooting
 
+- **What did it hear/say?** `reachy-vec run` writes every transcribed
+  utterance, reply, and opened URL to `data/reachy.log` (also echoed to the
+  console). Note this means transcripts of everyone who talks to the robot
+  persist there — delete the file to forget.
+
 - **Sim viewer won't open / `launch_passive` error:** the GUI needs
   `mjpython` (see README macOS setup; re-create the libpython symlink after
   rebuilding `.venv`).
