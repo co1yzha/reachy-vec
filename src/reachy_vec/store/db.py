@@ -4,11 +4,12 @@ from pathlib import Path
 
 import lancedb
 
-from reachy_vec.store.schemas import DocChunk, FaceRow, GreetingRow
+from reachy_vec.store.schemas import DocChunk, FaceRow, GreetingRow, MemoryRow
 
 DOCS_TABLE = "docs"
 PEOPLE_TABLE = "people"
 GREETINGS_TABLE = "greetings"
+MEMORIES_TABLE = "memories"
 
 
 class Store:
@@ -92,6 +93,27 @@ class Store:
     def people_count(self) -> int:
         table = self._table(PEOPLE_TABLE, FaceRow)
         return len({r["person_id"] for r in table.to_arrow().to_pylist()})
+
+    # -- memories (Phase 2a) ------------------------------------------------
+
+    def add_memories(self, rows: list[MemoryRow]) -> None:
+        if rows:
+            self._table(MEMORIES_TABLE, MemoryRow).add(rows)
+
+    def search_memories(
+        self, query_vector: list[float], *, person_id: str, k: int = 3
+    ) -> list[MemoryRow]:
+        table = self._table(MEMORIES_TABLE, MemoryRow)
+        if table.count_rows() == 0:
+            return []
+        escaped = person_id.replace("'", "''")
+        return (
+            table.search(query_vector)
+            .metric("cosine")
+            .where(f"person_id = '{escaped}'")
+            .limit(k)
+            .to_pydantic(MemoryRow)
+        )
 
     def get_last_greeted(self, person_id: str) -> str | None:
         table = self._table(GREETINGS_TABLE, GreetingRow)
