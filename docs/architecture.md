@@ -53,8 +53,9 @@ LISTENING: VAD-segmented utterance → whisper                    │
 THINKING (ChatBrain): embed question → scored LanceDB search → context +
   │   "<name>: <question>" appended to the conversation history (reset per
   │   visit) → one LLM call with the Reachy personality prompt. The model
-  │   judges relevance: grounded answer naming the demo, or "Not from our
-  │   team docs, but..." fallback. Follow-ups work via history.
+  │   judges relevance: grounded answer naming the demo, or a general-
+  │   knowledge answer with a casual not-from-our-docs signal (none for
+  │   chit-chat). Follow-ups work via history.
   │   Tool calls (open_url → default browser on the Mac, http(s) only)
   │   add a second LLM round-trip — actions only, not answers.
   │   OpenAI error → spoken apology, keep listening
