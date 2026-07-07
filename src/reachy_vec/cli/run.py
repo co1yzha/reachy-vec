@@ -3,7 +3,11 @@ import typer
 from reachy_vec.config import settings
 
 
-def run() -> None:
+def run(
+    preview: bool = typer.Option(
+        False, "--preview", help="Show a window with the webcam feed and face matches."
+    ),
+) -> None:
     """Run the Oracle: face-triggered voice Q&A on webcam + mic (+ sim body)."""
     from dotenv import load_dotenv
     from openai import OpenAI
@@ -44,11 +48,18 @@ def run() -> None:
     matcher.observe(camera.read())   # loads insightface before the loop
     embedder.embed(["warm up"])      # loads the BGE model
 
+    if preview:
+        from reachy_vec.perception.preview import PreviewSight
+
+        sight = PreviewSight(camera, matcher)
+    else:
+        sight = lambda: matcher.observe(camera.read())  # noqa: E731
+
     brain = ChatBrain(
         store=store, embedder=embedder, client=client, model=settings.llm_model
     )
     loop = OracleLoop(
-        sight=lambda: matcher.observe(camera.read()),
+        sight=sight,
         transcriber=transcriber,
         speaker=speaker,
         body=make_body(),

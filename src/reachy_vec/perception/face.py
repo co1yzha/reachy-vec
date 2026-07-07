@@ -40,6 +40,7 @@ class InsightFaceMatcher:
         self._store = store
         self._threshold = threshold if threshold is not None else settings.face_threshold
         self._app = None
+        self.last_bbox: tuple[int, int, int, int] | None = None  # for preview overlay
 
     def _load(self):
         if self._app is None:
@@ -52,10 +53,12 @@ class InsightFaceMatcher:
         self._load()
         faces = self._app.get(frame)
         if not faces:
+            self.last_bbox = None
             return None
         largest = max(
             faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])
         )
+        self.last_bbox = tuple(int(v) for v in largest.bbox)
         return largest.normed_embedding.tolist()
 
     def observe(self, frame) -> Observation | None:
