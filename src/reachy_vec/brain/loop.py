@@ -1,22 +1,10 @@
-"""Terminal conversation loop (Phase 0). Phase 1 swaps input/output for robot audio."""
-
-from reachy_vec.brain.rag import answer
-from reachy_vec.store.db import Store
-from reachy_vec.store.embeddings import Embedder
+"""Terminal conversation loop. The voice equivalent lives in oracle.py."""
 
 EXIT_COMMANDS = {"exit", "quit"}
 
 
-def chat_loop(
-    *,
-    store: Store,
-    embedder: Embedder,
-    client,
-    model: str,
-    input_fn=input,
-    print_fn=print,
-) -> None:
-    print_fn("Reachy KB chat - ask about your team docs ('exit' to leave).")
+def chat_loop(*, brain, input_fn=input, print_fn=print) -> None:
+    print_fn("Reachy chat - ask about your team docs ('exit' to leave).")
     while True:
         try:
             question = input_fn("you> ").strip()
@@ -26,7 +14,4 @@ def chat_loop(
             continue
         if question.lower() in EXIT_COMMANDS:
             return
-        result = answer(question, store=store, embedder=embedder, client=client, model=model)
-        print_fn(f"reachy> {result.text}")
-        if result.sources:
-            print_fn(f"        (sources: {', '.join(result.sources)})")
+        print_fn(f"reachy> {brain.respond(question)}")

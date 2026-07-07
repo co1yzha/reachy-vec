@@ -11,8 +11,8 @@ def run() -> None:
     from reachy_vec.audio.listen import MicTranscriber, make_transcriber
     from reachy_vec.audio.speak import make_speaker
     from reachy_vec.body.robot import make_body
+    from reachy_vec.brain.chat import ChatBrain
     from reachy_vec.brain.oracle import OracleLoop
-    from reachy_vec.brain.rag import answer
     from reachy_vec.perception.camera import WebcamCamera
     from reachy_vec.perception.face import InsightFaceMatcher, enroll_person
     from reachy_vec.store.db import Store
@@ -44,14 +44,15 @@ def run() -> None:
     matcher.observe(camera.read())   # loads insightface before the loop
     embedder.embed(["warm up"])      # loads the BGE model
 
+    brain = ChatBrain(
+        store=store, embedder=embedder, client=client, model=settings.llm_model
+    )
     loop = OracleLoop(
         sight=lambda: matcher.observe(camera.read()),
         transcriber=transcriber,
         speaker=speaker,
         body=make_body(),
-        answer_fn=lambda q: answer(
-            q, store=store, embedder=embedder, client=client, model=settings.llm_model
-        ),
+        brain=brain,
         enroll_capture=lambda name: enroll_person(
             name, camera, matcher, store, speaker.speak
         ),

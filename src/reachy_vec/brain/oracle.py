@@ -30,7 +30,7 @@ class OracleLoop:
         transcriber,
         speaker,
         body,
-        answer_fn,
+        brain,
         enroll_capture,
         store,
         clock=time.time,
@@ -42,7 +42,7 @@ class OracleLoop:
         self._transcriber = transcriber
         self._speaker = speaker
         self._body = body
-        self._answer_fn = answer_fn
+        self._brain = brain
         self._enroll_capture = enroll_capture
         self._store = store
         self._clock = clock
@@ -81,6 +81,7 @@ class OracleLoop:
     # -- states ----------------------------------------------------------
 
     def _converse(self, person_id: str, name: str) -> None:
+        self._brain.reset()  # fresh conversation per visit
         if self._cooldown_expired(person_id):
             self._speaker.speak(f"Hi {name}! What can I help you with?")
             self._body.perform("greet")
@@ -94,11 +95,11 @@ class OracleLoop:
                 self._body.perform("goodbye")
                 return
             try:
-                answer = self._answer_fn(question)
-                self._speaker.speak(answer.text)
+                reply = self._brain.respond(question, speaker_name=name)
+                self._speaker.speak(reply)
                 self._body.perform("nod")
             except Exception:
-                logger.exception("answer_fn failed")
+                logger.exception("brain.respond failed")
                 self._speaker.speak(APOLOGY)
 
     def _offer_enroll(self) -> str:

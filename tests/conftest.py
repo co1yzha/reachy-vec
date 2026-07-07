@@ -19,40 +19,77 @@ class FakeEmbedder:
 
 
 class FakeChoiceMessage:
-    def __init__(self, content: str):
+    def __init__(self, content: str | None, tool_calls=None):
         self.content = content
+        self.tool_calls = tool_calls
+
+
+class FakeToolCall:
+    def __init__(self, name: str, arguments: str, call_id: str = "call_1"):
+        self.id = call_id
+        self.type = "function"
+        self.function = type("F", (), {"name": name, "arguments": arguments})()
 
 
 class FakeChoice:
-    def __init__(self, content: str):
-        self.message = FakeChoiceMessage(content)
+    def __init__(self, message: FakeChoiceMessage):
+        self.message = message
 
 
 class FakeResponse:
-    def __init__(self, content: str):
-        self.choices = [FakeChoice(content)]
+    def __init__(self, message: FakeChoiceMessage):
+        self.choices = [FakeChoice(message)]
 
 
 class FakeCompletions:
-    def __init__(self, reply: str):
-        self._reply = reply
-        self.last_kwargs: dict | None = None
+    """Serves scripted messages in order (repeating the last one), records calls."""
+
+    def __init__(self, messages: list[FakeChoiceMessage]):
+        self._messages = messages
+        self.calls: list[dict] = []
+
+    @property
+    def last_kwargs(self) -> dict | None:
+        return self.calls[-1] if self.calls else None
 
     def create(self, **kwargs):
-        self.last_kwargs = kwargs
-        return FakeResponse(self._reply)
+        self.calls.append(kwargs)
+        index = min(len(self.calls) - 1, len(self._messages) - 1)
+        return FakeResponse(self._messages[index])
 
 
 class FakeChat:
-    def __init__(self, reply: str):
-        self.completions = FakeCompletions(reply)
+    def __init__(self, messages: list[FakeChoiceMessage]):
+        self.completions = FakeCompletions(messages)
 
 
 class FakeLLMClient:
-    """Mimics the openai client surface used by brain.rag: client.chat.completions.create()."""
+    """Mimics the openai client surface: client.chat.completions.create().
 
-    def __init__(self, reply: str = "canned answer"):
-        self.chat = FakeChat(reply)
+    FakeLLMClient(reply="x") answers "x" to every call;
+    FakeLLMClient(messages=[...]) serves a scripted sequence (for tool calls).
+    """
+
+    def __init__(self, reply: str = "canned answer", messages=None):
+        self.chat = FakeChat(messages or [FakeChoiceMessage(reply)])
+
+
+class FakeBrain:
+    """Scripted ChatBrain stand-in: echoes questions, records resets."""
+
+    def __init__(self, fail: bool = False):
+        self.resets = 0
+        self.asked: list[tuple[str, str | None]] = []
+        self._fail = fail
+
+    def reset(self) -> None:
+        self.resets += 1
+
+    def respond(self, question: str, speaker_name: str | None = None) -> str:
+        if self._fail:
+            raise RuntimeError("api down")
+        self.asked.append((question, speaker_name))
+        return f"answer to {question}"
 
 
 class FakeSpeaker:
