@@ -50,9 +50,13 @@ else silent acknowledge                face captures → GREET;   │
 LISTENING: VAD-segmented utterance → whisper                    │
   │        30 s silence → goodbye nod ──────────────────────────┘
   ▼
-THINKING: embed question → scored LanceDB search
-  │   best ≥ rag_min_score → grounded answer (docs only, cites sources)
-  │   best < rag_min_score → "Not from our team docs, but..." fallback
+THINKING (ChatBrain): embed question → scored LanceDB search → context +
+  │   "<name>: <question>" appended to the conversation history (reset per
+  │   visit) → one LLM call with the Reachy personality prompt. The model
+  │   judges relevance: grounded answer naming the demo, or "Not from our
+  │   team docs, but..." fallback. Follow-ups work via history.
+  │   Tool calls (open_url → default browser on the Mac, http(s) only)
+  │   add a second LLM round-trip — actions only, not answers.
   │   OpenAI error → spoken apology, keep listening
   ▼
 SPEAKING: `say` + nod → back to LISTENING
@@ -81,7 +85,6 @@ all, so a bad angle of a known person is neither greeted nor re-enrolled.
 | `STT_BACKEND` | `local` | `local` or `openai` (gpt-4o-transcribe) |
 | `TTS_BACKEND` | `say` | `say` now; `fish-speech`/`openvoice` planned |
 | `FACE_THRESHOLD` | `0.45` | cosine gate for recognizing a face |
-| `RAG_MIN_SCORE` | `0.5` | retrieval gate for grounded vs fallback answer |
 | `GREET_COOLDOWN_S` | `7200` | spoken greeting at most every 2 h/person |
 | `SILENCE_TIMEOUT_S` | `30` | quiet time that ends a conversation |
 | `CAMERA_INDEX` | `0` | which webcam |
