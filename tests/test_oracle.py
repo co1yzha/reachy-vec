@@ -36,7 +36,8 @@ def test_known_person_greet_question_answer_goodbye(tmp_path):
     assert any("answer to when is standup?" in s for s in speaker.spoken)
     assert "greet" in body.motions and "goodbye" in body.motions
     assert store.get_last_greeted("p1") is not None           # cooldown recorded
-    assert brain.resets == 1                                  # fresh conversation
+    assert brain.begun == [("p1", "Alice")]                   # conversation opened
+    assert brain.ended == 1                                   # memories distilled
     assert brain.asked == [("when is standup?", "Alice")]     # speaker attributed
 
 
@@ -84,3 +85,30 @@ def test_brain_failure_apologizes_and_continues(tmp_path):
 def test_no_face_at_all(tmp_path):
     loop, _, _, _, _ = make_loop(tmp_path, sights=[None, None, None], utterances=[])
     assert loop.run_once() == "no-face"
+
+
+def test_sleeps_after_idle_and_wakes_on_face(tmp_path):
+    now = {"t": 1000.0}
+    sights: list = []
+    speaker, body = FakeSpeaker(), FakeBody()
+    loop = OracleLoop(
+        sight=lambda: sights.pop(0) if sights else None,
+        transcriber=FakeTranscriber([]),
+        speaker=speaker,
+        body=body,
+        brain=FakeBrain(),
+        enroll_capture=lambda name: None,
+        store=Store(tmp_path / "db"),
+        clock=lambda: now["t"],
+        idle_sleep_s=300.0,
+    )
+    assert loop.run_once() == "no-face"          # t=1000: recent face-time, stays awake
+    assert "sleep" not in body.motions
+    now["t"] = 1400.0                            # 400s idle > 300s threshold
+    assert loop.run_once() == "no-face"
+    assert body.motions == ["sleep"]
+    assert loop.run_once() == "no-face"          # still asleep: no second sleep motion
+    assert body.motions == ["sleep"]
+    sights.append(ALICE)                         # someone walks up
+    assert loop.run_once() == "conversation"
+    assert body.motions[1] == "wake"             # woke before greeting

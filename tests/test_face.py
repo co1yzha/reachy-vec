@@ -1,3 +1,5 @@
+import numpy as np
+
 from reachy_vec.perception.face import Observation, enroll_person
 from reachy_vec.store.db import Store
 
@@ -26,6 +28,44 @@ def test_enroll_person_fails_gracefully_without_face(tmp_path):
     matcher = FakeFaceMatcher(observations=[], embedding=None)  # never sees a face
     assert enroll_person("Alice", camera, matcher, store, lambda _: None) is None
     assert store.people_count() == 0
+
+
+def test_enroll_person_saves_frames_when_faces_dir_given(tmp_path):
+    store = Store(tmp_path / "db")
+    vec = [1.0] + [0.0] * 511
+    frame = np.zeros((4, 4, 3), dtype=np.uint8)
+    camera = FakeCamera(frames=[frame] * 5)
+    matcher = FakeFaceMatcher(observations=[], embedding=vec)
+    faces_dir = tmp_path / "faces"
+
+    person_id = enroll_person(
+        "Alice", camera, matcher, store, lambda _: None, faces_dir=faces_dir
+    )
+
+    saved = sorted(p.name for p in faces_dir.glob("*.jpg"))
+    assert saved == [f"{person_id}-{i}.jpg" for i in range(5)]
+
+
+def test_enroll_person_saves_no_frames_by_default(tmp_path):
+    store = Store(tmp_path / "db")
+    vec = [1.0] + [0.0] * 511
+    camera = FakeCamera(frames=[np.zeros((4, 4, 3), dtype=np.uint8)] * 5)
+    matcher = FakeFaceMatcher(observations=[], embedding=vec)
+
+    enroll_person("Alice", camera, matcher, store, lambda _: None)
+
+    assert not list(tmp_path.rglob("*.jpg"))
+
+
+def test_enroll_person_skips_saving_frames_without_face(tmp_path):
+    store = Store(tmp_path / "db")
+    camera = FakeCamera(frames=[np.zeros((4, 4, 3), dtype=np.uint8)] * 5)
+    matcher = FakeFaceMatcher(observations=[], embedding=None)  # never sees a face
+    faces_dir = tmp_path / "faces"
+
+    enroll_person("Alice", camera, matcher, store, lambda _: None, faces_dir=faces_dir)
+
+    assert not list(faces_dir.glob("*.jpg")) if faces_dir.exists() else True
 
 
 def test_observation_unknown_vs_known():

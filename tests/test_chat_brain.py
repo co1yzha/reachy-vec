@@ -106,6 +106,86 @@ def test_open_url_refuses_non_http(tmp_path):
     )
 
 
+def test_begin_conversation_recalls_person_memories(tmp_path):
+    from reachy_vec.store.schemas import MemoryRow
+
+    client = FakeLLMClient(reply="Welcome back!")
+    brain = make_brain(tmp_path, client)
+    text = "prefers espresso over tea"
+    brain._store.add_memories(
+        [
+            MemoryRow(
+                memory_id="m1",
+                person_id="p1",
+                text=text,
+                vector=FakeEmbedder().embed([text])[0],
+                created_at="2026-07-07T00:00:00+00:00",
+            )
+        ]
+    )
+    brain.begin_conversation("p1", "Yang")
+    brain.respond("any coffee tips?", speaker_name="Yang")
+    sent = client.chat.completions.last_kwargs["messages"]
+    assert "prefers espresso over tea" in sent[-1]["content"]
+
+
+def test_save_note_tool_stores_attributed_memory(tmp_path):
+    tool_call = FakeToolCall("save_note", json.dumps({"note": "Yang prefers short answers"}))
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("Noted!"),
+        ]
+    )
+    brain = make_brain(tmp_path, client)
+    brain.begin_conversation("p1", "Yang")
+    assert brain.respond("remember I prefer short answers", speaker_name="Yang") == "Noted!"
+    hits = brain._store.search_memories(
+        FakeEmbedder().embed(["Yang prefers short answers"])[0], person_id="p1"
+    )
+    assert len(hits) == 1 and "short answers" in hits[0].text
+
+
+def test_save_note_without_person_is_refused(tmp_path):
+    tool_call = FakeToolCall("save_note", json.dumps({"note": "whatever"}))
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("Sorry, I don't know who you are."),
+        ]
+    )
+    brain = make_brain(tmp_path, client)  # no begin_conversation -> anonymous
+    brain.respond("remember this")
+    tool_result = client.chat.completions.calls[1]["messages"][-1]
+    assert tool_result["role"] == "tool" and "don't know who" in tool_result["content"]
+
+
+def test_end_conversation_stores_summary(tmp_path):
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage("nice chat"),                       # respond
+            FakeChoiceMessage("- Yang is planning a demo day"),   # summary
+        ]
+    )
+    brain = make_brain(tmp_path, client)
+    brain.begin_conversation("p1", "Yang")
+    brain.respond("we're planning a demo day", speaker_name="Yang")
+    brain.end_conversation()
+    hits = brain._store.search_memories(
+        FakeEmbedder().embed(["demo day"])[0], person_id="p1", k=5
+    )
+    assert any("demo day" in h.text for h in hits)
+    assert brain._history == []  # reset after ending
+
+
+def test_end_conversation_skips_summary_when_no_exchange(tmp_path):
+    client = FakeLLMClient(reply="unused")
+    brain = make_brain(tmp_path, client)
+    brain.begin_conversation("p1", "Yang")
+    brain.end_conversation()  # no respond() happened
+    assert client.chat.completions.calls == []  # no summary LLM call
+
+
 def test_history_trimmed(tmp_path):
     client = FakeLLMClient(reply="ok")
     brain = make_brain(tmp_path, client)

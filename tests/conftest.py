@@ -75,15 +75,19 @@ class FakeLLMClient:
 
 
 class FakeBrain:
-    """Scripted ChatBrain stand-in: echoes questions, records resets."""
+    """Scripted ChatBrain stand-in: echoes questions, records lifecycle."""
 
     def __init__(self, fail: bool = False):
-        self.resets = 0
+        self.begun: list[tuple[str | None, str | None]] = []
+        self.ended = 0
         self.asked: list[tuple[str, str | None]] = []
         self._fail = fail
 
-    def reset(self) -> None:
-        self.resets += 1
+    def begin_conversation(self, person_id, name) -> None:
+        self.begun.append((person_id, name))
+
+    def end_conversation(self) -> None:
+        self.ended += 1
 
     def respond(self, question: str, speaker_name: str | None = None) -> str:
         if self._fail:

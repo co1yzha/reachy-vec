@@ -90,6 +90,7 @@ def run(
         store=store,
         greet_cooldown_s=settings.greet_cooldown_s,
         silence_timeout_s=settings.silence_timeout_s,
+        idle_sleep_s=settings.idle_sleep_s,
     )
     typer.echo("Oracle running - walk into frame. Ctrl+C to stop.")
     try:

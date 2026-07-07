@@ -37,6 +37,7 @@ class OracleLoop:
         greet_cooldown_s: float = 7200.0,
         silence_timeout_s: float = 30.0,
         unknown_stable_polls: int = 3,
+        idle_sleep_s: float = 300.0,
     ):
         self._sight = sight
         self._transcriber = transcriber
@@ -49,6 +50,9 @@ class OracleLoop:
         self._greet_cooldown_s = greet_cooldown_s
         self._silence_timeout_s = silence_timeout_s
         self._unknown_stable_polls = unknown_stable_polls
+        self._idle_sleep_s = idle_sleep_s
+        self._last_face_at = clock()
+        self._asleep = False
 
     # -- public ---------------------------------------------------------
 
@@ -62,7 +66,9 @@ class OracleLoop:
         while True:
             obs = self._sight()
             if obs is None:
+                self._maybe_sleep()
                 return "no-face"
+            self._note_presence()
             if obs.person_id is not None:
                 self._converse(obs.person_id, obs.name)
                 return "conversation"
@@ -81,7 +87,7 @@ class OracleLoop:
     # -- states ----------------------------------------------------------
 
     def _converse(self, person_id: str, name: str) -> None:
-        self._brain.reset()  # fresh conversation per visit
+        self._brain.begin_conversation(person_id, name)
         if self._cooldown_expired(person_id):
             self._speaker.speak(f"Hi {name}! What can I help you with?")
             self._body.perform("greet")
@@ -93,6 +99,7 @@ class OracleLoop:
             question = self._transcriber.listen_once(self._silence_timeout_s)
             if question is None:
                 self._body.perform("goodbye")
+                self._brain.end_conversation()  # distill memories of the visit
                 return
             try:
                 reply = self._brain.respond(question, speaker_name=name)
@@ -126,6 +133,21 @@ class OracleLoop:
                 return "enrolled"
         self._speaker.speak("Let's try again another time.")
         return "enroll-declined"
+
+    # -- wake/sleep --------------------------------------------------------
+
+    def _maybe_sleep(self) -> None:
+        if not self._asleep and self._clock() - self._last_face_at >= self._idle_sleep_s:
+            logger.info("no faces for %.0fs - going to sleep", self._idle_sleep_s)
+            self._body.perform("sleep")
+            self._asleep = True
+
+    def _note_presence(self) -> None:
+        self._last_face_at = self._clock()
+        if self._asleep:
+            logger.info("face detected - waking up")
+            self._body.perform("wake")
+            self._asleep = False
 
     # -- helpers ----------------------------------------------------------
 

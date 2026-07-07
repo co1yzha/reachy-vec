@@ -24,9 +24,25 @@ def test_null_body_is_silent_noop():
 class RecordingMini:
     def __init__(self):
         self.calls = []
+        self.modes: list[str] = []
 
     def goto_target(self, head=None, antennas=None, duration=0.5):
         self.calls.append((head is not None, tuple(antennas), duration))
+
+    def goto_sleep(self):
+        self.modes.append("sleep")
+
+    def wake_up(self):
+        self.modes.append("wake")
+
+
+def test_robot_body_sleep_and_wake_use_sdk_modes():
+    mini = RecordingMini()
+    body = RobotBody(mini)
+    body.perform("sleep")
+    body.perform("wake")
+    assert mini.modes == ["sleep", "wake"]
+    assert mini.calls == []  # no keyframes for mode changes
 
 
 def test_robot_body_plays_each_keyframe():

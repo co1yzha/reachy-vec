@@ -10,6 +10,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable, Protocol
 
 from reachy_vec.config import settings

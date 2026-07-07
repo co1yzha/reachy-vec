@@ -26,6 +26,12 @@ class RobotBody:
         self._mini = mini
 
     def perform(self, motion: str) -> None:
+        if motion == "sleep":
+            self._mini.goto_sleep()
+            return
+        if motion == "wake":
+            self._mini.wake_up()
+            return
         frames = MOTIONS.get(motion)
         if frames is None:
             logger.warning("Unknown motion %r", motion)
