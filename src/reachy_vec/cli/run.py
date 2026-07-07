@@ -85,7 +85,7 @@ def run(
         body=make_body(),
         brain=brain,
         enroll_capture=lambda name: enroll_person(
-            name, camera, matcher, store, speaker.speak
+            name, camera, matcher, store, speaker.speak, faces_dir=settings.faces_dir
         ),
         store=store,
         greet_cooldown_s=settings.greet_cooldown_s,

@@ -18,7 +18,9 @@ def enroll(name: str) -> None:
         typer.echo(f">> {msg}")
         time.sleep(1.5)  # give the person a beat to move
 
-    person_id = enroll_person(name, camera, matcher, store, prompt)
+    person_id = enroll_person(
+        name, camera, matcher, store, prompt, faces_dir=settings.faces_dir
+    )
     if person_id is None:
         typer.echo("No usable face captured - check lighting/camera and retry.", err=True)
         raise typer.Exit(code=1)

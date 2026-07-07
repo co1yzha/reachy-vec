@@ -93,8 +93,13 @@ def enroll_person(
     store: Store,
     prompt: Callable[[str], None],
     n_frames: int = 5,
+    faces_dir: Path | None = None,
 ) -> str | None:
-    """Capture n_frames embeddings; returns person_id or None if no usable face."""
+    """Capture n_frames embeddings; returns person_id or None if no usable face.
+
+    With faces_dir set, each accepted frame is also saved there as
+    {person_id}-{i}.jpg for later audit or re-embedding.
+    """
     person_id = f"person-{uuid.uuid4().hex[:8]}"
     now = datetime.now(timezone.utc).isoformat()
     rows: list[FaceRow] = []
@@ -104,6 +109,11 @@ def enroll_person(
         vector = matcher.embed(frame) if frame is not None else None
         if vector is None:
             continue
+        if faces_dir is not None:
+            import cv2
+
+            faces_dir.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(faces_dir / f"{person_id}-{i}.jpg"), frame)
         rows.append(
             FaceRow(
                 embedding_id=f"{person_id}:{i}",

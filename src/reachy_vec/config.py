@@ -41,5 +41,9 @@ class Settings(BaseSettings):
     def lancedb_dir(self) -> Path:
         return self.data_dir / "lancedb"
 
+    @property
+    def faces_dir(self) -> Path:
+        return self.data_dir / "faces"
+
 
 settings = Settings()
