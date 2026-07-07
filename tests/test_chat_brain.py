@@ -299,6 +299,38 @@ def test_near_duplicate_memories_are_skipped(tmp_path):
     )
 
 
+def test_streaming_emits_sentences_progressively(tmp_path):
+    client = FakeLLMClient(reply="First sentence here. Second one arrives! And a third?")
+    brain = make_brain(tmp_path, client)
+    sentences: list[str] = []
+    reply = brain.respond("chat to me", speaker_name="Yang", on_sentence=sentences.append)
+    assert sentences == [
+        "First sentence here.",
+        "Second one arrives!",
+        "And a third?",
+    ]
+    assert reply == "First sentence here. Second one arrives! And a third?"
+    assert client.chat.completions.last_kwargs["stream"] is True
+
+
+def test_streaming_with_tool_call_speaks_only_final_answer(tmp_path):
+    opened: list[str] = []
+    tool_call = FakeToolCall(
+        "open_url", json.dumps({"url": "https://example.org/food"})
+    )
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("Opening it now. Have a look!"),
+        ]
+    )
+    brain = make_brain(tmp_path, client, opener=opened.append)
+    sentences: list[str] = []
+    brain.respond("open the food demo", on_sentence=sentences.append)
+    assert opened == ["https://example.org/food"]
+    assert sentences == ["Opening it now.", "Have a look!"]
+
+
 def test_history_trimmed(tmp_path):
     client = FakeLLMClient(reply="ok")
     brain = make_brain(tmp_path, client)

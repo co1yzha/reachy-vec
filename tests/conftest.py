@@ -41,6 +41,48 @@ class FakeResponse:
         self.choices = [FakeChoice(message)]
 
 
+class FakeDelta:
+    def __init__(self, content=None, tool_calls=None):
+        self.content = content
+        self.tool_calls = tool_calls
+
+
+class FakeToolCallDelta:
+    def __init__(self, index: int, call_id, name, arguments):
+        self.index = index
+        self.id = call_id
+        self.function = type("F", (), {"name": name, "arguments": arguments})()
+
+
+class FakeStreamChunk:
+    def __init__(self, delta: FakeDelta):
+        self.choices = [type("C", (), {"delta": delta})()]
+
+
+def _message_to_stream(message: FakeChoiceMessage):
+    """Split a scripted message into streaming chunks (content in small deltas)."""
+    chunks = []
+    if message.tool_calls:
+        for i, tc in enumerate(message.tool_calls):
+            args = tc.function.arguments
+            half = max(1, len(args) // 2)
+            chunks.append(
+                FakeStreamChunk(FakeDelta(tool_calls=[
+                    FakeToolCallDelta(i, tc.id, tc.function.name, args[:half])
+                ]))
+            )
+            chunks.append(
+                FakeStreamChunk(FakeDelta(tool_calls=[
+                    FakeToolCallDelta(i, None, None, args[half:])
+                ]))
+            )
+    if message.content:
+        text = message.content
+        for start in range(0, len(text), 8):
+            chunks.append(FakeStreamChunk(FakeDelta(content=text[start:start + 8])))
+    return iter(chunks)
+
+
 class FakeCompletions:
     """Serves scripted messages in order (repeating the last one), records calls."""
 
@@ -55,7 +97,10 @@ class FakeCompletions:
     def create(self, **kwargs):
         self.calls.append(kwargs)
         index = min(len(self.calls) - 1, len(self._messages) - 1)
-        return FakeResponse(self._messages[index])
+        message = self._messages[index]
+        if kwargs.get("stream"):
+            return _message_to_stream(message)
+        return FakeResponse(message)
 
 
 class FakeChat:
@@ -89,11 +134,14 @@ class FakeBrain:
     def end_conversation(self) -> None:
         self.ended += 1
 
-    def respond(self, question: str, speaker_name: str | None = None) -> str:
+    def respond(self, question: str, speaker_name: str | None = None, on_sentence=None) -> str:
         if self._fail:
             raise RuntimeError("api down")
         self.asked.append((question, speaker_name))
-        return f"answer to {question}"
+        reply = f"answer to {question}"
+        if on_sentence is not None:
+            on_sentence(reply)
+        return reply
 
 
 class FakeSpeaker:

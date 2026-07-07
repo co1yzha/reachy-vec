@@ -209,7 +209,15 @@ class ChatBrain:
 
     # -- responding ---------------------------------------------------------
 
-    def respond(self, question: str, speaker_name: str | None = None) -> str:
+    def respond(
+        self,
+        question: str,
+        speaker_name: str | None = None,
+        on_sentence: Callable[[str], None] | None = None,
+    ) -> str:
+        """Answer one utterance. With on_sentence, the LLM response streams
+        and each completed sentence is emitted as it arrives (speech starts
+        after the first sentence instead of the full reply)."""
         vector = self._embedder.embed([question])[0]
         self._history.append(
             {
@@ -222,12 +230,12 @@ class ChatBrain:
                 ),
             }
         )
-        message = self._complete()
+        message = self._complete(on_sentence)
         if getattr(message, "tool_calls", None):
             self._history.append(_assistant_tool_message(message))
             for call in message.tool_calls:
                 self._history.append(self._execute_tool(call))
-            message = self._complete()
+            message = self._complete(on_sentence)
         text = (message.content or "").strip()
         self._history.append({"role": "assistant", "content": text})
         self._exchanges += 1
@@ -255,13 +263,45 @@ class ChatBrain:
             memories="\n".join(f"- {h.text}" for h in hits),
         )
 
-    def _complete(self):
-        response = self._client.chat.completions.create(
+    def _complete(self, on_sentence: Callable[[str], None] | None = None):
+        if on_sentence is None:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "system", "content": PERSONALITY}, *self._history],
+                tools=TOOLS,
+            )
+            return response.choices[0].message
+        return self._complete_streaming(on_sentence)
+
+    def _complete_streaming(self, on_sentence: Callable[[str], None]):
+        stream = self._client.chat.completions.create(
             model=self._model,
             messages=[{"role": "system", "content": PERSONALITY}, *self._history],
             tools=TOOLS,
+            stream=True,
         )
-        return response.choices[0].message
+        content, buffer = "", ""
+        tool_calls: dict[int, dict] = {}
+        for chunk in stream:
+            delta = chunk.choices[0].delta
+            for tc in getattr(delta, "tool_calls", None) or []:
+                entry = tool_calls.setdefault(
+                    tc.index, {"id": None, "name": "", "arguments": ""}
+                )
+                if tc.id:
+                    entry["id"] = tc.id
+                if getattr(tc.function, "name", None):
+                    entry["name"] = tc.function.name
+                if getattr(tc.function, "arguments", None):
+                    entry["arguments"] += tc.function.arguments
+            if getattr(delta, "content", None):
+                content += delta.content
+                if not tool_calls:  # don't speak alongside pending tool calls
+                    buffer += delta.content
+                    buffer = _flush_sentences(buffer, on_sentence)
+        if not tool_calls and buffer.strip():
+            on_sentence(buffer.strip())
+        return _StreamedMessage(content, tool_calls)
 
     def _execute_tool(self, call) -> dict:
         try:
@@ -400,6 +440,46 @@ class ChatBrain:
             # never let the window start mid-tool-exchange
             while self._history and self._history[0]["role"] == "tool":
                 self._history.pop(0)
+
+
+SENTENCE_END = (". ", "! ", "? ")
+
+
+def _flush_sentences(buffer: str, on_sentence: Callable[[str], None]) -> str:
+    """Emit each complete sentence in buffer; return the unfinished tail."""
+    while True:
+        cut = -1
+        for mark in SENTENCE_END:
+            found = buffer.find(mark)
+            if found != -1 and (cut == -1 or found < cut):
+                cut = found
+        if cut == -1:
+            return buffer
+        sentence, buffer = buffer[: cut + 1].strip(), buffer[cut + 2 :]
+        if sentence:
+            on_sentence(sentence)
+
+
+class _ToolFunction:
+    def __init__(self, name: str, arguments: str):
+        self.name = name
+        self.arguments = arguments
+
+
+class _ToolCall:
+    def __init__(self, call_id: str, name: str, arguments: str):
+        self.id = call_id
+        self.type = "function"
+        self.function = _ToolFunction(name, arguments)
+
+
+class _StreamedMessage:
+    def __init__(self, content: str, tool_calls: dict[int, dict]):
+        self.content = content or None
+        self.tool_calls = [
+            _ToolCall(entry["id"] or f"call_{index}", entry["name"], entry["arguments"])
+            for index, entry in sorted(tool_calls.items())
+        ] or None
 
 
 def _assistant_tool_message(message) -> dict:

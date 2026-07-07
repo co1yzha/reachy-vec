@@ -103,8 +103,11 @@ class OracleLoop:
                 self._brain.end_conversation()  # distill memories of the visit
                 return
             try:
-                reply = self._brain.respond(question, speaker_name=name)
-                self._speaker.speak(reply)
+                # sentences are spoken as they stream in; respond blocks
+                # until the reply is complete
+                self._brain.respond(
+                    question, speaker_name=name, on_sentence=self._speaker.speak
+                )
                 self._body.perform("nod")
             except Exception:
                 logger.exception("brain.respond failed")
