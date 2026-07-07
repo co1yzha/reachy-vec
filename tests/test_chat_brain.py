@@ -186,6 +186,24 @@ def test_end_conversation_skips_summary_when_no_exchange(tmp_path):
     assert client.chat.completions.calls == []  # no summary LLM call
 
 
+def test_near_duplicate_memories_are_skipped(tmp_path):
+    client = FakeLLMClient(reply="ok")
+    brain = make_brain(tmp_path, client)
+    brain.begin_conversation("p1", "Yang")
+    brain._store_memories(["Yang prefers short answers"])
+    brain._store_memories(["Yang prefers short answers"])   # exact dup -> skip
+    brain._store_memories(["Yang is planning a demo day"])  # different -> stored
+    vec = FakeEmbedder().embed(["Yang prefers short answers"])[0]
+    hits = brain._store.search_memories(vec, person_id="p1", k=10)
+    texts = [h.text for h in hits]
+    assert texts.count("Yang prefers short answers") == 1
+    all_vec = FakeEmbedder().embed(["Yang is planning a demo day"])[0]
+    assert any(
+        "demo day" in h.text
+        for h in brain._store.search_memories(all_vec, person_id="p1", k=10)
+    )
+
+
 def test_history_trimmed(tmp_path):
     client = FakeLLMClient(reply="ok")
     brain = make_brain(tmp_path, client)

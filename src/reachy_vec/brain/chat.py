@@ -259,8 +259,12 @@ class ChatBrain:
             return
         now = datetime.now(timezone.utc).isoformat()
         vectors = self._embedder.embed(notes)
-        self._store.add_memories(
-            [
+        rows = []
+        for note, vector in zip(notes, vectors):
+            if self._is_duplicate_memory(vector):
+                logger.info("skipping near-duplicate memory: %r", note)
+                continue
+            rows.append(
                 MemoryRow(
                     memory_id=f"mem-{uuid.uuid4().hex[:10]}",
                     person_id=self._person_id,
@@ -268,9 +272,19 @@ class ChatBrain:
                     vector=vector,
                     created_at=now,
                 )
-                for note, vector in zip(notes, vectors)
-            ]
-        )
+            )
+        self._store.add_memories(rows)
+
+    DUPLICATE_SIMILARITY = 0.97
+
+    def _is_duplicate_memory(self, vector: list[float]) -> bool:
+        hits = self._store.search_memories(vector, person_id=self._person_id, k=1)
+        if not hits:
+            return False
+        existing = hits[0].vector
+        dot = sum(a * b for a, b in zip(vector, existing))
+        norms = (sum(a * a for a in vector) ** 0.5) * (sum(b * b for b in existing) ** 0.5)
+        return norms > 0 and dot / norms >= self.DUPLICATE_SIMILARITY
 
     def _trim(self) -> None:
         if len(self._history) > MAX_HISTORY_MESSAGES:
