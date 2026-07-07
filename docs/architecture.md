@@ -24,10 +24,12 @@ summary.
 - **Package layout:** `store/` (LanceDB + ingestion + mongo sync), `brain/`
   (RAG, oracle state machine), `perception/` (camera, face ID), `audio/`
   (listen/speak), `body/` (motions), `cli/` (one file per command).
-- **One LanceDB database, three active tables:** `docs` (text chunks +
+- **One LanceDB database, four active tables:** `docs` (text chunks +
   384-dim BGE vectors), `people` (512-dim insightface vectors, one row per
-  captured frame), `greetings` (per-person last-greeted timestamps).
-  `memories` and `messages` arrive in Phases 2–3.
+  captured frame), `greetings` (per-person last-greeted timestamps),
+  `memories` (per-person notes: saved via the save_note tool or distilled
+  automatically when a conversation ends, recalled by vector search each
+  turn). `messages` arrives in Phase 3.
 - **Everything heavy is behind a protocol with a test fake** (`Embedder`,
   `Body`, `Transcriber`, `Speaker`, `FaceMatcher`, `Camera`) — the whole
   state machine runs in pytest without devices, models, or network.
@@ -88,6 +90,7 @@ all, so a bad angle of a known person is neither greeted nor re-enrolled.
 | `FACE_THRESHOLD` | `0.45` | cosine gate for recognizing a face |
 | `GREET_COOLDOWN_S` | `7200` | spoken greeting at most every 2 h/person |
 | `SILENCE_TIMEOUT_S` | `30` | quiet time that ends a conversation |
+| `IDLE_SLEEP_S` | `300` | no faces for this long → robot sleeps (wakes on sight) |
 | `CAMERA_INDEX` | `0` | which webcam |
 | `DATA_DIR` | `data` | LanceDB lives at `<data_dir>/lancedb` |
 

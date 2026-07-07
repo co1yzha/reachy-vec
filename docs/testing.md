@@ -78,6 +78,9 @@ Walk through the checklist:
 | Stay quiet 30 s | Goodbye nod, back to idle |
 | Return immediately | Silent head-turn only (greeting cooldown) |
 | Un-enrolled person, ~3 s in frame | Enrollment offer → yes → name → confirm → captures |
+| Say "remember that I ..." | "Noted" — stored; verify it survives to the next visit |
+| Leave, return later, ask "what was I working on?" | Recalls memories from earlier visits |
+| Nobody in frame for 5 min | Robot slumps to sleep; wakes when you appear |
 
 ## Troubleshooting
 
