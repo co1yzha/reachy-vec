@@ -43,7 +43,9 @@ PERSONALITY = (
     "when they fit; don't recite them.\n\n"
     "Tools: open_url opens a demo in the browser (take the URL from context); "
     "save_note stores something worth remembering about this person when they "
-    "ask you to remember, or share a clear preference."
+    "ask you to remember, or share a clear preference; send_message relays a "
+    "spoken message to an enrolled teammate next time you see them; "
+    "get_weather checks the live weather outside the lab."
 )
 
 TOOLS = [
@@ -73,6 +75,24 @@ TOOLS = [
                     "note": {"type": "string", "description": "short third-person fact to remember"},
                 },
                 "required": ["note"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_message",
+            "description": (
+                "Relay a message to an enrolled teammate; it is spoken to them "
+                "the next time the robot sees their face."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to_name": {"type": "string", "description": "recipient's name"},
+                    "message": {"type": "string", "description": "what to tell them"},
+                },
+                "required": ["to_name", "message"],
             },
         },
     },
@@ -209,7 +229,11 @@ class ChatBrain:
             args = json.loads(call.function.arguments)
         except Exception:
             args = {}
-        handlers = {"open_url": self._tool_open_url, "save_note": self._tool_save_note}
+        handlers = {
+            "open_url": self._tool_open_url,
+            "save_note": self._tool_save_note,
+            "send_message": self._tool_send_message,
+        }
         handler = handlers.get(call.function.name)
         result = handler(args) if handler else "unknown tool"
         return {"role": "tool", "tool_call_id": call.id, "content": result}
@@ -235,6 +259,37 @@ class ChatBrain:
         self._store_memories([note])
         logger.info("save_note for %s: %r", self._person_name, note)
         return f"noted: {note}"
+
+    def _tool_send_message(self, args: dict) -> str:
+        if not self._person_id:
+            return "can't send: I don't know who's asking (not a recognized visit)"
+        to_name = args.get("to_name", "").strip()
+        text = args.get("message", "").strip()
+        if not to_name or not text:
+            return "can't send: need both a recipient and a message"
+        recipient = self._store.find_person_by_name(to_name)
+        if recipient is None:
+            return (
+                f"can't send: I don't know anyone called {to_name} - "
+                "I can only relay messages to people I've met (enrolled)"
+            )
+        to_person, resolved_name = recipient
+        from reachy_vec.store.schemas import MessageRow
+
+        self._store.add_message(
+            MessageRow(
+                message_id=f"msg-{uuid.uuid4().hex[:10]}",
+                from_person=self._person_id,
+                from_name=self._person_name or "someone",
+                to_person=to_person,
+                to_name=resolved_name,
+                text=text,
+                created_at=datetime.now(timezone.utc).isoformat(),
+                delivered_at="",
+            )
+        )
+        logger.info("message queued for %s from %s: %r", resolved_name, self._person_name, text)
+        return f"message queued for {resolved_name}; I'll pass it on next time I see them"
 
     def _summarize_and_store(self) -> None:
         response = self._client.chat.completions.create(

@@ -4,12 +4,13 @@ from pathlib import Path
 
 import lancedb
 
-from reachy_vec.store.schemas import DocChunk, FaceRow, GreetingRow, MemoryRow
+from reachy_vec.store.schemas import DocChunk, FaceRow, GreetingRow, MemoryRow, MessageRow
 
 DOCS_TABLE = "docs"
 PEOPLE_TABLE = "people"
 GREETINGS_TABLE = "greetings"
 MEMORIES_TABLE = "memories"
+MESSAGES_TABLE = "messages"
 
 
 class Store:
@@ -114,6 +115,38 @@ class Store:
             .limit(k)
             .to_pydantic(MemoryRow)
         )
+
+    # -- messages (Phase 3) --------------------------------------------------
+
+    def add_message(self, row: MessageRow) -> None:
+        self._table(MESSAGES_TABLE, MessageRow).add([row])
+
+    def pending_messages_for(self, person_id: str) -> list[MessageRow]:
+        table = self._table(MESSAGES_TABLE, MessageRow)
+        rows = [
+            r
+            for r in table.to_arrow().to_pylist()
+            if r["to_person"] == person_id and not r["delivered_at"]
+        ]
+        rows.sort(key=lambda r: r["created_at"])
+        return [MessageRow(**{k: r[k] for k in MessageRow.model_fields}) for r in rows]
+
+    def mark_delivered(self, message_id: str) -> None:
+        from datetime import datetime, timezone
+
+        escaped = message_id.replace("'", "''")
+        self._table(MESSAGES_TABLE, MessageRow).update(
+            where=f"message_id = '{escaped}'",
+            values={"delivered_at": datetime.now(timezone.utc).isoformat()},
+        )
+
+    def find_person_by_name(self, name: str) -> tuple[str, str] | None:
+        """Case-insensitive lookup among enrolled people."""
+        wanted = name.strip().lower()
+        for r in self._table(PEOPLE_TABLE, FaceRow).to_arrow().to_pylist():
+            if r["name"].lower() == wanted:
+                return r["person_id"], r["name"]
+        return None
 
     def get_last_greeted(self, person_id: str) -> str | None:
         table = self._table(GREETINGS_TABLE, GreetingRow)

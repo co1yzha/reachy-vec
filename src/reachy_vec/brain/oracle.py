@@ -94,6 +94,7 @@ class OracleLoop:
             self._record_greeting(person_id)
         else:
             self._body.perform("acknowledge")
+        self._deliver_messages(person_id)
         while True:
             self._body.perform("listen")
             question = self._transcriber.listen_once(self._silence_timeout_s)
@@ -133,6 +134,14 @@ class OracleLoop:
                 return "enrolled"
         self._speaker.speak("Let's try again another time.")
         return "enroll-declined"
+
+    def _deliver_messages(self, person_id: str) -> None:
+        for msg in self._store.pending_messages_for(person_id):
+            self._speaker.speak(
+                f"By the way, {msg.from_name} left you a message: {msg.text}"
+            )
+            self._store.mark_delivered(msg.message_id)
+            logger.info("delivered message %s to %s", msg.message_id, msg.to_name)
 
     # -- wake/sleep --------------------------------------------------------
 

@@ -87,6 +87,28 @@ def test_no_face_at_all(tmp_path):
     assert loop.run_once() == "no-face"
 
 
+def test_pending_messages_delivered_on_greet(tmp_path):
+    from reachy_vec.store.schemas import MessageRow
+
+    store = Store(tmp_path / "db")
+    store.add_message(
+        MessageRow(
+            message_id="msg1",
+            from_person="p2",
+            from_name="Bob",
+            to_person="p1",
+            to_name="Alice",
+            text="the meeting moved to 3",
+            created_at="2026-07-07T00:00:00+00:00",
+            delivered_at="",
+        )
+    )
+    loop, speaker, _, _, _ = make_loop(tmp_path, sights=[ALICE], utterances=[], store=store)
+    assert loop.run_once() == "conversation"
+    assert any("Bob left you a message: the meeting moved to 3" in s for s in speaker.spoken)
+    assert store.pending_messages_for("p1") == []  # marked delivered
+
+
 def test_sleeps_after_idle_and_wakes_on_face(tmp_path):
     now = {"t": 1000.0}
     sights: list = []

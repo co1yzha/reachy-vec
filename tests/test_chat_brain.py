@@ -186,6 +186,60 @@ def test_end_conversation_skips_summary_when_no_exchange(tmp_path):
     assert client.chat.completions.calls == []  # no summary LLM call
 
 
+def enroll_bob(store):
+    from reachy_vec.store.schemas import FaceRow
+
+    store.add_face_rows(
+        [
+            FaceRow(
+                embedding_id="p2:0",
+                person_id="p2",
+                name="Bob",
+                vector=[0.5] * 512,
+                created_at="2026-07-07T00:00:00+00:00",
+            )
+        ]
+    )
+
+
+def test_send_message_tool_queues_for_enrolled_recipient(tmp_path):
+    tool_call = FakeToolCall(
+        "send_message", json.dumps({"to_name": "bob", "message": "meeting moved to 3"})
+    )
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("Will do - I'll tell Bob when I see him."),
+        ]
+    )
+    brain = make_brain(tmp_path, client)
+    enroll_bob(brain._store)
+    brain.begin_conversation("p1", "Yang")
+    reply = brain.respond("tell bob the meeting moved to 3", speaker_name="Yang")
+    assert "Bob" in reply
+    pending = brain._store.pending_messages_for("p2")
+    assert len(pending) == 1
+    assert pending[0].text == "meeting moved to 3"
+    assert pending[0].from_name == "Yang"
+
+
+def test_send_message_to_unknown_recipient_refused(tmp_path):
+    tool_call = FakeToolCall(
+        "send_message", json.dumps({"to_name": "Carol", "message": "hi"})
+    )
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("Sorry, I haven't met Carol."),
+        ]
+    )
+    brain = make_brain(tmp_path, client)
+    brain.begin_conversation("p1", "Yang")
+    brain.respond("tell carol hi", speaker_name="Yang")
+    tool_result = client.chat.completions.calls[1]["messages"][-1]
+    assert "don't know anyone called Carol" in tool_result["content"]
+
+
 def test_near_duplicate_memories_are_skipped(tmp_path):
     client = FakeLLMClient(reply="ok")
     brain = make_brain(tmp_path, client)

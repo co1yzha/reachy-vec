@@ -1,7 +1,7 @@
 """LanceDB table schemas.
 
-Implemented: docs (Phase 0), people + greetings (Phase 1), memories (Phase 2a).
-Future: messages (Phase 3).
+Implemented: docs (Phase 0), people + greetings (Phase 1), memories (Phase 2a),
+messages (Phase 3).
 """
 
 from lancedb.pydantic import LanceModel, Vector
@@ -39,3 +39,14 @@ class MemoryRow(LanceModel):
     text: str
     vector: Vector(EMBEDDING_DIM)
     created_at: str  # ISO-8601 UTC
+
+
+class MessageRow(LanceModel):
+    message_id: str
+    from_person: str
+    from_name: str
+    to_person: str
+    to_name: str
+    text: str
+    created_at: str    # ISO-8601 UTC
+    delivered_at: str  # ISO-8601 UTC; empty string = pending
