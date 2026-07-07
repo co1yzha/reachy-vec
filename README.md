@@ -10,8 +10,13 @@ audio/video over WiFi; the brain runs on a Mac (Apple silicon) — face ID
 (insightface), speaker ID (ECAPA), STT (faster-whisper), RAG via the OpenAI
 API, and voice-cloned TTS (fish-speech) back out through the robot's speaker.
 
-See [the design spec](docs/superpowers/specs/2026-07-06-team-familiar-design.md)
-for aims, architecture, and the phased roadmap.
+Docs:
+- **[Architecture](docs/architecture.md)** — how the robot works: the run
+  loop, data flow, and every config knob
+- **[Testing guide](docs/testing.md)** — automated suite + manual smoke
+  tests + troubleshooting
+- **[Design spec](docs/superpowers/specs/2026-07-06-team-familiar-design.md)** —
+  aims, architecture decisions, and the phased roadmap ([all specs & plans](docs/superpowers/))
 
 ## Roadmap
 
