@@ -1,6 +1,25 @@
+import logging
+
 import typer
 
 from reachy_vec.config import settings
+
+
+def _setup_logging() -> None:
+    """INFO-level reachy_vec logs (heard utterances, opened URLs, errors)
+    to console and data/reachy.log. Transcripts of everyone who talks to
+    the robot end up in this file - delete it to forget."""
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    handlers = [
+        logging.StreamHandler(),
+        logging.FileHandler(settings.data_dir / "reachy.log"),
+    ]
+    formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+    app_logger = logging.getLogger("reachy_vec")
+    app_logger.setLevel(logging.INFO)
+    for handler in handlers:
+        handler.setFormatter(formatter)
+        app_logger.addHandler(handler)
 
 
 def run(
@@ -23,6 +42,7 @@ def run(
     from reachy_vec.store.embeddings import BgeEmbedder
 
     load_dotenv()
+    _setup_logging()
     store = Store(settings.lancedb_dir)
     if store.doc_count() == 0:
         typer.echo("Knowledge base is empty - run 'reachy-vec ingest <path>' first.")

@@ -108,6 +108,7 @@ class ChatBrain:
         text = (message.content or "").strip()
         self._history.append({"role": "assistant", "content": text})
         self._trim()
+        logger.info("reply to %s: %r", speaker_name or "user", text)
         return text
 
     # -- internals --------------------------------------------------------
