@@ -94,6 +94,18 @@ def make_speaker() -> Speaker:
     backend = settings.tts_backend
     if backend == "say":
         return SaySpeaker()
+    if backend == "qwen-tts":
+        sample = settings.voice_sample
+        if sample is None or not Path(sample).is_file():
+            raise ValueError(
+                "tts_backend=qwen-tts needs REACHY_VEC_VOICE_SAMPLE pointing to "
+                "a short WAV of the voice to clone (see .env.example)"
+            )
+        return QwenTTSSpeaker(
+            sample_path=Path(sample),
+            sample_text=settings.voice_sample_text,
+            model_id=settings.tts_model,
+        )
     raise NotImplementedError(
-        f"TTS backend {backend!r} is not wired yet - set REACHY_VEC_TTS_BACKEND=say"
+        f"TTS backend {backend!r} is not wired - use 'say' or 'qwen-tts'"
     )

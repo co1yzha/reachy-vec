@@ -24,9 +24,33 @@ def test_make_speaker_say_backend(monkeypatch):
     assert isinstance(make_speaker(), SaySpeaker)
 
 
-def test_make_speaker_unimplemented_backend_raises(monkeypatch):
-    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "fish-speech")
-    with pytest.raises(NotImplementedError, match="fish-speech"):
+def test_make_speaker_unknown_backend_raises(monkeypatch):
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "kokoro")
+    with pytest.raises(NotImplementedError, match="kokoro"):
+        make_speaker()
+
+
+def test_make_speaker_qwen_backend(monkeypatch, tmp_path):
+    sample = tmp_path / "me.wav"
+    sample.write_bytes(b"RIFF")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "qwen-tts")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.voice_sample", sample)
+    assert isinstance(make_speaker(), QwenTTSSpeaker)
+
+
+def test_make_speaker_qwen_requires_voice_sample(monkeypatch):
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "qwen-tts")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.voice_sample", None)
+    with pytest.raises(ValueError, match="REACHY_VEC_VOICE_SAMPLE"):
+        make_speaker()
+
+
+def test_make_speaker_qwen_rejects_missing_sample_file(monkeypatch, tmp_path):
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "qwen-tts")
+    monkeypatch.setattr(
+        "reachy_vec.audio.speak.settings.voice_sample", tmp_path / "nope.wav"
+    )
+    with pytest.raises(ValueError, match="REACHY_VEC_VOICE_SAMPLE"):
         make_speaker()
 
 
