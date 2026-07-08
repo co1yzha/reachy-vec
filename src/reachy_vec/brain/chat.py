@@ -14,6 +14,7 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from reachy_vec.perception.fusion import ANONYMOUS, TurnIdentity
 from reachy_vec.store.db import Store
 from reachy_vec.store.embeddings import Embedder
 from reachy_vec.store.schemas import MemoryRow
@@ -180,6 +181,8 @@ class ChatBrain:
         self._history: list[dict] = []
         self._person_id: str | None = None
         self._person_name: str | None = None
+        self._turn: TurnIdentity = ANONYMOUS
+        self._participants: dict[str, str | None] = {}
         self._exchanges = 0
         from reachy_vec.config import settings
 
@@ -193,11 +196,13 @@ class ChatBrain:
         self.reset()
         self._person_id = person_id
         self._person_name = name
+        if person_id:
+            self._participants[person_id] = name
 
     def end_conversation(self) -> None:
         """Distill the visit into stored memories, then reset."""
         try:
-            if self._person_id and self._exchanges > 0:
+            if self._participants and self._exchanges > 0:
                 self._summarize_and_store()
         except Exception:
             logger.exception("conversation summary failed; skipping")
@@ -208,6 +213,8 @@ class ChatBrain:
         self._history = []
         self._person_id = None
         self._person_name = None
+        self._turn = ANONYMOUS
+        self._participants = {}
         self._exchanges = 0
 
     # -- responding ---------------------------------------------------------
@@ -215,12 +222,16 @@ class ChatBrain:
     def respond(
         self,
         question: str,
-        speaker_name: str | None = None,
+        identity: TurnIdentity | None = None,
         on_sentence: Callable[[str], None] | None = None,
     ) -> str:
-        """Answer one utterance. With on_sentence, the LLM response streams
+        """Answer one utterance, attributed to `identity` (the fused per-turn
+        speaker; None = anonymous). With on_sentence, the LLM response streams
         and each completed sentence is emitted as it arrives (speech starts
         after the first sentence instead of the full reply)."""
+        self._turn = identity or ANONYMOUS
+        if self._turn.person_id:
+            self._participants[self._turn.person_id] = self._turn.name
         vector = self._embedder.embed([question])[0]
         self._history.append(
             {
@@ -228,7 +239,7 @@ class ChatBrain:
                 "content": CONTEXT_TEMPLATE.format(
                     context=self._retrieve_docs(vector) or "(nothing relevant found)",
                     memories=self._retrieve_memories(vector),
-                    speaker=speaker_name or self._person_name or "User",
+                    speaker=self._turn.name or "User",
                     question=question,
                 ),
             }
@@ -243,7 +254,7 @@ class ChatBrain:
         self._history.append({"role": "assistant", "content": text})
         self._exchanges += 1
         self._trim()
-        logger.info("reply to %s: %r", speaker_name or "user", text)
+        logger.info("reply to %s: %r", self._turn.name or "user", text)
         return text
 
     # -- internals ------------------------------------------------------------
@@ -256,13 +267,13 @@ class ChatBrain:
         )
 
     def _retrieve_memories(self, vector: list[float]) -> str:
-        if not self._person_id:
+        if not self._turn.person_id:
             return ""
-        hits = self._store.search_memories(vector, person_id=self._person_id, k=3)
+        hits = self._store.search_memories(vector, person_id=self._turn.person_id, k=3)
         if not hits:
             return ""
         return MEMORIES_TEMPLATE.format(
-            name=self._person_name or "them",
+            name=self._turn.name or "them",
             memories="\n".join(f"- {h.text}" for h in hits),
         )
 
@@ -334,13 +345,13 @@ class ChatBrain:
         return f"opened {url} in the browser"
 
     def _tool_save_note(self, args: dict) -> str:
-        if not self._person_id:
-            return "can't save: I don't know who I'm talking to (not a recognized visit)"
+        if not self._turn.person_id:
+            return "can't save: I don't know who's speaking (not a recognized voice/face)"
         note = args.get("note", "").strip()
         if not note:
             return "can't save an empty note"
-        self._store_memories([note])
-        logger.info("save_note for %s: %r", self._person_name, note)
+        self._store_memories([note], person_id=self._turn.person_id)
+        logger.info("save_note for %s: %r", self._turn.name, note)
         return f"noted: {note}"
 
     def _tool_get_weather(self, args: dict) -> str:
@@ -357,8 +368,8 @@ class ChatBrain:
         )
 
     def _tool_send_message(self, args: dict) -> str:
-        if not self._person_id:
-            return "can't send: I don't know who's asking (not a recognized visit)"
+        if not self._turn.person_id:
+            return "can't send: I don't know who's asking (not a recognized voice/face)"
         to_name = args.get("to_name", "").strip()
         text = args.get("message", "").strip()
         if not to_name or not text:
@@ -375,8 +386,8 @@ class ChatBrain:
         self._store.add_message(
             MessageRow(
                 message_id=f"msg-{uuid.uuid4().hex[:10]}",
-                from_person=self._person_id,
-                from_name=self._person_name or "someone",
+                from_person=self._turn.person_id,
+                from_name=self._turn.name or "someone",
                 to_person=to_person,
                 to_name=resolved_name,
                 text=text,
@@ -384,41 +395,43 @@ class ChatBrain:
                 delivered_at="",
             )
         )
-        logger.info("message queued for %s from %s: %r", resolved_name, self._person_name, text)
+        logger.info("message queued for %s from %s: %r", resolved_name, self._turn.name, text)
         return f"message queued for {resolved_name}; I'll pass it on next time I see them"
 
     def _summarize_and_store(self) -> None:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": PERSONALITY},
-                *self._history,
-                {
-                    "role": "user",
-                    "content": SUMMARY_PROMPT.format(name=self._person_name or "them"),
-                },
-            ],
-        )
-        text = (response.choices[0].message.content or "").strip()
-        if text.upper() == "NONE":
-            return
-        notes = [line.lstrip("- ").strip() for line in text.splitlines() if line.strip()]
-        self._store_memories([n for n in notes if n][:3])
+        """One distillation pass per enrolled person who spoke this visit."""
+        for person_id, name in self._participants.items():
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": PERSONALITY},
+                    *self._history,
+                    {
+                        "role": "user",
+                        "content": SUMMARY_PROMPT.format(name=name or "them"),
+                    },
+                ],
+            )
+            text = (response.choices[0].message.content or "").strip()
+            if text.upper() == "NONE":
+                continue
+            notes = [line.lstrip("- ").strip() for line in text.splitlines() if line.strip()]
+            self._store_memories([n for n in notes if n][:3], person_id=person_id)
 
-    def _store_memories(self, notes: list[str]) -> None:
+    def _store_memories(self, notes: list[str], *, person_id: str) -> None:
         if not notes:
             return
         now = datetime.now(UTC).isoformat()
         vectors = self._embedder.embed(notes)
         rows = []
         for note, vector in zip(notes, vectors, strict=True):
-            if self._is_duplicate_memory(vector):
+            if self._is_duplicate_memory(vector, person_id=person_id):
                 logger.info("skipping near-duplicate memory: %r", note)
                 continue
             rows.append(
                 MemoryRow(
                     memory_id=f"mem-{uuid.uuid4().hex[:10]}",
-                    person_id=self._person_id,
+                    person_id=person_id,
                     text=note,
                     vector=vector,
                     created_at=now,
@@ -428,8 +441,8 @@ class ChatBrain:
 
     DUPLICATE_SIMILARITY = 0.97
 
-    def _is_duplicate_memory(self, vector: list[float]) -> bool:
-        hits = self._store.search_memories(vector, person_id=self._person_id, k=1)
+    def _is_duplicate_memory(self, vector: list[float], *, person_id: str) -> bool:
+        hits = self._store.search_memories(vector, person_id=person_id, k=1)
         if not hits:
             return False
         existing = hits[0].vector

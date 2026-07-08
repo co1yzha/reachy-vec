@@ -1,6 +1,7 @@
 import json
 
 from reachy_vec.brain.chat import ChatBrain
+from reachy_vec.perception.fusion import TurnIdentity
 from reachy_vec.store.db import Store
 from reachy_vec.store.schemas import DocChunk
 from tests.conftest import (
@@ -9,6 +10,8 @@ from tests.conftest import (
     FakeLLMClient,
     FakeToolCall,
 )
+
+YANG = TurnIdentity("p1", "Yang")
 
 
 def seeded_store(tmp_path) -> Store:
@@ -42,7 +45,7 @@ def make_brain(tmp_path, client, opener=None):
 def test_context_and_speaker_injected_each_turn(tmp_path):
     client = FakeLLMClient(reply="It's the Food Mapping demo.")
     brain = make_brain(tmp_path, client)
-    reply = brain.respond("any demos about food?", speaker_name="Yang")
+    reply = brain.respond("any demos about food?", identity=YANG)
     assert reply == "It's the Food Mapping demo."
     sent = client.chat.completions.last_kwargs["messages"]
     assert sent[0]["role"] == "system" and "Reachy" in sent[0]["content"]
@@ -53,13 +56,13 @@ def test_context_and_speaker_injected_each_turn(tmp_path):
 def test_history_carries_across_turns_and_reset_clears(tmp_path):
     client = FakeLLMClient(reply="ok")
     brain = make_brain(tmp_path, client)
-    brain.respond("first question", speaker_name="Yang")
-    brain.respond("tell me more", speaker_name="Yang")
+    brain.respond("first question", identity=YANG)
+    brain.respond("tell me more", identity=YANG)
     sent = client.chat.completions.last_kwargs["messages"]
     joined = json.dumps(sent)
     assert "first question" in joined and "tell me more" in joined
     brain.reset()
-    brain.respond("fresh start", speaker_name="Yang")
+    brain.respond("fresh start", identity=YANG)
     sent = client.chat.completions.last_kwargs["messages"]
     assert "first question" not in json.dumps(sent)
 
@@ -76,7 +79,7 @@ def test_open_url_tool_executes_and_confirms(tmp_path):
         ]
     )
     brain = make_brain(tmp_path, client, opener=opened.append)
-    reply = brain.respond("open the food mapping demo", speaker_name="Yang")
+    reply = brain.respond("open the food mapping demo", identity=YANG)
     assert opened == ["https://example.org/food"]
     assert reply == "Opening the Food Mapping demo now!"
     # second call carried the tool result back to the model
@@ -123,7 +126,7 @@ def test_begin_conversation_recalls_person_memories(tmp_path):
         ]
     )
     brain.begin_conversation("p1", "Yang")
-    brain.respond("any coffee tips?", speaker_name="Yang")
+    brain.respond("any coffee tips?", identity=YANG)
     sent = client.chat.completions.last_kwargs["messages"]
     assert "prefers espresso over tea" in sent[-1]["content"]
 
@@ -138,7 +141,7 @@ def test_save_note_tool_stores_attributed_memory(tmp_path):
     )
     brain = make_brain(tmp_path, client)
     brain.begin_conversation("p1", "Yang")
-    assert brain.respond("remember I prefer short answers", speaker_name="Yang") == "Noted!"
+    assert brain.respond("remember I prefer short answers", identity=YANG) == "Noted!"
     hits = brain._store.search_memories(
         FakeEmbedder().embed(["Yang prefers short answers"])[0], person_id="p1"
     )
@@ -168,7 +171,7 @@ def test_end_conversation_stores_summary(tmp_path):
     )
     brain = make_brain(tmp_path, client)
     brain.begin_conversation("p1", "Yang")
-    brain.respond("we're planning a demo day", speaker_name="Yang")
+    brain.respond("we're planning a demo day", identity=YANG)
     brain.end_conversation()
     hits = brain._store.search_memories(
         FakeEmbedder().embed(["demo day"])[0], person_id="p1", k=5
@@ -214,7 +217,7 @@ def test_send_message_tool_queues_for_enrolled_recipient(tmp_path):
     brain = make_brain(tmp_path, client)
     enroll_bob(brain._store)
     brain.begin_conversation("p1", "Yang")
-    reply = brain.respond("tell bob the meeting moved to 3", speaker_name="Yang")
+    reply = brain.respond("tell bob the meeting moved to 3", identity=YANG)
     assert "Bob" in reply
     pending = brain._store.pending_messages_for("p2")
     assert len(pending) == 1
@@ -234,7 +237,7 @@ def test_send_message_to_unknown_recipient_refused(tmp_path):
     )
     brain = make_brain(tmp_path, client)
     brain.begin_conversation("p1", "Yang")
-    brain.respond("tell carol hi", speaker_name="Yang")
+    brain.respond("tell carol hi", identity=YANG)
     tool_result = client.chat.completions.calls[1]["messages"][-1]
     assert "don't know anyone called Carol" in tool_result["content"]
 
@@ -254,7 +257,7 @@ def test_get_weather_tool_reports_conditions(tmp_path):
         "weather_code": 2,
         "wind_speed_10m": 14.0,
     }
-    reply = brain.respond("what's the weather like?", speaker_name="Yang")
+    reply = brain.respond("what's the weather like?", identity=YANG)
     assert "18" in reply
     tool_result = client.chat.completions.calls[1]["messages"][-1]
     assert "18.2" in tool_result["content"]
@@ -284,9 +287,9 @@ def test_near_duplicate_memories_are_skipped(tmp_path):
     client = FakeLLMClient(reply="ok")
     brain = make_brain(tmp_path, client)
     brain.begin_conversation("p1", "Yang")
-    brain._store_memories(["Yang prefers short answers"])
-    brain._store_memories(["Yang prefers short answers"])   # exact dup -> skip
-    brain._store_memories(["Yang is planning a demo day"])  # different -> stored
+    brain._store_memories(["Yang prefers short answers"], person_id="p1")
+    brain._store_memories(["Yang prefers short answers"], person_id="p1")  # dup -> skip
+    brain._store_memories(["Yang is planning a demo day"], person_id="p1")  # stored
     vec = FakeEmbedder().embed(["Yang prefers short answers"])[0]
     hits = brain._store.search_memories(vec, person_id="p1", k=10)
     texts = [h.text for h in hits]
@@ -302,7 +305,7 @@ def test_streaming_emits_sentences_progressively(tmp_path):
     client = FakeLLMClient(reply="First sentence here. Second one arrives! And a third?")
     brain = make_brain(tmp_path, client)
     sentences: list[str] = []
-    reply = brain.respond("chat to me", speaker_name="Yang", on_sentence=sentences.append)
+    reply = brain.respond("chat to me", identity=YANG, on_sentence=sentences.append)
     assert sentences == [
         "First sentence here.",
         "Second one arrives!",
@@ -337,3 +340,56 @@ def test_history_trimmed(tmp_path):
         brain.respond(f"question {i}")
     sent = client.chat.completions.last_kwargs["messages"]
     assert len(sent) <= 22  # system + trimmed history
+
+
+def test_turn_identity_switches_attribution(tmp_path):
+    """Bob chimes into Alice's conversation; his note goes to Bob."""
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(
+                None, tool_calls=[FakeToolCall("save_note", '{"note": "Bob prefers tea"}')]
+            ),
+            FakeChoiceMessage("Noted, Bob!"),
+        ]
+    )
+    brain = make_brain(tmp_path, client)
+    brain.begin_conversation("p1", "Alice")
+    brain.respond("remember I prefer tea", identity=TurnIdentity("p2", "Bob"))
+    vec = FakeEmbedder().embed(["Bob prefers tea"])[0]
+    assert any("tea" in h.text for h in brain._store.search_memories(vec, person_id="p2", k=3))
+    assert brain._store.search_memories(vec, person_id="p1", k=3) == []
+
+
+def test_anonymous_turn_refuses_notes_despite_owner(tmp_path):
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[FakeToolCall("save_note", '{"note": "x"}')]),
+            FakeChoiceMessage("Sorry, I don't know who's asking."),
+        ]
+    )
+    brain = make_brain(tmp_path, client)
+    brain.begin_conversation("p1", "Alice")
+    brain.respond("remember this", identity=None)  # anonymous despite owner
+    vec = FakeEmbedder().embed(["x"])[0]
+    assert brain._store.search_memories(vec, person_id="p1", k=3) == []
+    tool_result = client.chat.completions.calls[1]["messages"][-1]
+    assert "don't know who's speaking" in tool_result["content"]
+
+
+def test_distillation_covers_every_speaker(tmp_path):
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage("hi alice"),
+            FakeChoiceMessage("hi bob"),
+            FakeChoiceMessage("- Alice likes charts"),  # summary for Alice
+            FakeChoiceMessage("- Bob is visiting"),     # summary for Bob
+        ]
+    )
+    brain = make_brain(tmp_path, client)
+    brain.begin_conversation("p1", "Alice")
+    brain.respond("hello", identity=TurnIdentity("p1", "Alice"))
+    brain.respond("hello from bob", identity=TurnIdentity("p2", "Bob"))
+    brain.end_conversation()
+    emb = FakeEmbedder()
+    assert brain._store.search_memories(emb.embed(["charts"])[0], person_id="p1", k=3)
+    assert brain._store.search_memories(emb.embed(["visiting"])[0], person_id="p2", k=3)

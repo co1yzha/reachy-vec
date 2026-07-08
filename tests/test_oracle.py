@@ -1,5 +1,6 @@
 from reachy_vec.brain.oracle import OracleLoop
 from reachy_vec.perception.face import Observation
+from reachy_vec.perception.fusion import TurnIdentity
 from reachy_vec.store.db import Store
 from tests.conftest import FakeBody, FakeBrain, FakeSpeaker, FakeTranscriber
 
@@ -37,7 +38,7 @@ def test_known_person_greet_question_answer_goodbye(tmp_path):
     assert store.get_last_greeted("p1") is not None           # cooldown recorded
     assert brain.begun == [("p1", "Alice")]                   # conversation opened
     assert brain.ended == 1                                   # memories distilled
-    assert brain.asked == [("when is standup?", "Alice")]     # speaker attributed
+    assert brain.asked == [("when is standup?", TurnIdentity("p1", "Alice"))]  # attributed
 
 
 def test_cooldown_suppresses_spoken_greeting(tmp_path):

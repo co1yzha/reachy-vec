@@ -135,10 +135,10 @@ class FakeBrain:
     def end_conversation(self) -> None:
         self.ended += 1
 
-    def respond(self, question: str, speaker_name: str | None = None, on_sentence=None) -> str:
+    def respond(self, question: str, identity=None, on_sentence=None) -> str:
         if self._fail:
             raise RuntimeError("api down")
-        self.asked.append((question, speaker_name))
+        self.asked.append((question, identity))
         reply = f"answer to {question}"
         if on_sentence is not None:
             on_sentence(reply)

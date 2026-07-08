@@ -8,6 +8,8 @@ import logging
 import time
 from datetime import UTC, datetime
 
+from reachy_vec.perception.fusion import TurnIdentity
+
 logger = logging.getLogger(__name__)
 
 APOLOGY = "Sorry, my brain isn't responding right now."
@@ -106,7 +108,9 @@ class OracleLoop:
                 # sentences are spoken as they stream in; respond blocks
                 # until the reply is complete
                 self._brain.respond(
-                    utterance.text, speaker_name=name, on_sentence=self._speaker.speak
+                    utterance.text,
+                    identity=TurnIdentity(person_id, name),
+                    on_sentence=self._speaker.speak,
                 )
                 self._body.perform("nod")
             except Exception:
