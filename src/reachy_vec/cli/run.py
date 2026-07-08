@@ -57,7 +57,9 @@ def run(
     matcher = InsightFaceMatcher(store)
     speaker_id = EcapaSpeakerIdentifier(store)
     speaker = make_speaker()
-    embedder = BgeEmbedder(settings.embedding_model)
+    embedder = BgeEmbedder(
+        settings.embedding_model, query_prefix=settings.embedding_query_prefix
+    )
     client = OpenAI()
 
     titles = store.demo_titles()
@@ -76,7 +78,7 @@ def run(
         client.chat.completions.create(
             model=settings.llm_model,
             messages=[{"role": "user", "content": "hi"}],
-            max_tokens=1,
+            max_completion_tokens=1,  # max_tokens is rejected by gpt-5* models
         )
     except Exception:
         pass  # no network now != no network later; the loop will surface it
@@ -89,7 +91,11 @@ def run(
         sight = lambda: matcher.observe(camera.read())  # noqa: E731
 
     brain = ChatBrain(
-        store=store, embedder=embedder, client=client, model=settings.llm_model
+        store=store,
+        embedder=embedder,
+        client=client,
+        model=settings.llm_model,
+        reasoning_effort=settings.llm_reasoning_effort,
     )
     loop = OracleLoop(
         sight=sight,

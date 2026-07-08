@@ -20,8 +20,11 @@ def chat() -> None:
         raise typer.Exit(code=1)
     brain = ChatBrain(
         store=store,
-        embedder=BgeEmbedder(settings.embedding_model),
+        embedder=BgeEmbedder(
+            settings.embedding_model, query_prefix=settings.embedding_query_prefix
+        ),
         client=OpenAI(),
         model=settings.llm_model,
+        reasoning_effort=settings.llm_reasoning_effort,
     )
     chat_loop(brain=brain)

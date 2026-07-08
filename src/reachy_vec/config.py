@@ -18,10 +18,14 @@ class Settings(BaseSettings):
     robot_host: str | None = None
 
     # Models
-    llm_model: str = "gpt-4o"
+    llm_model: str = "gpt-5-mini"
+    llm_reasoning_effort: str = "minimal"  # gpt-5* only; keeps time-to-first-sentence low
     stt_model: str = "base.en"  # faster-whisper size; english-only = fastest + most accurate for EN
     stt_backend: str = "local"  # local (faster-whisper) | openai (gpt-4o-transcribe)
     embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_query_prefix: str = (
+        "Represent this sentence for searching relevant passages: "
+    )  # BGE query instruction; set empty to disable for non-BGE models
     tts_backend: str = "say"  # say (works today) | fish-speech (planned primary) | openvoice
     voice_sample: Path | None = None  # reference audio for voice cloning
 

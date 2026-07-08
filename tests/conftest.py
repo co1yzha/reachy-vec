@@ -18,6 +18,9 @@ class FakeEmbedder:
             vectors.append([b / 256 for b in raw])
         return vectors
 
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed([text])[0]
+
 
 class FakeChoiceMessage:
     def __init__(self, content: str | None, tool_calls=None):
