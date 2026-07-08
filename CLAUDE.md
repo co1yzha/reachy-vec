@@ -20,6 +20,7 @@ uv run reachy-vec sync-mongo         # pull aixlab.demos into LanceDB (needs MON
 uv run reachy-vec ingest <path>      # add .md/.txt docs
 uv run reachy-vec enroll "Name"      # webcam face enrollment
 uv run reachy-vec run --preview      # full Oracle loop (webcam + mic)
+uv run reachy-vec dashboard          # local web UI to browse the LanceDB store
 
 # simulator (separate terminal, needed for `run` body motions):
 uv run mjpython .venv/bin/reachy-mini-daemon --sim      # with 3D viewer (macOS)

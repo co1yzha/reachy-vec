@@ -249,3 +249,29 @@ class Store:
         table = self._table(GREETINGS_TABLE, GreetingRow)
         table.delete(f"person_id = '{person_id}'")
         table.add([GreetingRow(person_id=person_id, last_greeted=when_iso)])
+
+    # -- inspection (dashboard) --------------------------------------------
+
+    def dump_tables(self, vector_head: int = 4) -> dict[str, list[dict]]:
+        """Read-only dump of every table for inspection. Vectors are
+        replaced with {dim, head} so the payload stays small."""
+        schemas = {
+            DOCS_TABLE: DocChunk,
+            PEOPLE_TABLE: FaceRow,
+            VOICES_TABLE: VoiceRow,
+            MEMORIES_TABLE: MemoryRow,
+            GREETINGS_TABLE: GreetingRow,
+            MESSAGES_TABLE: MessageRow,
+        }
+        out: dict[str, list[dict]] = {}
+        for name, schema in schemas.items():
+            rows = self._table(name, schema).to_arrow().to_pylist()
+            for row in rows:
+                vector = row.get("vector")
+                if vector is not None:
+                    row["vector"] = {
+                        "dim": len(vector),
+                        "head": [round(float(x), 3) for x in vector[:vector_head]],
+                    }
+            out[name] = rows
+        return out
