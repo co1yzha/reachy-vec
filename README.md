@@ -8,7 +8,8 @@ faces, voices) in one embedded LanceDB store.
 **Architecture:** the robot (Raspberry Pi 5) is a thin body streaming
 audio/video over WiFi; the brain runs on a Mac (Apple silicon) — face ID
 (insightface), speaker ID (ECAPA), STT (faster-whisper), RAG via the OpenAI
-API, and voice-cloned TTS (fish-speech) back out through the robot's speaker.
+API, and voice-cloned TTS (Qwen3-TTS via mlx-audio) back out through the
+robot's speaker.
 
 Docs:
 - **[Architecture](docs/architecture.md)** — how the robot works: the run
@@ -59,6 +60,21 @@ uv run reachy-mini-daemon --sim --headless
 
 Dashboard: http://localhost:8000. If the daemon reports a weird state after
 a crashed run, a stale process may hold port 8000: `pkill -f reachy-mini-daemon`.
+
+### Cloned voice (optional)
+
+By default the robot uses the macOS `say` voice. To have it speak in a cloned
+voice (fully local, Qwen3-TTS on MLX):
+
+1. Record ~10 seconds of clean speech, e.g.
+   `sox -d -r 24000 -c 1 data/voice_sample.wav trim 0 10`
+   (or QuickTime → export WAV). Only clone voices with the speaker's consent.
+2. In `.env`, set `REACHY_VEC_TTS_BACKEND=qwen-tts` and
+   `REACHY_VEC_VOICE_SAMPLE=data/voice_sample.wav`. Optionally set
+   `REACHY_VEC_VOICE_SAMPLE_TEXT` to the sample's transcript to skip a
+   one-off auto-transcription.
+3. `uv run reachy-vec run --preview` — the first run downloads the model
+   (~1.5 GB); expect 1–3 s of synthesis per sentence.
 
 ## Layout
 

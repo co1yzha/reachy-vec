@@ -26,8 +26,10 @@ class Settings(BaseSettings):
     embedding_query_prefix: str = (
         "Represent this sentence for searching relevant passages: "
     )  # BGE query instruction; set empty to disable for non-BGE models
-    tts_backend: str = "say"  # say (works today) | fish-speech (planned primary) | openvoice
-    voice_sample: Path | None = None  # reference audio for voice cloning
+    tts_backend: str = "say"  # say (macOS built-in) | qwen-tts (voice clone, local MLX)
+    tts_model: str = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16"  # mlx-audio model id
+    voice_sample: Path | None = None  # ~10s clean WAV of the voice to clone (qwen-tts)
+    voice_sample_text: str | None = None  # its transcript; omit -> auto-transcribed once
 
     # Perception
     face_threshold: float = 0.45  # cosine similarity; below = unknown

@@ -15,7 +15,7 @@ Current as of Phase 2b (speaker ID + fusion). Companion pages:
 | Voice activity detection | silero-vad (16 kHz, 512-sample frames) | local | `audio/listen.py:_AudioCapture` | not configurable |
 | Face detection + embedding | insightface `buffalo_s`, 512-dim | local (onnxruntime) | `perception/face.py` | not configurable (threshold is) |
 | Speaker ID | speechbrain ECAPA-TDNN `spkrec-ecapa-voxceleb`, 192-dim | local | `perception/voice.py` | `REACHY_VEC_VOICE_THRESHOLD` |
-| Text-to-speech | macOS `say` | local | `audio/speak.py` | `REACHY_VEC_TTS_BACKEND` (fish-speech planned) |
+| Text-to-speech | macOS `say` or Qwen3-TTS 0.6B voice clone (mlx-audio) | local | `audio/speak.py` | `REACHY_VEC_TTS_BACKEND`, `REACHY_VEC_VOICE_SAMPLE` |
 
 All local models lazy-load on first use; `reachy-vec run` warms them (plus
 the OpenAI TLS connection) at startup so the first conversation isn't slow.
