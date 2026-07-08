@@ -180,3 +180,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 data/
+
+# Claude Code (local agent settings/state)
+.claude/
+
+# VS Code (personal editor settings; commit deliberately if the team wants shared ones)
+.vscode/

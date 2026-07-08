@@ -1,0 +1,56 @@
+# Configuration reference
+
+All settings live in `src/reachy_vec/config.py` (`pydantic-settings`).
+Set them as environment variables with the `REACHY_VEC_` prefix or in
+`.env` at the repo root (e.g. `REACHY_VEC_LLM_MODEL=gpt-4o-mini`).
+Unknown keys in `.env` are ignored.
+
+## Secrets (no prefix)
+
+| Variable | Used by | Needed for |
+|---|---|---|
+| `OPENAI_API_KEY` | openai SDK directly | `chat`, `run` (LLM), `STT_BACKEND=openai` |
+| `MONGODB_URI` | `cli/sync.py` | `sync-mongo` only |
+
+## Models
+
+| Setting | Default | Notes |
+|---|---|---|
+| `LLM_MODEL` | `gpt-4o` | OpenAI chat model for answers, tools, and memory distillation |
+| `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | must stay 384-dim (`EMBEDDING_DIM`); changing models requires re-ingesting everything (docs and memories share the space) |
+| `STT_BACKEND` | `local` | `local` (faster-whisper) or `openai` (`gpt-4o-transcribe`; more accurate, ~1 s slower) |
+| `STT_MODEL` | `base.en` | faster-whisper size for the local backend; `small.en` = more accurate, slower |
+| `TTS_BACKEND` | `say` | macOS `say` today; `fish-speech` (voice-cloned) planned |
+| `VOICE_SAMPLE` | unset | reference audio for voice cloning (future TTS backends) |
+
+## Perception
+
+| Setting | Default | Notes |
+|---|---|---|
+| `FACE_THRESHOLD` | `0.45` | cosine gate for recognition; lower (e.g. 0.40) if known people show as unknown; within 0.05 below = ignored as "no face" |
+| `CAMERA_INDEX` | `0` | which webcam OpenCV opens |
+
+## Interaction pacing
+
+| Setting | Default | Notes |
+|---|---|---|
+| `GREET_COOLDOWN_S` | `7200` | spoken "Hi <name>!" at most every 2 h per person; within cooldown = silent acknowledge |
+| `SILENCE_TIMEOUT_S` | `30` | quiet time that ends a conversation (triggers memory distillation) |
+| `IDLE_SLEEP_S` | `300` | no faces for this long → sleep motion; wakes on the next face |
+
+## Environment
+
+| Setting | Default | Notes |
+|---|---|---|
+| `ROBOT_HOST` | unset | wireless Reachy Mini address; unset = simulator/headless body |
+| `DATA_DIR` | `data` | holds `lancedb/` (all tables), `faces/` (enrollment JPEGs), `reachy.log` (transcript log — privacy-relevant, gitignored) |
+| `WEATHER_LAT` / `WEATHER_LON` | `53.4084` / `-2.9916` | lab location for `get_weather` (Liverpool, UK; Open-Meteo, no key) |
+
+## Not configurable (code constants)
+
+Chunk size (1000 chars, `store/ingestion.py`), retrieval k (5 docs / 3
+memories, `brain/chat.py`), history window (20 messages), memory-duplicate
+threshold (0.97), VAD sensitivity (0.5) and end-of-utterance quiet (0.8 s,
+`audio/listen.py`), face borderline margin (0.05, `perception/face.py`),
+unknown-face stable polls (3), insightface model (`buffalo_s`). Promote one
+to `config.py` if you find yourself tuning it.

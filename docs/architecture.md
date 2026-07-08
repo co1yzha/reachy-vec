@@ -1,6 +1,6 @@
 # Architecture — how the robot works
 
-Current as of Phase 1.5. The design specs live in
+Current as of Phase 3. The design specs live in
 [`docs/superpowers/specs/`](superpowers/specs/); this page is the operational
 summary.
 
@@ -83,19 +83,9 @@ all, so a bad angle of a known person is neither greeted nor re-enrolled.
 3. Both are queried identically at runtime; sources are spoken/printed
    (`demo: Liverpool City Food Mapping`, `notes.md`).
 
-## Configuration (env vars / `.env`, prefix `REACHY_VEC_`)
+## Configuration
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `LLM_MODEL` | `gpt-4o` | OpenAI chat model for answers |
-| `STT_MODEL` | `base.en` | faster-whisper size (local backend) |
-| `STT_BACKEND` | `local` | `local` or `openai` (gpt-4o-transcribe) |
-| `TTS_BACKEND` | `say` | `say` now; `fish-speech`/`openvoice` planned |
-| `FACE_THRESHOLD` | `0.45` | cosine gate for recognizing a face |
-| `GREET_COOLDOWN_S` | `7200` | spoken greeting at most every 2 h/person |
-| `SILENCE_TIMEOUT_S` | `30` | quiet time that ends a conversation |
-| `IDLE_SLEEP_S` | `300` | no faces for this long → robot sleeps (wakes on sight) |
-| `CAMERA_INDEX` | `0` | which webcam |
-| `DATA_DIR` | `data` | LanceDB lives at `<data_dir>/lancedb` |
-
-Secrets (no prefix): `OPENAI_API_KEY`, `MONGODB_URI` — both read from `.env`.
+Env vars / `.env` with the `REACHY_VEC_` prefix; secrets (`OPENAI_API_KEY`,
+`MONGODB_URI`) have no prefix. Full reference with defaults and tuning
+notes: **[configuration.md](configuration.md)**. Per-pipeline detail (which
+model runs at each step): **[pipelines.md](pipelines.md)**.

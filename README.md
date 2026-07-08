@@ -12,7 +12,11 @@ API, and voice-cloned TTS (fish-speech) back out through the robot's speaker.
 
 Docs:
 - **[Architecture](docs/architecture.md)** — how the robot works: the run
-  loop, data flow, and every config knob
+  loop and data flow
+- **[Pipelines](docs/pipelines.md)** — each pipeline step by step, and
+  which model runs at every step
+- **[Configuration](docs/configuration.md)** — every knob, default, and
+  tuning note
 - **[Testing guide](docs/testing.md)** — automated suite + manual smoke
   tests + troubleshooting
 - **[Design spec](docs/superpowers/specs/2026-07-06-team-familiar-design.md)** —
