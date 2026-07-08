@@ -5,13 +5,21 @@ from pathlib import Path
 
 import lancedb
 
-from reachy_vec.store.schemas import DocChunk, FaceRow, GreetingRow, MemoryRow, MessageRow
+from reachy_vec.store.schemas import (
+    DocChunk,
+    FaceRow,
+    GreetingRow,
+    MemoryRow,
+    MessageRow,
+    VoiceRow,
+)
 
 DOCS_TABLE = "docs"
 PEOPLE_TABLE = "people"
 GREETINGS_TABLE = "greetings"
 MEMORIES_TABLE = "memories"
 MESSAGES_TABLE = "messages"
+VOICES_TABLE = "voices"
 
 
 class Store:
@@ -116,6 +124,53 @@ class Store:
             .limit(k)
             .to_pydantic(MemoryRow)
         )
+
+    # -- voices (Phase 2b) ----------------------------------------------------
+
+    def add_voice_rows(self, rows: list[VoiceRow]) -> None:
+        if rows:
+            self._table(VOICES_TABLE, VoiceRow).add(rows)
+
+    def match_voice(self, vector: list[float], k: int = 5) -> tuple[str, str, float] | None:
+        """k-NN majority vote over voice rows, like match_face.
+
+        Returns (person_id, name, best cosine similarity of the winning
+        person) or None if nobody has a voice profile yet.
+        """
+        table = self._table(VOICES_TABLE, VoiceRow)
+        if table.count_rows() == 0:
+            return None
+        hits = table.search(vector).metric("cosine").limit(k).to_list()
+        counts: dict[str, int] = {}
+        for r in hits:
+            counts[r["person_id"]] = counts.get(r["person_id"], 0) + 1
+        winner = max(counts, key=counts.get)
+        best = min(r["_distance"] for r in hits if r["person_id"] == winner)
+        name = next(r["name"] for r in hits if r["person_id"] == winner)
+        return winner, name, 1.0 - best
+
+    def passive_voice_count(self, person_id: str) -> int:
+        table = self._table(VOICES_TABLE, VoiceRow)
+        return sum(
+            1
+            for r in table.to_arrow().to_pylist()
+            if r["person_id"] == person_id and r["source"] == "passive"
+        )
+
+    def prune_passive_voices(self, person_id: str, keep: int) -> None:
+        """Delete oldest passive rows beyond `keep`; enrolled rows untouched."""
+        table = self._table(VOICES_TABLE, VoiceRow)
+        passive = sorted(
+            (
+                r
+                for r in table.to_arrow().to_pylist()
+                if r["person_id"] == person_id and r["source"] == "passive"
+            ),
+            key=lambda r: r["created_at"],
+        )
+        for r in passive[: max(0, len(passive) - keep)]:
+            escaped = r["voice_id"].replace("'", "''")
+            table.delete(f"voice_id = '{escaped}'")
 
     # -- messages (Phase 3) --------------------------------------------------
 

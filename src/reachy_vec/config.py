@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     face_threshold: float = 0.45  # cosine similarity; below = unknown
     camera_index: int = 0
 
+    # Voice ID (Phase 2b) - ECAPA cosine scores run lower than face scores
+    voice_threshold: float = 0.30  # below = unknown; within 0.05 under = "can't tell"
+    voice_min_utterance_s: float = 1.0  # shorter audio -> can't tell
+    voice_passive_cap: int = 10  # max passively-banked embeddings per person
+
     # Interaction
     greet_cooldown_s: float = 7200.0  # full spoken greeting at most every 2h
     silence_timeout_s: float = 30.0   # end conversation after this much quiet

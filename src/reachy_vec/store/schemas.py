@@ -1,7 +1,7 @@
 """LanceDB table schemas.
 
 Implemented: docs (Phase 0), people + greetings (Phase 1), memories (Phase 2a),
-messages (Phase 3).
+voices (Phase 2b), messages (Phase 3).
 """
 
 from lancedb.pydantic import LanceModel, Vector
@@ -39,6 +39,18 @@ class MemoryRow(LanceModel):
     text: str
     vector: Vector(EMBEDDING_DIM)
     created_at: str  # ISO-8601 UTC
+
+
+VOICE_EMBEDDING_DIM = 192  # speechbrain ECAPA-TDNN
+
+
+class VoiceRow(LanceModel):
+    voice_id: str
+    person_id: str
+    name: str
+    vector: Vector(VOICE_EMBEDDING_DIM)
+    created_at: str  # ISO-8601 UTC
+    source: str  # "enrolled" | "passive"
 
 
 class MessageRow(LanceModel):
