@@ -2630,12 +2630,8 @@ dependencies = [
     { name = "sentence-transformers" },
     { name = "silero-vad" },
     { name = "sounddevice" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-perception = [
     { name = "speechbrain" },
+    { name = "typer" },
 ]
 
 [package.dev-dependencies]
@@ -2658,10 +2654,9 @@ requires-dist = [
     { name = "sentence-transformers", specifier = ">=3.0" },
     { name = "silero-vad", specifier = ">=6.2.1" },
     { name = "sounddevice", specifier = ">=0.5.5" },
-    { name = "speechbrain", marker = "extra == 'perception'", specifier = ">=1.0" },
+    { name = "speechbrain", specifier = ">=1.1.0" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["perception"]
 
 [package.metadata.requires-dev]
 dev = [

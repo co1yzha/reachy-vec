@@ -18,12 +18,7 @@ dependencies = [
     "onnxruntime>=1.27.0",
     "opencv-python>=5.0.0.93",
     "pymongo>=4.17.0",
-]
-
-[project.optional-dependencies]
-# Phase 1+ — perception and audio models (heavy; install when hardware work starts)
-perception = [
-    "speechbrain>=1.0",  # speaker ID, Phase 2
+    "speechbrain>=1.1.0",
 ]
 
 [project.scripts]
