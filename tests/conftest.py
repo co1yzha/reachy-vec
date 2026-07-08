@@ -2,6 +2,7 @@
 
 import hashlib
 
+from reachy_vec.audio.listen import Utterance
 from reachy_vec.store.embeddings import EMBEDDING_DIM
 
 
@@ -155,13 +156,17 @@ class FakeSpeaker:
 
 
 class FakeTranscriber:
-    """Returns scripted utterances, then None (silence)."""
+    """Returns scripted utterances, then None (silence). Accepts plain strings
+    or Utterance objects (for tests that script audio)."""
 
-    def __init__(self, utterances: list[str]):
+    def __init__(self, utterances: list):
         self._it = iter(utterances)
 
-    def listen_once(self, timeout_s: float) -> str | None:
-        return next(self._it, None)
+    def listen_once(self, timeout_s: float) -> Utterance | None:
+        nxt = next(self._it, None)
+        if nxt is None or isinstance(nxt, Utterance):
+            return nxt
+        return Utterance(text=nxt)
 
 
 class FakeCamera:

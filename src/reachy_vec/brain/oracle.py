@@ -14,8 +14,8 @@ APOLOGY = "Sorry, my brain isn't responding right now."
 OFFER = "Hi! I don't think we've met. Would you like me to remember you? Say yes or no."
 
 
-def _is_yes(text: str | None) -> bool:
-    return text is not None and "yes" in text.lower()
+def _is_yes(utterance) -> bool:
+    return utterance is not None and "yes" in utterance.text.lower()
 
 
 def _clean_name(text: str) -> str:
@@ -97,8 +97,8 @@ class OracleLoop:
         self._deliver_messages(person_id)
         while True:
             self._body.perform("listen")
-            question = self._transcriber.listen_once(self._silence_timeout_s)
-            if question is None:
+            utterance = self._transcriber.listen_once(self._silence_timeout_s)
+            if utterance is None:
                 self._body.perform("goodbye")
                 self._brain.end_conversation()  # distill memories of the visit
                 return
@@ -106,7 +106,7 @@ class OracleLoop:
                 # sentences are spoken as they stream in; respond blocks
                 # until the reply is complete
                 self._brain.respond(
-                    question, speaker_name=name, on_sentence=self._speaker.speak
+                    utterance.text, speaker_name=name, on_sentence=self._speaker.speak
                 )
                 self._body.perform("nod")
             except Exception:
@@ -123,7 +123,7 @@ class OracleLoop:
             heard = self._transcriber.listen_once(10)
             if heard is None:
                 continue
-            name = _clean_name(heard)
+            name = _clean_name(heard.text)
             self._speaker.speak(f"Nice to meet you, {name} - did I get that right?")
             if _is_yes(self._transcriber.listen_once(10)):
                 self._speaker.speak("Hold still while I take a good look at you.")

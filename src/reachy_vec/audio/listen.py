@@ -9,6 +9,7 @@ import io
 import logging
 import wave
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from typing import Protocol
 
 import numpy as np
@@ -21,8 +22,17 @@ SAMPLE_RATE = 16000
 CHUNK_S = 0.032  # silero-vad native frame for 16 kHz (512 samples)
 
 
+@dataclass(frozen=True)
+class Utterance:
+    """One transcribed utterance plus the raw mono 16 kHz float32 capture
+    (kept in memory so speaker ID can embed the same audio; never persisted)."""
+
+    text: str
+    audio: np.ndarray | None = field(default=None, repr=False)
+
+
 class Transcriber(Protocol):
-    def listen_once(self, timeout_s: float) -> str | None: ...
+    def listen_once(self, timeout_s: float) -> Utterance | None: ...
 
 
 def collect_utterance(chunks: Iterator, is_speech: Callable, max_silence_chunks: int):
@@ -112,7 +122,7 @@ class MicTranscriber(_AudioCapture):
         silence = np.zeros(self._sample_rate, dtype=np.float32)
         list(self._whisper.transcribe(silence, language="en")[0])
 
-    def listen_once(self, timeout_s: float) -> str | None:
+    def listen_once(self, timeout_s: float) -> Utterance | None:
         self._load()
         audio = self._capture(timeout_s)
         if audio is None:
@@ -122,7 +132,7 @@ class MicTranscriber(_AudioCapture):
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()
         logger.info("heard: %r", text)
-        return text or None
+        return Utterance(text=text, audio=audio) if text else None
 
 
 class OpenAITranscriber(_AudioCapture):
@@ -133,7 +143,7 @@ class OpenAITranscriber(_AudioCapture):
         self._client = client
         self._initial_prompt = initial_prompt
 
-    def listen_once(self, timeout_s: float) -> str | None:
+    def listen_once(self, timeout_s: float) -> Utterance | None:
         audio = self._capture(timeout_s)
         if audio is None:
             return None
@@ -155,7 +165,7 @@ class OpenAITranscriber(_AudioCapture):
             return None
         text = result.text.strip()
         logger.info("heard (openai): %r", text)
-        return text or None
+        return Utterance(text=text, audio=audio) if text else None
 
 
 def make_transcriber(client=None, initial_prompt: str | None = None) -> Transcriber:

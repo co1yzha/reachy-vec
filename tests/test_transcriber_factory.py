@@ -39,7 +39,7 @@ def test_openai_transcriber_sends_wav_and_prompt(monkeypatch):
     import numpy as np
 
     monkeypatch.setattr(t, "_capture", lambda timeout_s: np.zeros(16000, dtype=np.float32))
-    assert t.listen_once(5) == "hello from openai"
+    assert t.listen_once(5).text == "hello from openai"
     kwargs = client.audio.transcriptions.last_kwargs
     assert kwargs["model"] == "gpt-4o-transcribe"
     assert kwargs["prompt"] == "Vocabulary: foodmapping"
