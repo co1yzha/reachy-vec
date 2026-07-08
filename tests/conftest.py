@@ -187,6 +187,24 @@ class FakeBody:
         self.motions.append(motion)
 
 
+class FakeSpeakerIdentifier:
+    """Scripted voice observations (then None = can't tell); records embeds."""
+
+    def __init__(self, observations: list | None = None, embedding=None):
+        self._observations = list(observations or [])
+        self._embedding = embedding  # what embed() returns; None = too short/broken
+        self.embed_calls = 0
+
+    def identify(self, audio):
+        if not self._observations:
+            return None
+        return self._observations.pop(0)
+
+    def embed(self, audio):
+        self.embed_calls += 1
+        return self._embedding
+
+
 class FakeFaceMatcher:
     """Scripted observations + constant embeddings."""
 

@@ -6,9 +6,11 @@ sight() is polled; transcriber.listen_once(timeout) blocks and paces the loop.
 
 import logging
 import time
+import uuid
 from datetime import UTC, datetime
 
-from reachy_vec.perception.fusion import TurnIdentity
+from reachy_vec.perception.fusion import fuse
+from reachy_vec.store.schemas import VoiceRow
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,8 @@ class OracleLoop:
         silence_timeout_s: float = 30.0,
         unknown_stable_polls: int = 3,
         idle_sleep_s: float = 300.0,
+        speaker_id=None,
+        voice_passive_cap: int = 10,
     ):
         self._sight = sight
         self._transcriber = transcriber
@@ -48,6 +52,8 @@ class OracleLoop:
         self._brain = brain
         self._enroll_capture = enroll_capture
         self._store = store
+        self._speaker_id = speaker_id  # None = voice ID disabled (face-only)
+        self._voice_passive_cap = voice_passive_cap
         self._clock = clock
         self._greet_cooldown_s = greet_cooldown_s
         self._silence_timeout_s = silence_timeout_s
@@ -72,7 +78,7 @@ class OracleLoop:
                 return "no-face"
             self._note_presence()
             if obs.person_id is not None:
-                self._converse(obs.person_id, obs.name)
+                self._converse(obs)
                 return "conversation"
             unknown_streak += 1
             if unknown_streak >= self._unknown_stable_polls:
@@ -88,7 +94,8 @@ class OracleLoop:
 
     # -- states ----------------------------------------------------------
 
-    def _converse(self, person_id: str, name: str) -> None:
+    def _converse(self, face_obs) -> None:
+        person_id, name = face_obs.person_id, face_obs.name
         self._brain.begin_conversation(person_id, name)
         if self._cooldown_expired(person_id):
             self._speaker.speak(f"Hi {name}! What can I help you with?")
@@ -104,18 +111,57 @@ class OracleLoop:
                 self._body.perform("goodbye")
                 self._brain.end_conversation()  # distill memories of the visit
                 return
+            voice_obs = self._identify_voice(utterance.audio)
             try:
                 # sentences are spoken as they stream in; respond blocks
                 # until the reply is complete
                 self._brain.respond(
                     utterance.text,
-                    identity=TurnIdentity(person_id, name),
+                    identity=fuse(face_obs, voice_obs),
                     on_sentence=self._speaker.speak,
                 )
                 self._body.perform("nod")
             except Exception:
                 logger.exception("brain.respond failed")
                 self._speaker.speak(APOLOGY)
+            self._maybe_bank_voice(face_obs, voice_obs, utterance.audio)
+
+    def _identify_voice(self, audio):
+        if self._speaker_id is None:
+            return None
+        try:
+            return self._speaker_id.identify(audio)
+        except Exception:
+            logger.exception("speaker ID failed - treating as can't tell")
+            return None
+
+    def _maybe_bank_voice(self, face_obs, voice_obs, audio) -> None:
+        """Passively grow the voice profile of a confident solo face match."""
+        if self._speaker_id is None or face_obs.person_id is None:
+            return
+        if face_obs.face_count != 1:
+            return  # someone else may be the speaker
+        if voice_obs is not None and voice_obs.person_id != face_obs.person_id:
+            return  # voice says it isn't (or can't be shown to be) them
+        try:
+            vector = self._speaker_id.embed(audio)
+            if vector is None:
+                return
+            self._store.add_voice_rows([self._voice_row(face_obs.person_id, face_obs.name,
+                                                        vector, source="passive")])
+            self._store.prune_passive_voices(face_obs.person_id, keep=self._voice_passive_cap)
+        except Exception:
+            logger.exception("passive voice backfill failed - skipping")
+
+    def _voice_row(self, person_id: str, name: str, vector, *, source: str) -> VoiceRow:
+        return VoiceRow(
+            voice_id=f"{person_id}:{uuid.uuid4().hex[:8]}",
+            person_id=person_id,
+            name=name,
+            vector=vector,
+            created_at=datetime.now(UTC).isoformat(),
+            source=source,
+        )
 
     def _offer_enroll(self) -> str:
         self._speaker.speak(OFFER)
@@ -136,11 +182,24 @@ class OracleLoop:
                     self._speaker.speak("I couldn't see you well - let's try another time.")
                     return "enroll-declined"
                 self._record_greeting(person_id)
+                self._capture_voice(person_id, name)
                 self._speaker.speak(f"All set, {name}! Ask me anything.")
                 self._body.perform("greet")
                 return "enrolled"
         self._speaker.speak("Let's try again another time.")
         return "enroll-declined"
+
+    def _capture_voice(self, person_id: str, name: str) -> None:
+        """One spoken phrase after face enrollment; failure is non-fatal."""
+        if self._speaker_id is None:
+            return
+        self._speaker.speak("Now say a sentence so I learn your voice - anything you like.")
+        utterance = self._transcriber.listen_once(10)
+        vector = self._speaker_id.embed(utterance.audio) if utterance is not None else None
+        if vector is None:
+            self._speaker.speak("No worries - I'll learn your voice as we talk.")
+            return
+        self._store.add_voice_rows([self._voice_row(person_id, name, vector, source="enrolled")])
 
     def _deliver_messages(self, person_id: str) -> None:
         for msg in self._store.pending_messages_for(person_id):

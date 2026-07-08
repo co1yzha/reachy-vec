@@ -2,13 +2,32 @@ from reachy_vec.brain.oracle import OracleLoop
 from reachy_vec.perception.face import Observation
 from reachy_vec.perception.fusion import TurnIdentity
 from reachy_vec.store.db import Store
-from tests.conftest import FakeBody, FakeBrain, FakeSpeaker, FakeTranscriber
+from reachy_vec.store.schemas import VOICE_EMBEDDING_DIM, VoiceRow
+from tests.conftest import (
+    FakeBody,
+    FakeBrain,
+    FakeSpeaker,
+    FakeSpeakerIdentifier,
+    FakeTranscriber,
+)
 
 ALICE = Observation(person_id="p1", name="Alice", score=0.9)
 UNKNOWN = Observation(person_id=None, name=None, score=0.1)
+BOB_VOICE = Observation(person_id="p2", name="Bob", score=0.5)
+UNKNOWN_VOICE = Observation(person_id=None, name=None, score=0.05)
+VOICE_VEC = [0.5] * VOICE_EMBEDDING_DIM
 
 
-def make_loop(tmp_path, *, sights, utterances, enroll_result="p9", store=None, brain=None):
+def make_loop(
+    tmp_path,
+    *,
+    sights,
+    utterances,
+    enroll_result="p9",
+    store=None,
+    brain=None,
+    speaker_id=None,
+):
     sights_iter = iter(sights)
     speaker, body = FakeSpeaker(), FakeBody()
     store = store or Store(tmp_path / "db")
@@ -23,6 +42,7 @@ def make_loop(tmp_path, *, sights, utterances, enroll_result="p9", store=None, b
         store=store,
         clock=lambda: 1000.0,
         unknown_stable_polls=2,
+        speaker_id=speaker_id,
     )
     return loop, speaker, body, store, brain
 
@@ -134,3 +154,113 @@ def test_sleeps_after_idle_and_wakes_on_face(tmp_path):
     sights.append(ALICE)                         # someone walks up
     assert loop.run_once() == "conversation"
     assert body.motions[1] == "wake"             # woke before greeting
+
+
+# -- Phase 2b: voice fusion, passive backfill, voice enrollment ---------------
+
+
+def test_turn_identity_follows_voice(tmp_path):
+    loop, _, _, _, brain = make_loop(
+        tmp_path,
+        sights=[ALICE],
+        utterances=["a question"],
+        speaker_id=FakeSpeakerIdentifier([BOB_VOICE]),
+    )
+    loop.run_once()
+    assert brain.asked == [("a question", TurnIdentity("p2", "Bob"))]
+
+
+def test_unknown_voice_is_anonymous_despite_face(tmp_path):
+    loop, _, _, _, brain = make_loop(
+        tmp_path,
+        sights=[ALICE],
+        utterances=["save this"],
+        speaker_id=FakeSpeakerIdentifier([UNKNOWN_VOICE]),
+    )
+    loop.run_once()
+    assert brain.asked[0][1] == TurnIdentity(None, None)
+
+
+def test_no_speaker_id_falls_back_to_face(tmp_path):
+    loop, _, _, _, brain = make_loop(tmp_path, sights=[ALICE], utterances=["hi"])
+    loop.run_once()
+    assert brain.asked == [("hi", TurnIdentity("p1", "Alice"))]
+
+
+def test_passive_backfill_banks_solo_confident_face(tmp_path):
+    ident = FakeSpeakerIdentifier([None], embedding=VOICE_VEC)
+    loop, _, _, store, _ = make_loop(
+        tmp_path, sights=[ALICE], utterances=["a question"], speaker_id=ident
+    )
+    loop.run_once()
+    assert store.passive_voice_count("p1") == 1
+
+
+def test_no_backfill_when_voice_is_someone_else(tmp_path):
+    ident = FakeSpeakerIdentifier([BOB_VOICE], embedding=VOICE_VEC)
+    loop, _, _, store, _ = make_loop(
+        tmp_path, sights=[ALICE], utterances=["a question"], speaker_id=ident
+    )
+    loop.run_once()
+    assert store.passive_voice_count("p1") == 0
+    assert store.passive_voice_count("p2") == 0
+
+
+def test_no_backfill_with_two_faces_in_frame(tmp_path):
+    crowded = Observation(person_id="p1", name="Alice", score=0.9, face_count=2)
+    ident = FakeSpeakerIdentifier([None], embedding=VOICE_VEC)
+    loop, _, _, store, _ = make_loop(
+        tmp_path, sights=[crowded], utterances=["a question"], speaker_id=ident
+    )
+    loop.run_once()
+    assert store.passive_voice_count("p1") == 0
+
+
+def test_backfill_respects_cap(tmp_path):
+    store = Store(tmp_path / "db")
+    store.add_voice_rows(
+        [
+            VoiceRow(
+                voice_id=f"p1:{i}",
+                person_id="p1",
+                name="Alice",
+                vector=VOICE_VEC,
+                created_at=f"2026-07-08T00:00:{i:02d}+00:00",
+                source="passive",
+            )
+            for i in range(10)
+        ]
+    )
+    ident = FakeSpeakerIdentifier([None], embedding=VOICE_VEC)
+    loop, _, _, _, _ = make_loop(
+        tmp_path, sights=[ALICE], utterances=["a question"], speaker_id=ident, store=store
+    )
+    loop.run_once()
+    assert store.passive_voice_count("p1") == 10  # capped, not 11
+
+
+def test_enrollment_captures_voice_phrase(tmp_path):
+    ident = FakeSpeakerIdentifier(embedding=VOICE_VEC)
+    loop, speaker, _, store, _ = make_loop(
+        tmp_path,
+        sights=[UNKNOWN, UNKNOWN],
+        utterances=["yes please", "Bob", "yes", "the quick brown fox"],
+        enroll_result="p9",
+        speaker_id=ident,
+    )
+    assert loop.run_once() == "enrolled"
+    assert any("voice" in s.lower() for s in speaker.spoken)
+    assert store.match_voice(VOICE_VEC)[0] == "p9"
+
+
+def test_enrollment_survives_missing_voice(tmp_path):
+    ident = FakeSpeakerIdentifier(embedding=None)  # too short / model broken
+    loop, _, _, store, _ = make_loop(
+        tmp_path,
+        sights=[UNKNOWN, UNKNOWN],
+        utterances=["yes please", "Bob", "yes"],  # then silence for the phrase
+        enroll_result="p9",
+        speaker_id=ident,
+    )
+    assert loop.run_once() == "enrolled"  # face-only enrollment still succeeds
+    assert store.match_voice(VOICE_VEC) is None
