@@ -30,6 +30,14 @@ Unknown keys in `.env` are ignored.
 | `FACE_THRESHOLD` | `0.45` | cosine gate for recognition; lower (e.g. 0.40) if known people show as unknown; within 0.05 below = ignored as "no face" |
 | `CAMERA_INDEX` | `0` | which webcam OpenCV opens |
 
+## Voice ID (Phase 2b)
+
+| Setting | Default | Notes |
+|---|---|---|
+| `VOICE_THRESHOLD` | `0.30` | cosine gate for speaker recognition (ECAPA scores run lower than face scores); within 0.05 below = "can't tell", fusion falls back to face |
+| `VOICE_MIN_UTTERANCE_S` | `1.0` | utterances shorter than this aren't voice-identified |
+| `VOICE_PASSIVE_CAP` | `10` | max passively-banked voice embeddings kept per person (oldest evicted; explicit enrollment rows never pruned) |
+
 ## Interaction pacing
 
 | Setting | Default | Notes |
@@ -51,6 +59,7 @@ Unknown keys in `.env` are ignored.
 Chunk size (1000 chars, `store/ingestion.py`), retrieval k (5 docs / 3
 memories, `brain/chat.py`), history window (20 messages), memory-duplicate
 threshold (0.97), VAD sensitivity (0.5) and end-of-utterance quiet (0.8 s,
-`audio/listen.py`), face borderline margin (0.05, `perception/face.py`),
-unknown-face stable polls (3), insightface model (`buffalo_s`). Promote one
-to `config.py` if you find yourself tuning it.
+`audio/listen.py`), borderline margin shared by faces and voices (0.05,
+`perception/face.py`), unknown-face stable polls (3), insightface model
+(`buffalo_s`), ECAPA model (`spkrec-ecapa-voxceleb`, `perception/voice.py`).
+Promote one to `config.py` if you find yourself tuning it.

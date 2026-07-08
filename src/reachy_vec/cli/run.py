@@ -38,6 +38,7 @@ def run(
     from reachy_vec.brain.oracle import OracleLoop
     from reachy_vec.perception.camera import WebcamCamera
     from reachy_vec.perception.face import InsightFaceMatcher, enroll_person
+    from reachy_vec.perception.voice import EcapaSpeakerIdentifier
     from reachy_vec.store.db import Store
     from reachy_vec.store.embeddings import BgeEmbedder
 
@@ -54,6 +55,7 @@ def run(
         raise typer.Exit(code=1)
 
     matcher = InsightFaceMatcher(store)
+    speaker_id = EcapaSpeakerIdentifier(store)
     speaker = make_speaker()
     embedder = BgeEmbedder(settings.embedding_model)
     client = OpenAI()
@@ -61,12 +63,15 @@ def run(
     titles = store.demo_titles()
     vocab_prompt = f"Vocabulary: {', '.join(titles)}" if titles else None
 
-    typer.echo("Warming up models (STT, faces, embeddings)...")
+    typer.echo("Warming up models (STT, faces, voices, embeddings)...")
     transcriber = make_transcriber(client=client, initial_prompt=vocab_prompt)
     if isinstance(transcriber, MicTranscriber):
         transcriber.warm_up()
     matcher.observe(camera.read())   # loads insightface before the loop
     embedder.embed(["warm up"])      # loads the BGE model
+    import numpy as np
+
+    speaker_id.embed(np.zeros(32000, dtype=np.float32))  # loads ECAPA (2s of silence)
     try:                             # open the TLS connection to OpenAI
         client.chat.completions.create(
             model=settings.llm_model,
@@ -99,6 +104,8 @@ def run(
         greet_cooldown_s=settings.greet_cooldown_s,
         silence_timeout_s=settings.silence_timeout_s,
         idle_sleep_s=settings.idle_sleep_s,
+        speaker_id=speaker_id,
+        voice_passive_cap=settings.voice_passive_cap,
     )
     typer.echo("Oracle running - walk into frame. Ctrl+C to stop.")
     try:

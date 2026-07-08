@@ -83,6 +83,9 @@ Walk through the checklist:
 | Nobody in frame for 5 min | Robot slumps to sleep; wakes when you appear |
 | Say "tell <enrolled teammate> ..." | Queued; spoken to them when they next appear |
 | Ask "what's the weather like?" | Live conditions for the lab location (Open-Meteo) |
+| New enrollment finishes | Robot asks for a sentence to learn your voice |
+| Two enrolled people take turns (one off-camera) | Each "remember I..." lands on the actual speaker's memories |
+| A stranger talks over an enrolled person's visit | Answered politely; "remember..." is refused (unknown voice) |
 
 ## Troubleshooting
 
@@ -101,6 +104,11 @@ Walk through the checklist:
   `base.en` is the speed default.
 - **Not recognized / greeted as unknown:** lower `REACHY_VEC_FACE_THRESHOLD`
   slightly (e.g. 0.40) or re-enroll in better lighting.
+- **Notes land on the wrong person / voice not recognized:** tune
+  `REACHY_VEC_VOICE_THRESHOLD` (default 0.30) — raise it if voices are
+  confused with each other, lower it if enrolled voices show as unknown.
+  Profiles improve as people talk (passive backfill); the first visit after
+  enrollment relies on the single enrollment phrase.
 - **Fallback fires on questions the docs do cover:** lower
   `REACHY_VEC_RAG_MIN_SCORE` (e.g. 0.45).
 - **Inspect what's in LanceDB:**

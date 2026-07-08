@@ -1,6 +1,6 @@
 # Pipelines — step by step, with models
 
-Current as of Phase 3 (messenger). Companion pages:
+Current as of Phase 2b (speaker ID + fusion). Companion pages:
 [architecture](architecture.md) (the big picture and run loop),
 [configuration](configuration.md) (every knob), [testing](testing.md).
 
@@ -14,6 +14,7 @@ Current as of Phase 3 (messenger). Companion pages:
 | Speech-to-text (alternative) | `gpt-4o-transcribe` (OpenAI API) | cloud | `audio/listen.py:OpenAITranscriber` | `REACHY_VEC_STT_BACKEND=openai` |
 | Voice activity detection | silero-vad (16 kHz, 512-sample frames) | local | `audio/listen.py:_AudioCapture` | not configurable |
 | Face detection + embedding | insightface `buffalo_s`, 512-dim | local (onnxruntime) | `perception/face.py` | not configurable (threshold is) |
+| Speaker ID | speechbrain ECAPA-TDNN `spkrec-ecapa-voxceleb`, 192-dim | local | `perception/voice.py` | `REACHY_VEC_VOICE_THRESHOLD` |
 | Text-to-speech | macOS `say` | local | `audio/speak.py` | `REACHY_VEC_TTS_BACKEND` (fish-speech planned) |
 
 All local models lazy-load on first use; `reachy-vec run` warms them (plus
@@ -61,6 +62,30 @@ chunks (no replace logic, unlike sync-mongo).
 embedded and stored as its own `people` row; frames also saved to
 `data/faces/{person_id}-{i}.jpg` for audit/re-embedding.
 
+## 2b. Voice identity pipeline (who is talking?)
+
+`audio/listen.py` (utterance audio) → `perception/voice.py` →
+`perception/fusion.py`
+
+1. Every utterance's raw audio rides along with its transcript
+   (`Utterance(text, audio)`); audio shorter than `VOICE_MIN_UTTERANCE_S`
+   (1 s) is "can't tell".
+2. ECAPA embeds the audio (192-dim); k-NN majority vote (k=5, cosine)
+   against the `voices` table, gated by `VOICE_THRESHOLD` (0.30) with the
+   same 0.05 borderline margin as faces.
+3. `fuse(face_obs, voice_obs)` decides the turn's identity — voice is the
+   authority, face the tie-breaker:
+   - voice knows a person → that person (they may be off-camera)
+   - voice confidently unknown → anonymous (side-effect tools refuse)
+   - voice can't tell → the recognized face, else anonymous
+4. Voice profiles come from two sources:
+   - **enrolled**: one spoken phrase captured right after face enrollment;
+   - **passive**: after a turn where the face is a confident *solo* match
+     and the voice doesn't contradict it, the utterance embedding is banked
+     (capped at `VOICE_PASSIVE_CAP` = 10 rows per person, oldest evicted).
+     Existing enrollees never re-enroll — profiles grow as they talk.
+   Raw audio is never persisted, only embeddings.
+
 ## 3. Voice pipeline (what did they say?)
 
 `audio/listen.py` — mic → VAD → STT:
@@ -77,10 +102,14 @@ embedded and stored as its own `people` row; frames also saved to
 
 ## 4. Chat / RAG pipeline (one turn, `brain/chat.py:ChatBrain.respond`)
 
+0. The fused per-turn identity (pipeline 2b) arrives as `identity=`;
+   retrieval, `save_note`, and `send_message` all follow **the turn's
+   speaker**, not whoever started the conversation. Anonymous turns get
+   docs-only retrieval and side-effect tools politely refuse.
 1. Embed the question with BGE (same space as the docs).
 2. Retrieve locally, every turn (no retrieval tool-calls):
    - top-5 `docs` chunks with cosine scores, and
-   - top-3 of **this person's** `memories` rows.
+   - top-3 of **the turn speaker's** `memories` rows.
 3. Build one user message: `[context + scores] + [memories] + "Name: question"`,
    appended to the visit's history (max 20 messages, reset per visit).
 4. One **streaming** `gpt-4o` call with the Reachy personality prompt and
@@ -105,8 +134,8 @@ embedded and stored as its own `people` row; frames also saved to
 
 - **Explicit**: the model calls `save_note` when asked to remember something.
 - **Implicit**: when a conversation ends (`end_conversation`), one extra
-  `gpt-4o` call reviews the visit and distills up to 3 third-person notes
-  (or `NONE` for chit-chat).
+  `gpt-4o` call **per enrolled person who spoke** reviews the visit and
+  distills up to 3 third-person notes each (or `NONE` for chit-chat).
 - Both paths embed the note with BGE, skip near-duplicates (cosine ≥ 0.97
   vs the person's nearest existing memory), and write `memories` rows.
 - Recall is automatic: step 2 of every chat turn searches this person's

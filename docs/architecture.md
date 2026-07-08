@@ -13,8 +13,9 @@ summary.
 │  motions only for   │           │  eye:   Mac webcam → insightface     │
 │  now; camera/mic    │           │  ears:  Mac mic → silero-VAD →       │
 │  move on-robot when │           │         faster-whisper (base.en)     │
-│  hardware arrives   │           │  mouth: macOS `say` (fish-speech     │
-└─────────────────────┘           │         planned)                     │
+│  hardware arrives   │           │  voice: ECAPA speaker ID + fusion    │
+└─────────────────────┘           │  mouth: macOS `say` (fish-speech     │
+                                  │         planned)                     │
                                   │  brain: OpenAI (gpt-4o) + RAG        │
        MongoDB Atlas              │  store: LanceDB (data/lancedb)       │
        aixlab.demos ──sync-mongo──►                                      │
@@ -22,18 +23,26 @@ summary.
 ```
 
 - **Package layout:** `store/` (LanceDB + ingestion + mongo sync), `brain/`
-  (RAG, oracle state machine), `perception/` (camera, face ID), `audio/`
-  (listen/speak), `body/` (motions), `cli/` (one file per command).
-- **One LanceDB database, four active tables:** `docs` (text chunks +
+  (RAG, oracle state machine), `perception/` (camera, face ID, speaker ID,
+  fusion), `audio/` (listen/speak), `body/` (motions), `cli/` (one file per
+  command).
+- **One LanceDB database, six active tables:** `docs` (text chunks +
   384-dim BGE vectors), `people` (512-dim insightface vectors, one row per
-  captured frame), `greetings` (per-person last-greeted timestamps),
+  captured frame), `voices` (192-dim ECAPA vectors, enrolled + passively
+  banked), `greetings` (per-person last-greeted timestamps),
   `memories` (per-person notes: saved via the save_note tool or distilled
   automatically when a conversation ends, recalled by vector search each
   turn), `messages` (queued relays, delivered by voice on the recipient's
   next recognized sighting).
 - **Everything heavy is behind a protocol with a test fake** (`Embedder`,
-  `Body`, `Transcriber`, `Speaker`, `FaceMatcher`, `Camera`) — the whole
-  state machine runs in pytest without devices, models, or network.
+  `Body`, `Transcriber`, `Speaker`, `FaceMatcher`, `SpeakerIdentifier`,
+  `Camera`) — the whole state machine runs in pytest without devices,
+  models, or network.
+- **Per-turn identity (Phase 2b):** every utterance is voice-identified
+  (ECAPA vs the `voices` table) and fused with the face observation —
+  voice is the authority, face the tie-breaker, never guess. Notes,
+  memories, and messages follow whoever actually spoke; an unknown voice
+  is answered but never written to the store.
 
 ## The run loop (`reachy-vec run`)
 
