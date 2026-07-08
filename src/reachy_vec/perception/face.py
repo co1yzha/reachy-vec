@@ -28,6 +28,7 @@ class Observation:
     person_id: str | None  # None = face present but unknown
     name: str | None
     score: float
+    face_count: int = 1  # faces detected in the frame this came from
 
 
 class FaceMatcher(Protocol):
@@ -43,6 +44,7 @@ class InsightFaceMatcher:
         self._threshold = threshold if threshold is not None else settings.face_threshold
         self._app = None
         self.last_bbox: tuple[int, int, int, int] | None = None  # for preview overlay
+        self.last_face_count: int = 0  # faces in the last frame (passive backfill gate)
 
     def _load(self):
         if self._app is None:
@@ -54,6 +56,7 @@ class InsightFaceMatcher:
     def embed(self, frame) -> list[float] | None:
         self._load()
         faces = self._app.get(frame)
+        self.last_face_count = len(faces)
         if not faces:
             self.last_bbox = None
             return None
@@ -68,14 +71,15 @@ class InsightFaceMatcher:
         if vector is None:
             return None
         match = self._store.match_face(vector)
+        count = self.last_face_count
         if match is None:
-            return Observation(person_id=None, name=None, score=0.0)
+            return Observation(person_id=None, name=None, score=0.0, face_count=count)
         person_id, name, score = match
         if score >= self._threshold:
-            return Observation(person_id=person_id, name=name, score=score)
+            return Observation(person_id=person_id, name=name, score=score, face_count=count)
         if score >= self._threshold - BORDERLINE_MARGIN:
             return None
-        return Observation(person_id=None, name=None, score=score)
+        return Observation(person_id=None, name=None, score=score, face_count=count)
 
 
 ENROLL_PROMPTS = [
