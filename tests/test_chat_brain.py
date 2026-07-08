@@ -3,7 +3,6 @@ import json
 from reachy_vec.brain.chat import ChatBrain
 from reachy_vec.store.db import Store
 from reachy_vec.store.schemas import DocChunk
-
 from tests.conftest import (
     FakeChoiceMessage,
     FakeEmbedder,

@@ -1,5 +1,4 @@
 from reachy_vec.audio.listen import collect_utterance
-
 from tests.conftest import FakeTranscriber
 
 SPEECH, SILENCE = "s", "."

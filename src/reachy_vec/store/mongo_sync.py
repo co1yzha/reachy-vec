@@ -5,7 +5,7 @@ run (idempotent). The pre-existing 1536-dim `embedding` field in Mongo is
 ignored - everything is re-embedded locally into the single BGE space.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from reachy_vec.store.db import Store
 from reachy_vec.store.embeddings import Embedder
@@ -38,7 +38,7 @@ def sync_demos(demos: list[dict], store: Store, embedder: Embedder) -> int:
     Embeddings are computed before the old rows are deleted, so a failure
     mid-way never leaves the store partially emptied.
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     rows: list[DocChunk] = []
     for doc in demos:
         title = doc.get("title", "Untitled demo")
@@ -52,7 +52,7 @@ def sync_demos(demos: list[dict], store: Store, embedder: Embedder) -> int:
                 source=f"{DEMO_SOURCE_PREFIX}{title}",
                 ingested_at=now,
             )
-            for i, (text, vector) in enumerate(zip(texts, vectors))
+            for i, (text, vector) in enumerate(zip(texts, vectors, strict=True))
         )
     store.delete_docs_by_source_prefix(DEMO_SOURCE_PREFIX)
     store.add_doc_chunks(rows)

@@ -26,7 +26,7 @@ def sync_mongo() -> None:
         demos = list(client["aixlab"]["demos"].find())
     except Exception as exc:
         typer.echo(f"Could not read from MongoDB: {exc}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from exc
 
     store = Store(settings.lancedb_dir)
     count = sync_demos(demos, store, BgeEmbedder(settings.embedding_model))

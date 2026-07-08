@@ -8,10 +8,11 @@ known person).
 
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 
 from reachy_vec.config import settings
 from reachy_vec.store.db import Store
@@ -101,7 +102,7 @@ def enroll_person(
     {person_id}-{i}.jpg for later audit or re-embedding.
     """
     person_id = f"person-{uuid.uuid4().hex[:8]}"
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     rows: list[FaceRow] = []
     for i in range(n_frames):
         prompt(ENROLL_PROMPTS[i % len(ENROLL_PROMPTS)])

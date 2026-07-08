@@ -1,6 +1,5 @@
 from reachy_vec.store.db import Store
 from reachy_vec.store.ingestion import chunk_text, ingest_path
-
 from tests.conftest import FakeEmbedder
 
 

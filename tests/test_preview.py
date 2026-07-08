@@ -1,6 +1,5 @@
 from reachy_vec.perception.face import Observation
 from reachy_vec.perception.preview import PreviewSight
-
 from tests.conftest import FakeCamera, FakeFaceMatcher
 
 ALICE = Observation(person_id="p1", name="Alice", score=0.9)

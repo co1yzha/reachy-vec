@@ -1,8 +1,6 @@
 from reachy_vec.store.db import Store
 from reachy_vec.store.schemas import FaceRow, MessageRow
 
-from tests.conftest import FakeEmbedder
-
 
 def enroll(store: Store, person_id: str, name: str) -> None:
     store.add_face_rows(

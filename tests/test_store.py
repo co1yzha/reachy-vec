@@ -1,6 +1,5 @@
 from reachy_vec.store.db import Store
 from reachy_vec.store.schemas import DocChunk
-
 from tests.conftest import FakeEmbedder
 
 

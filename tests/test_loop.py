@@ -1,5 +1,4 @@
 from reachy_vec.brain.loop import chat_loop
-
 from tests.conftest import FakeBrain
 
 
@@ -12,7 +11,7 @@ def run_loop(inputs: list[str]) -> tuple[list[str], FakeBrain]:
         try:
             return next(inputs_iter)
         except StopIteration:
-            raise EOFError
+            raise EOFError from None
 
     chat_loop(brain=brain, input_fn=input_fn, print_fn=printed.append)
     return printed, brain

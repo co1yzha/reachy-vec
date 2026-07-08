@@ -2,7 +2,6 @@ from typer.testing import CliRunner
 
 from reachy_vec.cli import app
 from reachy_vec.store.db import Store
-
 from tests.conftest import FakeEmbedder
 
 runner = CliRunner()

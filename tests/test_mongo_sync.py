@@ -1,6 +1,5 @@
 from reachy_vec.store.db import Store
 from reachy_vec.store.mongo_sync import format_demo, sync_demos
-
 from tests.conftest import FakeEmbedder
 
 DEMO = {

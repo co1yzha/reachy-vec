@@ -1,6 +1,6 @@
 """Ingestion pipeline: read .md/.txt files, chunk, embed, write to the store."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from reachy_vec.store.db import Store
@@ -48,7 +48,7 @@ def ingest_path(path: Path, store: Store, embedder: Embedder) -> int:
             p for p in path.rglob("*") if p.suffix in SUPPORTED_SUFFIXES and p.is_file()
         )
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     written = 0
     for file in files:
         texts = chunk_text(file.read_text())
@@ -64,7 +64,7 @@ def ingest_path(path: Path, store: Store, embedder: Embedder) -> int:
                     source=str(file),
                     ingested_at=now,
                 )
-                for i, (text, vector) in enumerate(zip(texts, vectors))
+                for i, (text, vector) in enumerate(zip(texts, vectors, strict=True))
             ]
         )
         written += len(texts)

@@ -2,7 +2,6 @@ import numpy as np
 
 from reachy_vec.perception.face import Observation, enroll_person
 from reachy_vec.store.db import Store
-
 from tests.conftest import FakeCamera, FakeFaceMatcher
 
 

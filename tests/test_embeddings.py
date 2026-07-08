@@ -1,5 +1,4 @@
 from reachy_vec.store.embeddings import EMBEDDING_DIM, Embedder
-
 from tests.conftest import FakeEmbedder
 
 

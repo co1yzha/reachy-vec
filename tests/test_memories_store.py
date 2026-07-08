@@ -1,6 +1,5 @@
 from reachy_vec.store.db import Store
 from reachy_vec.store.schemas import MemoryRow
-
 from tests.conftest import FakeEmbedder
 
 

@@ -8,7 +8,8 @@ the OpenAI API (gpt-4o-transcribe). Select with settings.stt_backend.
 import io
 import logging
 import wave
-from typing import Callable, Iterator, Protocol
+from collections.abc import Callable, Iterator
+from typing import Protocol
 
 import numpy as np
 

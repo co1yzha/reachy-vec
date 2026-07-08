@@ -11,8 +11,8 @@ import json
 import logging
 import subprocess
 import uuid
-from datetime import datetime, timezone
-from typing import Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 from reachy_vec.store.db import Store
 from reachy_vec.store.embeddings import Embedder
@@ -72,7 +72,10 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "note": {"type": "string", "description": "short third-person fact to remember"},
+                    "note": {
+                        "type": "string",
+                        "description": "short third-person fact to remember",
+                    },
                 },
                 "required": ["note"],
             },
@@ -377,7 +380,7 @@ class ChatBrain:
                 to_person=to_person,
                 to_name=resolved_name,
                 text=text,
-                created_at=datetime.now(timezone.utc).isoformat(),
+                created_at=datetime.now(UTC).isoformat(),
                 delivered_at="",
             )
         )
@@ -405,10 +408,10 @@ class ChatBrain:
     def _store_memories(self, notes: list[str]) -> None:
         if not notes:
             return
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         vectors = self._embedder.embed(notes)
         rows = []
-        for note, vector in zip(notes, vectors):
+        for note, vector in zip(notes, vectors, strict=True):
             if self._is_duplicate_memory(vector):
                 logger.info("skipping near-duplicate memory: %r", note)
                 continue
@@ -430,7 +433,7 @@ class ChatBrain:
         if not hits:
             return False
         existing = hits[0].vector
-        dot = sum(a * b for a, b in zip(vector, existing))
+        dot = sum(a * b for a, b in zip(vector, existing, strict=True))
         norms = (sum(a * a for a in vector) ** 0.5) * (sum(b * b for b in existing) ** 0.5)
         return norms > 0 and dot / norms >= self.DUPLICATE_SIMILARITY
 

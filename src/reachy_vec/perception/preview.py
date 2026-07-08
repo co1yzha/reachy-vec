@@ -5,7 +5,7 @@ rendering each polled frame to a window. Note: the window only refreshes
 when sight() is polled - it freezes while the robot is listening/speaking.
 """
 
-from typing import Callable
+from collections.abc import Callable
 
 GREEN, ORANGE, GRAY = (80, 220, 80), (0, 160, 255), (160, 160, 160)
 

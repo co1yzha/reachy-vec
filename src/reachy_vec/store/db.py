@@ -1,5 +1,6 @@
 """LanceDB connection and vector-search helpers."""
 
+from datetime import UTC
 from pathlib import Path
 
 import lancedb
@@ -132,12 +133,12 @@ class Store:
         return [MessageRow(**{k: r[k] for k in MessageRow.model_fields}) for r in rows]
 
     def mark_delivered(self, message_id: str) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         escaped = message_id.replace("'", "''")
         self._table(MESSAGES_TABLE, MessageRow).update(
             where=f"message_id = '{escaped}'",
-            values={"delivered_at": datetime.now(timezone.utc).isoformat()},
+            values={"delivered_at": datetime.now(UTC).isoformat()},
         )
 
     def find_person_by_name(self, name: str) -> tuple[str, str] | None:

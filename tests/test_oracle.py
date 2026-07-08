@@ -1,7 +1,6 @@
 from reachy_vec.brain.oracle import OracleLoop
 from reachy_vec.perception.face import Observation
 from reachy_vec.store.db import Store
-
 from tests.conftest import FakeBody, FakeBrain, FakeSpeaker, FakeTranscriber
 
 ALICE = Observation(person_id="p1", name="Alice", score=0.9)

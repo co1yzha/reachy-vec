@@ -6,7 +6,7 @@ sight() is polled; transcriber.listen_once(timeout) blocks and paces the loop.
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -171,5 +171,5 @@ class OracleLoop:
         return elapsed >= self._greet_cooldown_s
 
     def _record_greeting(self, person_id: str) -> None:
-        now_iso = datetime.fromtimestamp(self._clock(), tz=timezone.utc).isoformat()
+        now_iso = datetime.fromtimestamp(self._clock(), tz=UTC).isoformat()
         self._store.set_last_greeted(person_id, now_iso)
