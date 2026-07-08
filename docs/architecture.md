@@ -16,7 +16,7 @@ summary.
 │  hardware arrives   │           │  voice: ECAPA speaker ID + fusion    │
 └─────────────────────┘           │  mouth: macOS `say` (fish-speech     │
                                   │         planned)                     │
-                                  │  brain: OpenAI (gpt-4o) + RAG        │
+                                  │  brain: OpenAI (gpt-5-mini) + RAG    │
        MongoDB Atlas              │  store: LanceDB (data/lancedb)       │
        aixlab.demos ──sync-mongo──►                                      │
        (source of truth)          └──────────────────────────────────────┘
@@ -62,7 +62,8 @@ else silent acknowledge                face captures → GREET;   │
 LISTENING: VAD-segmented utterance → whisper                    │
   │        30 s silence → goodbye nod ──────────────────────────┘
   ▼
-THINKING (ChatBrain): embed question → scored LanceDB search → context +
+THINKING (ChatBrain): embed question (BGE query prefix) → hybrid LanceDB
+  search (vector + BM25, cosine scores) → context +
   │   "<name>: <question>" appended to the conversation history (reset per
   │   visit) → one LLM call with the Reachy personality prompt. The model
   │   judges relevance: grounded answer naming the demo, or a general-

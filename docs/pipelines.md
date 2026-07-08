@@ -8,8 +8,8 @@ Current as of Phase 2b (speaker ID + fusion). Companion pages:
 
 | Role | Model | Where it runs | Code | Configurable via |
 |---|---|---|---|---|
-| Chat / RAG answers, tool calls, memory distillation | `gpt-4o` (OpenAI API) | cloud | `brain/chat.py` | `REACHY_VEC_LLM_MODEL` |
-| Text embeddings (docs, memories, queries) | `BAAI/bge-small-en-v1.5`, 384-dim normalized | local (sentence-transformers) | `store/embeddings.py` | `REACHY_VEC_EMBEDDING_MODEL` |
+| Chat / RAG answers, tool calls, memory distillation | `gpt-5-mini` (OpenAI API) | cloud | `brain/chat.py` | `REACHY_VEC_LLM_MODEL` |
+| Text embeddings (docs, memories, queries) | `BAAI/bge-small-en-v1.5`, 384-dim normalized; queries get the BGE instruction prefix (`REACHY_VEC_EMBEDDING_QUERY_PREFIX`) | local (sentence-transformers) | `store/embeddings.py` | `REACHY_VEC_EMBEDDING_MODEL` |
 | Speech-to-text (default) | faster-whisper `base.en`, int8 | local | `audio/listen.py:MicTranscriber` | `REACHY_VEC_STT_MODEL` |
 | Speech-to-text (alternative) | `gpt-4o-transcribe` (OpenAI API) | cloud | `audio/listen.py:OpenAITranscriber` | `REACHY_VEC_STT_BACKEND=openai` |
 | Voice activity detection | silero-vad (16 kHz, 512-sample frames) | local | `audio/listen.py:_AudioCapture` | not configurable |
@@ -32,6 +32,13 @@ of truth:
    url, note). `aixlab.users` is never read.
 2. Format each demo as plain text (`format_demo`). Mongo's own 1536-dim
    `embedding` field is **ignored** — everything lives in one local BGE space.
+
+   Docs retrieval is hybrid: every `add_doc_chunks` write refreshes a
+   native Lance FTS index on `text`, and per-turn search combines BM25
+   with the query vector (RRF). Scores shown to the LLM stay cosine 0..1.
+   A DB without the index (created before this feature) transparently
+   falls back to vector-only until the next ingest/sync rebuilds it.
+
 3. Chunk (`ingestion.chunk_text`: paragraphs packed to ≤1000 chars).
 4. Embed all chunks with BGE **before** deleting anything, then replace all
    rows whose source starts with `demo: ` — idempotent, and a mid-run
@@ -112,7 +119,7 @@ embedded and stored as its own `people` row; frames also saved to
    - top-3 of **the turn speaker's** `memories` rows.
 3. Build one user message: `[context + scores] + [memories] + "Name: question"`,
    appended to the visit's history (max 20 messages, reset per visit).
-4. One **streaming** `gpt-4o` call with the Reachy personality prompt and
+4. One **streaming** `gpt-5-mini` call with the Reachy personality prompt and
    the tool list. Completed sentences are spoken as they arrive (~1 s to
    first sound). The model itself judges relevance: grounded answer naming
    the demo, or general knowledge with a casual "off the top of my head"
@@ -134,7 +141,7 @@ embedded and stored as its own `people` row; frames also saved to
 
 - **Explicit**: the model calls `save_note` when asked to remember something.
 - **Implicit**: when a conversation ends (`end_conversation`), one extra
-  `gpt-4o` call **per enrolled person who spoke** reviews the visit and
+  `gpt-5-mini` call **per enrolled person who spoke** reviews the visit and
   distills up to 3 third-person notes each (or `NONE` for chit-chat).
 - Both paths embed the note with BGE, skip near-duplicates (cosine ≥ 0.97
   vs the person's nearest existing memory), and write `memories` rows.

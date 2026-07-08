@@ -2,7 +2,7 @@
 
 All settings live in `src/reachy_vec/config.py` (`pydantic-settings`).
 Set them as environment variables with the `REACHY_VEC_` prefix or in
-`.env` at the repo root (e.g. `REACHY_VEC_LLM_MODEL=gpt-4o-mini`).
+`.env` at the repo root (e.g. `REACHY_VEC_LLM_MODEL=gpt-4o`).
 Unknown keys in `.env` are ignored.
 
 ## Secrets (no prefix)
@@ -16,8 +16,10 @@ Unknown keys in `.env` are ignored.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `LLM_MODEL` | `gpt-4o` | OpenAI chat model for answers, tools, and memory distillation |
+| `LLM_MODEL` | `gpt-5-mini` | OpenAI chat model for answers, tools, and memory distillation |
+| `LLM_REASONING_EFFORT` | `minimal` | Reasoning effort for gpt-5* models (`minimal`/`low`/`medium`/`high`); ignored for others |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | must stay 384-dim (`EMBEDDING_DIM`); changing models requires re-ingesting everything (docs and memories share the space) |
+| `EMBEDDING_QUERY_PREFIX` | `Represent this sentence for searching relevant passages: ` | BGE query instruction, applied to search queries only (never documents); set empty when using a non-BGE embedding model |
 | `STT_BACKEND` | `local` | `local` (faster-whisper) or `openai` (`gpt-4o-transcribe`; more accurate, ~1 s slower) |
 | `STT_MODEL` | `base.en` | faster-whisper size for the local backend; `small.en` = more accurate, slower |
 | `TTS_BACKEND` | `say` | macOS `say` today; `fish-speech` (voice-cloned) planned |
