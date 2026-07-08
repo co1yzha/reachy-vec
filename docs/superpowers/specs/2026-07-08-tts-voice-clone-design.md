@@ -62,6 +62,7 @@ ChatBrain sentence stream ──► Speaker.speak(text)          (unchanged)
 | `REACHY_VEC_TTS_BACKEND` | `say` (default) \| `qwen-tts` |
 | `REACHY_VEC_VOICE_SAMPLE` | path to reference WAV (required for `qwen-tts`) |
 | `REACHY_VEC_TTS_MODEL` | mlx-audio model id, default Qwen3-TTS 0.6B (new knob, pinned default) |
+| `REACHY_VEC_VOICE_SAMPLE_TEXT` | transcript of the sample (optional; omitted → mlx-audio auto-transcribes once via Whisper) |
 
 `.env.example` gains the two opt-in lines with a comment on recording the
 sample.
