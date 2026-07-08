@@ -4,6 +4,7 @@ from datetime import UTC
 from pathlib import Path
 
 import lancedb
+from lancedb.index import FTS
 
 from reachy_vec.store.schemas import (
     DocChunk,
@@ -20,6 +21,13 @@ GREETINGS_TABLE = "greetings"
 MEMORIES_TABLE = "memories"
 MESSAGES_TABLE = "messages"
 VOICES_TABLE = "voices"
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(y * y for y in b) ** 0.5
+    return dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
 
 
 class Store:
@@ -40,7 +48,10 @@ class Store:
 
     def add_doc_chunks(self, chunks: list[DocChunk]) -> None:
         if chunks:
-            self._docs().add(chunks)
+            table = self._docs()
+            table.add(chunks)
+            # BM25 leg of hybrid search; cheap to rebuild at this corpus size.
+            table.create_index("text", config=FTS(), replace=True)
 
     def search_docs(self, query_vector: list[float], k: int = 5) -> list[DocChunk]:
         return self._docs().search(query_vector).limit(k).to_pydantic(DocChunk)
@@ -49,12 +60,33 @@ class Store:
         return self._docs().count_rows()
 
     def search_docs_scored(
-        self, query_vector: list[float], k: int = 5
+        self, query_vector: list[float], k: int = 5, query_text: str | None = None
     ) -> list[tuple[DocChunk, float]]:
-        """Like search_docs, with cosine similarity scores (1.0 = identical)."""
+        """Top-k docs with cosine similarity scores (1.0 = identical).
+
+        With query_text and an FTS index present, ranking is hybrid
+        (vector + BM25, RRF); the reported score is still cosine so its
+        meaning never changes. Falls back to vector-only otherwise.
+        """
         if self.doc_count() == 0:
             return []
-        rows = self._docs().search(query_vector).metric("cosine").limit(k).to_list()
+        table = self._docs()
+        if query_text and any(i.name == "text_idx" for i in table.list_indices()):
+            rows = (
+                table.search(query_type="hybrid")
+                .vector(query_vector)
+                .text(query_text)
+                .limit(k)
+                .to_list()
+            )
+            return [
+                (
+                    DocChunk(**{k_: row[k_] for k_ in DocChunk.model_fields}),
+                    _cosine(query_vector, list(row["vector"])),
+                )
+                for row in rows
+            ]
+        rows = table.search(query_vector).metric("cosine").limit(k).to_list()
         return [
             (
                 DocChunk(**{k_: row[k_] for k_ in DocChunk.model_fields}),
