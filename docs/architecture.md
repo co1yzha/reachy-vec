@@ -14,8 +14,8 @@ summary.
 │  now; camera/mic    │           │  ears:  Mac mic → silero-VAD →       │
 │  move on-robot when │           │         faster-whisper (base.en)     │
 │  hardware arrives   │           │  voice: ECAPA speaker ID + fusion    │
-└─────────────────────┘           │  mouth: macOS `say` (fish-speech     │
-                                  │         planned)                     │
+└─────────────────────┘           │  mouth: macOS `say` / Qwen3-TTS      │
+                                  │         voice clone (mlx-audio)      │
                                   │  brain: OpenAI (gpt-5-mini) + RAG    │
        MongoDB Atlas              │  store: LanceDB (data/lancedb)       │
        aixlab.demos ──sync-mongo──►                                      │

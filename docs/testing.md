@@ -87,6 +87,17 @@ Walk through the checklist:
 | Two enrolled people take turns (one off-camera) | Each "remember I..." lands on the actual speaker's memories |
 | A stranger talks over an enrolled person's visit | Answered politely; "remember..." is refused (unknown voice) |
 
+### 5. Cloned voice (optional)
+
+With `REACHY_VEC_TTS_BACKEND=qwen-tts` and a recorded `REACHY_VEC_VOICE_SAMPLE`
+(see README "Cloned voice"), run `uv run reachy-vec run --preview`, ask a
+question, and confirm:
+
+- the reply is in the cloned voice (first run downloads the model, ~1.5 GB);
+- per-sentence delay is acceptable (~1–3 s);
+- a conversation survives a synthesis hiccup — the robot skips the sentence
+  rather than crashing.
+
 ## Troubleshooting
 
 - **What did it hear/say?** `reachy-vec run` writes every transcribed
