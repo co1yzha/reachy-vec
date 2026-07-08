@@ -393,3 +393,87 @@ def test_distillation_covers_every_speaker(tmp_path):
     emb = FakeEmbedder()
     assert brain._store.search_memories(emb.embed(["charts"])[0], person_id="p1", k=3)
     assert brain._store.search_memories(emb.embed(["visiting"])[0], person_id="p2", k=3)
+
+
+def test_reasoning_effort_sent_for_gpt5_models(tmp_path):
+    client = FakeLLMClient(reply="ok")
+    brain = ChatBrain(
+        store=seeded_store(tmp_path),
+        embedder=FakeEmbedder(),
+        client=client,
+        model="gpt-5-mini",
+        reasoning_effort="minimal",
+        opener=lambda url: None,
+    )
+    brain.respond("hello", identity=YANG)
+    assert client.chat.completions.last_kwargs["reasoning_effort"] == "minimal"
+
+
+def test_reasoning_effort_omitted_for_non_gpt5_models(tmp_path):
+    client = FakeLLMClient(reply="ok")
+    brain = ChatBrain(
+        store=seeded_store(tmp_path),
+        embedder=FakeEmbedder(),
+        client=client,
+        model="gpt-4o",
+        reasoning_effort="minimal",
+        opener=lambda url: None,
+    )
+    brain.respond("hello", identity=YANG)
+    assert "reasoning_effort" not in client.chat.completions.last_kwargs
+
+
+class RecordingEmbedder(FakeEmbedder):
+    def __init__(self):
+        self.query_texts: list[str] = []
+
+    def embed_query(self, text: str) -> list[float]:
+        self.query_texts.append(text)
+        return super().embed_query(text)
+
+
+def test_question_is_embedded_as_query(tmp_path):
+    embedder = RecordingEmbedder()
+    brain = ChatBrain(
+        store=seeded_store(tmp_path),
+        embedder=embedder,
+        client=FakeLLMClient(reply="ok"),
+        model="gpt-4o",
+        opener=lambda url: None,
+    )
+    brain.respond("any demos about food?", identity=YANG)
+    assert embedder.query_texts == ["any demos about food?"]
+
+
+def test_keyword_only_match_ranks_first_in_context(tmp_path):
+    # The question's fake vector is unrelated to both chunks; only BM25 on
+    # "Jane Smith" can put the Robot Arm chunk first in the injected context.
+    store = Store(tmp_path / "db")
+    embedder = FakeEmbedder()
+    texts = {
+        "arm": "Demo: Robot Arm Teleop\nAuthors: Jane Smith",
+        "food": "Demo: Food Mapping\nAuthors: Bob",
+    }
+    store.add_doc_chunks(
+        [
+            DocChunk(
+                chunk_id=key,
+                text=text,
+                vector=embedder.embed([text])[0],
+                source=f"demo: {key}",
+                ingested_at="2026-07-08T00:00:00+00:00",
+            )
+            for key, text in texts.items()
+        ]
+    )
+    client = FakeLLMClient(reply="ok")
+    brain = ChatBrain(
+        store=store,
+        embedder=embedder,
+        client=client,
+        model="gpt-4o",
+        opener=lambda url: None,
+    )
+    brain.respond("who is Jane Smith?", identity=YANG)
+    context = client.chat.completions.last_kwargs["messages"][-1]["content"]
+    assert context.index("Robot Arm Teleop") < context.index("Food Mapping")

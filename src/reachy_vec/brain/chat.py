@@ -169,6 +169,7 @@ class ChatBrain:
         embedder: Embedder,
         client,
         model: str,
+        reasoning_effort: str | None = None,
         opener: Callable[[str], None] = default_opener,
         k: int = 5,
     ):
@@ -176,6 +177,12 @@ class ChatBrain:
         self._embedder = embedder
         self._client = client
         self._model = model
+        # gpt-4o and older reject the reasoning_effort param
+        self._llm_kwargs = (
+            {"reasoning_effort": reasoning_effort}
+            if reasoning_effort and model.startswith("gpt-5")
+            else {}
+        )
         self._opener = opener
         self._k = k
         self._history: list[dict] = []
@@ -232,12 +239,13 @@ class ChatBrain:
         self._turn = identity or ANONYMOUS
         if self._turn.person_id:
             self._participants[self._turn.person_id] = self._turn.name
-        vector = self._embedder.embed([question])[0]
+        vector = self._embedder.embed_query(question)
         self._history.append(
             {
                 "role": "user",
                 "content": CONTEXT_TEMPLATE.format(
-                    context=self._retrieve_docs(vector) or "(nothing relevant found)",
+                    context=self._retrieve_docs(vector, question)
+                    or "(nothing relevant found)",
                     memories=self._retrieve_memories(vector),
                     speaker=self._turn.name or "User",
                     question=question,
@@ -259,8 +267,8 @@ class ChatBrain:
 
     # -- internals ------------------------------------------------------------
 
-    def _retrieve_docs(self, vector: list[float]) -> str:
-        scored = self._store.search_docs_scored(vector, k=self._k)
+    def _retrieve_docs(self, vector: list[float], question: str) -> str:
+        scored = self._store.search_docs_scored(vector, k=self._k, query_text=question)
         return "\n\n".join(
             f"[{chunk.source} | score {score:.2f}]\n{chunk.text}"
             for chunk, score in scored
@@ -283,6 +291,7 @@ class ChatBrain:
                 model=self._model,
                 messages=[{"role": "system", "content": PERSONALITY}, *self._history],
                 tools=TOOLS,
+                **self._llm_kwargs,
             )
             return response.choices[0].message
         return self._complete_streaming(on_sentence)
@@ -293,6 +302,7 @@ class ChatBrain:
             messages=[{"role": "system", "content": PERSONALITY}, *self._history],
             tools=TOOLS,
             stream=True,
+            **self._llm_kwargs,
         )
         content, buffer = "", ""
         tool_calls: dict[int, dict] = {}
@@ -411,6 +421,7 @@ class ChatBrain:
                         "content": SUMMARY_PROMPT.format(name=name or "them"),
                     },
                 ],
+                **self._llm_kwargs,
             )
             text = (response.choices[0].message.content or "").strip()
             if text.upper() == "NONE":
