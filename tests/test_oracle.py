@@ -4,6 +4,7 @@ from reachy_vec.perception.fusion import TurnIdentity
 from reachy_vec.store.db import Store
 from reachy_vec.store.schemas import VOICE_EMBEDDING_DIM, VoiceRow
 from tests.conftest import (
+    FakeBargeInMonitor,
     FakeBody,
     FakeBrain,
     FakeSpeaker,
@@ -27,6 +28,7 @@ def make_loop(
     store=None,
     brain=None,
     speaker_id=None,
+    barge_in_factory=None,
 ):
     sights_iter = iter(sights)
     speaker, body = FakeSpeaker(), FakeBody()
@@ -43,6 +45,7 @@ def make_loop(
         clock=lambda: 1000.0,
         unknown_stable_polls=2,
         speaker_id=speaker_id,
+        barge_in_factory=barge_in_factory,
     )
     return loop, speaker, body, store, brain
 
@@ -59,6 +62,41 @@ def test_known_person_greet_question_answer_goodbye(tmp_path):
     assert brain.begun == [("p1", "Alice")]                   # conversation opened
     assert brain.ended == 1                                   # memories distilled
     assert brain.asked == [("when is standup?", TurnIdentity("p1", "Alice"))]  # attributed
+
+
+def test_barge_in_stops_speaker_and_skips_nod(tmp_path):
+    from reachy_vec.brain.chat import SpeechInterrupted
+
+    monitor = FakeBargeInMonitor()
+
+    class InterruptingBrain:
+        def begin_conversation(self, *a):
+            pass
+
+        def end_conversation(self):
+            pass
+
+        def respond(self, question, identity=None, on_sentence=None):
+            monitor.trip()  # user starts talking mid-reply
+            try:
+                on_sentence("half a sentence")  # guarded -> raises
+            except SpeechInterrupted:
+                return "half a sentence"  # ChatBrain swallows it internally
+            return "full reply"
+
+    loop, speaker, body, _store, _brain = make_loop(
+        tmp_path,
+        sights=[ALICE],
+        utterances=["a question", None],
+        brain=InterruptingBrain(),
+        barge_in_factory=lambda: monitor,
+    )
+    assert loop.run_once() == "conversation"
+    assert monitor.started == 1
+    assert monitor.stopped == 1
+    assert speaker.stopped == 1          # on_fire -> speaker.stop
+    assert "half a sentence" not in speaker.spoken  # guarded sentence never spoken
+    assert "nod" not in body.motions     # nod skipped on interrupt
 
 
 def test_cooldown_suppresses_spoken_greeting(tmp_path):

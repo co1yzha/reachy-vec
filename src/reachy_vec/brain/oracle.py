@@ -9,6 +9,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 
+from reachy_vec.brain.chat import SpeechInterrupted
 from reachy_vec.perception.fusion import fuse
 from reachy_vec.store.schemas import VoiceRow
 
@@ -44,6 +45,7 @@ class OracleLoop:
         idle_sleep_s: float = 300.0,
         speaker_id=None,
         voice_passive_cap: int = 10,
+        barge_in_factory=None,
     ):
         self._sight = sight
         self._transcriber = transcriber
@@ -54,6 +56,7 @@ class OracleLoop:
         self._store = store
         self._speaker_id = speaker_id  # None = voice ID disabled (face-only)
         self._voice_passive_cap = voice_passive_cap
+        self._barge_in_factory = barge_in_factory  # None = barge-in disabled
         self._clock = clock
         self._greet_cooldown_s = greet_cooldown_s
         self._silence_timeout_s = silence_timeout_s
@@ -112,18 +115,35 @@ class OracleLoop:
                 self._brain.end_conversation()  # distill memories of the visit
                 return
             voice_obs = self._identify_voice(utterance.audio)
+            monitor = self._barge_in_factory() if self._barge_in_factory else None
+            if monitor is not None:
+                monitor.start(on_fire=self._speaker.stop)
+
+                def on_sentence(text, _m=monitor):
+                    if _m.fired:
+                        raise SpeechInterrupted()
+                    self._speaker.speak(text)
+            else:
+                on_sentence = self._speaker.speak
             try:
                 # sentences are spoken as they stream in; respond blocks
                 # until the reply is complete
                 self._brain.respond(
                     utterance.text,
                     identity=fuse(face_obs, voice_obs),
-                    on_sentence=self._speaker.speak,
+                    on_sentence=on_sentence,
                 )
-                self._body.perform("nod")
             except Exception:
                 logger.exception("brain.respond failed")
                 self._speaker.speak(APOLOGY)
+            finally:
+                if monitor is not None:
+                    monitor.stop()
+            if monitor is not None and monitor.fired:
+                # user is already talking; skip the nod and listen again
+                self._maybe_bank_voice(face_obs, voice_obs, utterance.audio)
+                continue
+            self._body.perform("nod")
             self._maybe_bank_voice(face_obs, voice_obs, utterance.audio)
 
     def _identify_voice(self, audio):

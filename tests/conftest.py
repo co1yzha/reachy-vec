@@ -186,6 +186,29 @@ class FakeCamera:
         return next(self._it, None)
 
 
+class FakeBargeInMonitor:
+    """Scripted barge-in: records start/stop; .trip() simulates the mic firing."""
+
+    def __init__(self):
+        self.fired = False
+        self.started = 0
+        self.stopped = 0
+        self._on_fire = lambda: None
+
+    def start(self, on_fire):
+        self.started += 1
+        self.fired = False
+        self._on_fire = on_fire
+
+    def stop(self):
+        self.stopped += 1
+
+    def trip(self):
+        """Simulate the monitor thread firing while Reachy speaks."""
+        self.fired = True
+        self._on_fire()
+
+
 class FakeMedia:
     """Stand-in for mini.media: scripted frames + audio samples, records output."""
 
