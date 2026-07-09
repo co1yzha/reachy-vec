@@ -32,7 +32,7 @@ uv run mjpython .venv/bin/reachy-mini-daemon --sim      # with 3D viewer (macOS)
 uv run reachy-mini-daemon --sim --headless              # headless
 ```
 
-Gotchas: after (re)creating `.venv`, re-link libpython for MuJoCo (see README). A crashed daemon can hold port 8000: `pkill -f reachy-mini-daemon`. Secrets (`OPENAI_API_KEY`, `MONGODB_URI`) live in `.env` (template: `.env.example`). CI (`.github/workflows/ci.yml`) runs ruff + pytest; both must pass.
+Gotchas: after (re)creating `.venv`, re-link libpython for MuJoCo (see README). A crashed daemon can hold port 8000: `pkill -f reachy-mini-daemon`. Secrets (`OPENAI_API_KEY`, `MONGODB_URI`) live in `.env` (template: `.env.example`). No CI — run `ruff check` + `pytest` locally before pushing; both must pass.
 
 ## Architecture
 
