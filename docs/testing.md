@@ -82,6 +82,13 @@ For `--source robot`: run the daemon **with media** (not `--sim`), and set
 `say` backend still plays through the Mac. `--source robot` with no robot
 media available exits with an error rather than silently using the Mac.
 
+**Body resilience (Phase 4b).** With the robot connected, pull the daemon
+briefly mid-visit (`pkill -f reachy-mini-daemon`, then relaunch within a
+motion or two): motions skip during the gap and resume silently on
+reconnect. Kill it for good: after `BODY_RECONNECT_ATTEMPTS` the robot says
+it has lost its body once and keeps answering (body-less). Remote robot: set
+`REACHY_VEC_ROBOT_HOST=<addr>` and confirm it connects over the network.
+
 Walk through the checklist:
 
 | You do | Expected |

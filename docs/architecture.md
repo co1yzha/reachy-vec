@@ -115,9 +115,13 @@ to means, roughly in priority order (sequenced into shippable sub-phases in the
    existing `Camera` / `AudioSource` / `Speaker` protocols. `auto` falls back
    to the Mac's devices when the daemon offers no media. Still open: on-robot
    `say` output (renders Mac-side for now) and far-field mic gain tuning.
-2. **`ROBOT_HOST` is declared but unused.** `make_body` always talks to the
-   local daemon; there is no remote-address wiring or reconnection/health
-   check during a session (any failure degrades silently to `NullBody`).
+2. **`ROBOT_HOST` + body resilience — done in Phase 4b.** `make_robot` now
+   connects to a remote robot (`connection_mode="network"`) when `ROBOT_HOST`
+   is set, and a `ReconnectingBody` keeps motions alive across a transient
+   daemon/WiFi drop, degrading to a spoken body-less mode only after
+   `BODY_RECONNECT_ATTEMPTS`. Still open: **robot media** does not hot-recover
+   — on a stream drop the camera/mic go quiet (soft-degrade) until it returns;
+   live media→Mac fallback is a later phase.
 3. **Barge-in is specced but not built.** No `Speaker.stop()`, no
    `BargeInMonitor`, no `SpeechInterrupted` — see
    [phase-2c spec](superpowers/specs/2026-07-08-phase2c-voice-bargein-design.md).
