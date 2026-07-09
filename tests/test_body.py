@@ -1,5 +1,6 @@
 from reachy_vec.body.motions import MOTIONS, Keyframe
 from reachy_vec.body.robot import Body, NullBody, RobotBody, make_robot
+from reachy_vec.config import settings as _settings
 
 EXPECTED = {"greet", "nod", "listen", "idle", "acknowledge", "goodbye"}
 
@@ -92,3 +93,31 @@ def test_make_robot_degrades_to_nullbody_on_connect_failure():
     body, media = make_robot(with_media=True, connect=boom)
     assert isinstance(body, NullBody)
     assert media is None
+
+
+def test_make_robot_uses_network_mode_when_robot_host_set(monkeypatch):
+    monkeypatch.setattr(_settings, "robot_host", "reachy.local")
+    monkeypatch.setattr(_settings, "robot_port", 8123)
+    captured = {}
+
+    def connect(**kw):
+        captured.update(kw)
+        return FakeMini()
+
+    make_robot(with_media=False, connect=connect)
+    assert captured["connection_mode"] == "network"
+    assert captured["host"] == "reachy.local"
+    assert captured["port"] == 8123
+
+
+def test_make_robot_local_when_no_robot_host(monkeypatch):
+    monkeypatch.setattr(_settings, "robot_host", None)
+    captured = {}
+
+    def connect(**kw):
+        captured.update(kw)
+        return FakeMini()
+
+    make_robot(with_media=False, connect=connect)
+    assert "connection_mode" not in captured  # SDK default 'auto'
+    assert "host" not in captured

@@ -4,6 +4,7 @@ import logging
 from typing import Protocol
 
 from reachy_vec.body.motions import MOTIONS
+from reachy_vec.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,14 @@ def make_robot(with_media: bool = False, connect=None) -> tuple[Body, object | N
                 return ReachyMini(**kw)
 
         backend = "default" if with_media else "no_media"
-        mini = connect(media_backend=backend)
+        kwargs = {"media_backend": backend}
+        if settings.robot_host:
+            kwargs.update(
+                host=settings.robot_host,
+                port=settings.robot_port,
+                connection_mode="network",
+            )
+        mini = connect(**kwargs)
         if with_media:
             mini.acquire_media()
 

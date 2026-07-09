@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # Robot (wireless Reachy Mini on the local network); None = simulator/headless
     robot_host: str | None = None
+    robot_port: int = 8000  # daemon port; used with robot_host in network mode
 
     # Models
     llm_model: str = "gpt-5-mini"
