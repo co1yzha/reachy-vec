@@ -56,7 +56,10 @@ Unknown keys in `.env` are ignored.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `ROBOT_HOST` | unset | **reserved, not yet consumed.** `body/robot.py:make_robot` connects to the local daemon and (for `MEDIA_SOURCE=robot/auto`) acquires its camera/mic/speaker media; it falls back to a logging `NullBody` if none is reachable. Point a remote robot at the brain by running the daemon against it; explicit-address wiring lands in Phase 4b |
+| `ROBOT_HOST` | unset | remote Reachy Mini address; when set, `make_robot` connects in `connection_mode="network"` to `ROBOT_HOST:ROBOT_PORT`. Unset = local daemon (SDK `auto`). Falls back to a logging `NullBody` if none is reachable |
+| `ROBOT_PORT` | `8000` | daemon port, used with `ROBOT_HOST` |
+| `ROBOT_RECONNECT` | `true` | rebuild the body connection after a transient motion drop; `false` = a single drop degrades straight to body-less. Robot media (camera/mic) does not hot-recover either way — it soft-degrades (blank frame / silence) until the stream returns |
+| `BODY_RECONNECT_ATTEMPTS` | `3` | consecutive motion failures before the robot gives up on its body for the session (speaks one notice, keeps listening) |
 | `DATA_DIR` | `data` | holds `lancedb/` (all tables), `faces/` (enrollment JPEGs), `reachy.log` (transcript log — privacy-relevant, gitignored) |
 | `WEATHER_LAT` / `WEATHER_LON` | `53.4084` / `-2.9916` | lab location for `get_weather` (Liverpool, UK; Open-Meteo, no key) |
 

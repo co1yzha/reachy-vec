@@ -1,5 +1,6 @@
 from reachy_vec.body.motions import MOTIONS, Keyframe
 from reachy_vec.body.robot import Body, NullBody, RobotBody, make_robot
+from reachy_vec.config import settings as _settings
 
 EXPECTED = {"greet", "nod", "listen", "idle", "acknowledge", "goodbye"}
 
@@ -92,3 +93,86 @@ def test_make_robot_degrades_to_nullbody_on_connect_failure():
     body, media = make_robot(with_media=True, connect=boom)
     assert isinstance(body, NullBody)
     assert media is None
+
+
+def test_make_robot_uses_network_mode_when_robot_host_set(monkeypatch):
+    monkeypatch.setattr(_settings, "robot_host", "reachy.local")
+    monkeypatch.setattr(_settings, "robot_port", 8123)
+    captured = {}
+
+    def connect(**kw):
+        captured.update(kw)
+        return FakeMini()
+
+    make_robot(with_media=False, connect=connect)
+    assert captured["connection_mode"] == "network"
+    assert captured["host"] == "reachy.local"
+    assert captured["port"] == 8123
+
+
+def test_make_robot_local_when_no_robot_host(monkeypatch):
+    monkeypatch.setattr(_settings, "robot_host", None)
+    captured = {}
+
+    def connect(**kw):
+        captured.update(kw)
+        return FakeMini()
+
+    make_robot(with_media=False, connect=connect)
+    assert "connection_mode" not in captured  # SDK default 'auto'
+    assert "host" not in captured
+
+
+class FlakyBody:
+    """RobotBody stand-in: raises ConnectionError for the first `fail` performs."""
+
+    def __init__(self, fail=0):
+        self._fail = fail
+        self.motions: list[str] = []
+
+    def perform(self, motion):
+        if self._fail > 0:
+            self._fail -= 1
+            raise ConnectionError("Lost connection with the server.")
+        self.motions.append(motion)
+
+
+def test_reconnecting_body_recovers_silently_from_a_blip():
+    from reachy_vec.body.robot import ReconnectingBody
+
+    # first inner body fails once; next connect yields a healthy body
+    bodies = iter([FlakyBody(fail=1), FlakyBody(fail=0)])
+    said: list[str] = []
+    body = ReconnectingBody(
+        connect_body=lambda: next(bodies), max_attempts=3, announce=said.append
+    )
+    body.perform("greet")  # inner #1 raises -> dropped, no announce
+    body.perform("nod")    # reconnects to inner #2 -> records "nod"
+    assert said == []      # transient blip stays silent
+
+
+def test_reconnecting_body_gives_up_and_announces_once():
+    from reachy_vec.body.robot import ReconnectingBody
+
+    def always_fails():
+        return FlakyBody(fail=99)
+
+    said: list[str] = []
+    body = ReconnectingBody(
+        connect_body=always_fails, max_attempts=3, announce=said.append
+    )
+    for _ in range(5):
+        body.perform("nod")  # never raises out
+    assert len(said) == 1              # announced exactly once
+    assert "body" in said[0].lower()
+
+
+def test_reconnecting_body_is_noop_after_death():
+    from reachy_vec.body.robot import ReconnectingBody
+
+    healthy = FlakyBody(fail=0)
+    bodies = iter([FlakyBody(fail=99)] * 3 + [healthy])
+    body = ReconnectingBody(connect_body=lambda: next(bodies), max_attempts=3)
+    for _ in range(10):
+        body.perform("nod")
+    assert healthy.motions == []  # dead body never reaches a later healthy connection

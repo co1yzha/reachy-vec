@@ -29,6 +29,19 @@ def resolve_media_source(requested: str, media_available: bool) -> str:
     return "robot" if media_available else "mac"
 
 
+def wrap_reconnect(body, connect_body, announce):
+    """Wrap a RobotBody so motions survive a daemon/WiFi drop; pass others through."""
+    from reachy_vec.body.robot import ReconnectingBody, RobotBody
+
+    if settings.robot_reconnect and isinstance(body, RobotBody):
+        return ReconnectingBody(
+            connect_body=connect_body,
+            max_attempts=settings.body_reconnect_attempts,
+            announce=announce,
+        )
+    return body
+
+
 def run(
     preview: bool = typer.Option(
         False, "--preview", help="Show a window with the webcam feed and face matches."
@@ -129,6 +142,11 @@ def run(
         client=client,
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
+    )
+    body = wrap_reconnect(
+        body,
+        connect_body=lambda: make_robot(with_media=False)[0],
+        announce=speaker.speak,
     )
     loop = OracleLoop(
         sight=sight,

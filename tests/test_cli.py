@@ -24,6 +24,45 @@ def test_resolve_explicit_mac():
     assert resolve_media_source("mac", media_available=True) == "mac"
 
 
+class _StubMini:
+    def goto_target(self, **kw):
+        pass
+
+    def goto_sleep(self):
+        pass
+
+    def wake_up(self):
+        pass
+
+
+def test_wrap_reconnect_wraps_a_robot_body(monkeypatch):
+    from reachy_vec.body.robot import ReconnectingBody, RobotBody
+    from reachy_vec.cli.run import wrap_reconnect
+
+    monkeypatch.setattr("reachy_vec.cli.run.settings.robot_reconnect", True)
+    body = RobotBody(_StubMini())
+    wrapped = wrap_reconnect(body, connect_body=lambda: body, announce=lambda m: None)
+    assert isinstance(wrapped, ReconnectingBody)
+
+
+def test_wrap_reconnect_leaves_nullbody_alone(monkeypatch):
+    from reachy_vec.body.robot import NullBody
+    from reachy_vec.cli.run import wrap_reconnect
+
+    monkeypatch.setattr("reachy_vec.cli.run.settings.robot_reconnect", True)
+    body = NullBody()
+    assert wrap_reconnect(body, connect_body=lambda: body, announce=lambda m: None) is body
+
+
+def test_wrap_reconnect_disabled_returns_body_unchanged(monkeypatch):
+    from reachy_vec.body.robot import RobotBody
+    from reachy_vec.cli.run import wrap_reconnect
+
+    monkeypatch.setattr("reachy_vec.cli.run.settings.robot_reconnect", False)
+    body = RobotBody(_StubMini())
+    assert wrap_reconnect(body, connect_body=lambda: body, announce=lambda m: None) is body
+
+
 def test_help_lists_all_commands():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
