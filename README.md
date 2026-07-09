@@ -20,6 +20,8 @@ Docs:
   tuning note
 - **[Testing guide](docs/testing.md)** — automated suite + manual smoke
   tests + troubleshooting
+- **[Voice cloning](docs/voice-cloning.md)** — make the robot speak in your
+  own voice (qwen-tts backend)
 - **[Design spec](docs/superpowers/specs/2026-07-06-team-familiar-design.md)** —
   aims, architecture decisions, and the phased roadmap ([all specs & plans](docs/superpowers/))
 
