@@ -121,3 +121,58 @@ def test_make_robot_local_when_no_robot_host(monkeypatch):
     make_robot(with_media=False, connect=connect)
     assert "connection_mode" not in captured  # SDK default 'auto'
     assert "host" not in captured
+
+
+class FlakyBody:
+    """RobotBody stand-in: raises ConnectionError for the first `fail` performs."""
+
+    def __init__(self, fail=0):
+        self._fail = fail
+        self.motions: list[str] = []
+
+    def perform(self, motion):
+        if self._fail > 0:
+            self._fail -= 1
+            raise ConnectionError("Lost connection with the server.")
+        self.motions.append(motion)
+
+
+def test_reconnecting_body_recovers_silently_from_a_blip():
+    from reachy_vec.body.robot import ReconnectingBody
+
+    # first inner body fails once; next connect yields a healthy body
+    bodies = iter([FlakyBody(fail=1), FlakyBody(fail=0)])
+    said: list[str] = []
+    body = ReconnectingBody(
+        connect_body=lambda: next(bodies), max_attempts=3, announce=said.append
+    )
+    body.perform("greet")  # inner #1 raises -> dropped, no announce
+    body.perform("nod")    # reconnects to inner #2 -> records "nod"
+    assert said == []      # transient blip stays silent
+
+
+def test_reconnecting_body_gives_up_and_announces_once():
+    from reachy_vec.body.robot import ReconnectingBody
+
+    def always_fails():
+        return FlakyBody(fail=99)
+
+    said: list[str] = []
+    body = ReconnectingBody(
+        connect_body=always_fails, max_attempts=3, announce=said.append
+    )
+    for _ in range(5):
+        body.perform("nod")  # never raises out
+    assert len(said) == 1              # announced exactly once
+    assert "body" in said[0].lower()
+
+
+def test_reconnecting_body_is_noop_after_death():
+    from reachy_vec.body.robot import ReconnectingBody
+
+    healthy = FlakyBody(fail=0)
+    bodies = iter([FlakyBody(fail=99)] * 3 + [healthy])
+    body = ReconnectingBody(connect_body=lambda: next(bodies), max_attempts=3)
+    for _ in range(10):
+        body.perform("nod")
+    assert healthy.motions == []  # dead body never reaches a later healthy connection

@@ -1,6 +1,7 @@
 """Body implementations: real robot/sim via the SDK, or a logging no-op."""
 
 import logging
+from collections.abc import Callable
 from typing import Protocol
 
 from reachy_vec.body.motions import MOTIONS
@@ -45,6 +46,52 @@ class RobotBody:
                 antennas=list(kf.antennas),
                 duration=kf.duration,
             )
+
+
+class ReconnectingBody:
+    """Wraps a Body; rebuilds its connection after a transient drop, and
+    degrades to a silent no-op (announcing once) after max_attempts failures.
+
+    Media is NOT re-acquired here (camera/mic soft-degrade independently);
+    this only keeps motions alive across a daemon/WiFi blip.
+    """
+
+    def __init__(
+        self,
+        connect_body: "Callable[[], Body]",
+        max_attempts: int = 3,
+        announce: "Callable[[str], None] | None" = None,
+    ):
+        self._connect_body = connect_body
+        self._max_attempts = max_attempts
+        self._announce = announce or (lambda _msg: None)
+        self._inner: Body | None = None
+        self._failures = 0
+        self._dead = False
+
+    def perform(self, motion: str) -> None:
+        if self._dead:
+            return
+        try:
+            if self._inner is None:
+                self._inner = self._connect_body()
+            self._inner.perform(motion)
+            self._failures = 0
+        except (ConnectionError, TimeoutError) as exc:
+            self._inner = None
+            self._failures += 1
+            logger.warning(
+                "Body command %r failed (%s); reconnect attempt %d/%d.",
+                motion,
+                exc,
+                self._failures,
+                self._max_attempts,
+            )
+            if self._failures >= self._max_attempts:
+                self._dead = True
+                self._announce(
+                    "I've lost connection to my body, but I can still hear you."
+                )
 
 
 def make_robot(with_media: bool = False, connect=None) -> tuple[Body, object | None]:
