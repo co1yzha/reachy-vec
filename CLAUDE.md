@@ -19,6 +19,7 @@ uv run reachy-vec chat               # text-only brain check (needs OPENAI_API_K
 uv run reachy-vec sync-mongo         # pull aixlab.demos into LanceDB (needs MONGODB_URI)
 uv run reachy-vec ingest <path>      # add .md/.txt docs
 uv run reachy-vec enroll "Name"      # webcam face enrollment
+uv run reachy-vec record-voice       # record ~10s mic sample for cloned TTS -> data/voice_sample.wav
 uv run reachy-vec run --preview      # full Oracle loop (webcam + mic)
 #   cloned voice: REACHY_VEC_TTS_BACKEND=qwen-tts + REACHY_VEC_VOICE_SAMPLE=<wav>
 #   (Qwen3-TTS via mlx-audio, local; default backend is macOS `say`)
