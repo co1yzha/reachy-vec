@@ -49,16 +49,24 @@ itself on first use, just a little slower.)
 
 ## Step 3 — Hear it
 
+The quickest check speaks one line directly through the cloned-voice backend —
+no camera or robot needed (run it from the repo root so `.env` is picked up):
+
 ```bash
-uv run reachy-vec chat
+uv run python -c "from reachy_vec.audio.speak import make_speaker; make_speaker().speak('Hello, I am Reachy, and this is my cloned voice.')"
 ```
 
-Type anything and the reply comes back in your cloned voice. `chat` is the
-quickest check — no camera or robot needed. The **first** reply pauses while
-the model downloads and warms up; after that, expect roughly 1–3 seconds per
-sentence.
+The **first** run pauses while the model downloads and warms up (~1.5 GB); after
+that, expect roughly 1–3 seconds per sentence. If you hear the default macOS
+voice instead of yours, `.env` isn't set to `qwen-tts` (check the file and that
+you're in the repo root).
 
-When you're happy, run the full experience:
+> Note: `reachy-vec chat` is **text-only** — it prints replies, it doesn't speak.
+> The cloned voice is only heard through a speaker-backed path (the command
+> above, or the full Oracle below).
+
+When you're happy, run the full experience — the robot greets you and answers
+aloud in your voice:
 
 ```bash
 uv run reachy-vec run --preview
