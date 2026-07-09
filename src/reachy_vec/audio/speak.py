@@ -18,18 +18,27 @@ QWEN_TTS_DEFAULT_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16"
 
 class Speaker(Protocol):
     def speak(self, text: str) -> None: ...
+    def stop(self) -> None: ...
 
 
 class SaySpeaker:
-    """macOS `say` — dev/debug backend, blocks until speech finishes."""
+    """macOS `say` via Popen so a reply can be interrupted mid-sentence."""
 
-    def __init__(self, run=subprocess.run):
-        self._run = run
+    def __init__(self, popen=subprocess.Popen):
+        self._popen = popen
+        self._proc = None
 
     def speak(self, text: str) -> None:
         text = text.strip()
-        if text:
-            self._run(["say", text], check=False)
+        if not text:
+            return
+        self._proc = self._popen(["say", text])
+        self._proc.wait()
+
+    def stop(self) -> None:
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
 
 
 def _play_blocking(audio, sample_rate: int) -> None:
@@ -70,12 +79,14 @@ class QwenTTSSpeaker:
         model_id: str = QWEN_TTS_DEFAULT_MODEL,
         generate=None,
         play=None,
+        stop=None,
     ):
         self._sample_path = sample_path
         self._sample_text = sample_text
         self._model_id = model_id
         self._generate = generate
         self._play = play or _play_blocking
+        self._stop = stop
 
     def _ensure_generate(self):
         if self._generate is None:
@@ -104,6 +115,14 @@ class QwenTTSSpeaker:
             self._play(audio, sample_rate)
         except Exception:
             logger.exception("TTS synthesis failed; skipping sentence")
+
+    def stop(self) -> None:
+        stop = self._stop
+        if stop is None:
+            import sounddevice as sd
+
+            stop = sd.stop
+        stop()
 
 
 def make_speaker(media=None) -> Speaker:

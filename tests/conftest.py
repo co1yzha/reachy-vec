@@ -149,13 +149,17 @@ class FakeBrain:
 
 
 class FakeSpeaker:
-    """Records spoken lines."""
+    """Records spoken lines and stop() calls."""
 
     def __init__(self):
         self.spoken: list[str] = []
+        self.stopped = 0
 
     def speak(self, text: str) -> None:
         self.spoken.append(text)
+
+    def stop(self) -> None:
+        self.stopped += 1
 
 
 class FakeTranscriber:
