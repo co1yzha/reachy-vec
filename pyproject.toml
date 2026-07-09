@@ -20,6 +20,9 @@ dependencies = [
     "pymongo>=4.17.0",
     "speechbrain>=1.1.0",
     "mlx-audio>=0.4.4",
+    # mlx-lm needs transformers>=5.0, but transformers 5.13 broke AutoTokenizer.register
+    # (str passed as config_class) -> mlx_lm import fails. Cap below 5.13 until mlx-lm catches up.
+    "transformers>=5.0,<5.13",
 ]
 
 [project.scripts]
