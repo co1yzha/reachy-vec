@@ -7,6 +7,7 @@ the OpenAI API (gpt-4o-transcribe). Select with settings.stt_backend.
 
 import io
 import logging
+import threading
 import wave
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -76,6 +77,80 @@ class MicSource:
             while True:
                 data, _overflow = stream.read(chunk_samples)
                 yield data[:, 0].copy()
+
+
+class BargeInMonitor:
+    """Watch the mic while Reachy speaks; fire after sustained speech.
+
+    Shares the AudioSource seam and silero-VAD. The ~min_speech_s hysteresis
+    is what stops Reachy's own voice (heard through the mic) from triggering.
+    """
+
+    def __init__(
+        self, source, min_speech_s=0.7, sample_rate=SAMPLE_RATE, is_speech=None, spawn=None
+    ):
+        self._source = source
+        self._min_chunks = max(1, int(min_speech_s / CHUNK_S))
+        self._sample_rate = sample_rate
+        self._is_speech = is_speech
+        self._spawn = spawn or _daemon_spawn
+        self.fired = False
+        self.broken = False
+        self._stop = False
+        self._on_fire = None
+        self._vad = None
+
+    def start(self, on_fire) -> None:
+        self.fired = False
+        self._stop = False
+        self._on_fire = on_fire
+        self._spawn(self._watch)
+
+    def stop(self) -> None:
+        self._stop = True
+
+    def _watch(self) -> None:
+        try:
+            is_speech = self._is_speech or self._silero_is_speech()
+            chunk_samples = int(self._sample_rate * CHUNK_S)
+            run = 0
+            frame_iter = self._source.frames(chunk_samples)
+            try:
+                for frame in frame_iter:
+                    if self._stop:
+                        return
+                    if is_speech(frame):
+                        run += 1
+                        if run >= self._min_chunks:
+                            self.fired = True
+                            if self._on_fire:
+                                self._on_fire()
+                            return
+                    else:
+                        run = 0
+            finally:
+                frame_iter.close()
+        except Exception:
+            logger.exception("barge-in monitor crashed; disabling for the session")
+            self.broken = True
+
+    def _silero_is_speech(self):
+        import torch
+        from silero_vad import load_silero_vad
+
+        if self._vad is None:
+            self._vad = load_silero_vad()
+
+        def is_speech(frame):
+            return self._vad(torch.from_numpy(frame), self._sample_rate).item() > 0.5
+
+        return is_speech
+
+
+def _daemon_spawn(fn):
+    thread = threading.Thread(target=fn, daemon=True)
+    thread.start()
+    return thread
 
 
 class _AudioCapture:
