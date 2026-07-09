@@ -30,7 +30,7 @@ class Settings(BaseSettings):
         "Represent this sentence for searching relevant passages: "
     )  # BGE query instruction; set empty to disable for non-BGE models
     tts_backend: str = "say"  # say (macOS built-in) | qwen-tts (voice clone, local MLX)
-    tts_model: str = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16"  # mlx-audio model id
+    tts_model: str = ""  # mlx-audio model id
     # tts_model: str = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"  # mlx-audio model id
 
     voice_sample: Path | None = None  # ~10s clean WAV of the voice to clone (qwen-tts)
@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # Weather (Open-Meteo, no API key); default: Liverpool, UK
     weather_lat: float = 53.4084
     weather_lon: float = -2.9916
+
+    # Tools
+    web_search: bool = False  # enable the Tavily web_search tool (needs TAVILY_API_KEY)
 
     # Storage
     data_dir: Path = Path("data")

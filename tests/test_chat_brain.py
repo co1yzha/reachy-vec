@@ -32,14 +32,65 @@ def seeded_store(tmp_path) -> Store:
     return store
 
 
-def make_brain(tmp_path, client, opener=None):
+def make_brain(tmp_path, client, opener=None, web_search_fetch=None):
     return ChatBrain(
         store=seeded_store(tmp_path),
         embedder=FakeEmbedder(),
         client=client,
         model="gpt-4o",
         opener=opener or (lambda url: None),
+        web_search_fetch=web_search_fetch,
     )
+
+
+def _http_error(code):
+    import io
+    import urllib.error
+
+    return urllib.error.HTTPError(
+        "https://api.tavily.com/search", code, "err", {}, io.BytesIO(b"")
+    )
+
+
+def test_web_search_returns_answer(tmp_path):
+    brain = make_brain(
+        tmp_path, FakeLLMClient(), web_search_fetch=lambda q: "Paris is the capital."
+    )
+    assert brain._tool_web_search({"query": "capital of France"}) == "Paris is the capital."
+
+
+def test_web_search_out_of_credits_tells_user(tmp_path):
+    def boom(q):
+        raise _http_error(432)
+
+    brain = make_brain(tmp_path, FakeLLMClient(), web_search_fetch=boom)
+    msg = brain._tool_web_search({"query": "latest news"}).lower()
+    assert "credit" in msg or "allowance" in msg
+
+
+def test_web_search_paygo_limit_also_out_of_credits(tmp_path):
+    def boom(q):
+        raise _http_error(433)
+
+    brain = make_brain(tmp_path, FakeLLMClient(), web_search_fetch=boom)
+    assert "allowance" in brain._tool_web_search({"query": "x"}).lower()
+
+
+def test_web_search_rate_limited_is_distinct(tmp_path):
+    def boom(q):
+        raise _http_error(429)
+
+    brain = make_brain(tmp_path, FakeLLMClient(), web_search_fetch=boom)
+    msg = brain._tool_web_search({"query": "x"}).lower()
+    assert "moment" in msg or "rate" in msg
+    assert "allowance" not in msg  # not confused with credit exhaustion
+
+
+def test_web_search_tool_offered_only_when_enabled(tmp_path):
+    off = make_brain(tmp_path, FakeLLMClient())
+    on = make_brain(tmp_path, FakeLLMClient(), web_search_fetch=lambda q: "ok")
+    assert not any(t["function"]["name"] == "web_search" for t in off._active_tools())
+    assert any(t["function"]["name"] == "web_search" for t in on._active_tools())
 
 
 def test_get_time_tool_returns_local_time(tmp_path):
