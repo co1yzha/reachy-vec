@@ -182,6 +182,40 @@ class FakeCamera:
         return next(self._it, None)
 
 
+class FakeMedia:
+    """Stand-in for mini.media: scripted frames + audio samples, records output."""
+
+    def __init__(
+        self, frames=None, samples=None, in_rate=48000, in_channels=1, out_rate=48000
+    ):
+        self._frames = iter(frames or [])
+        self._samples = iter(samples or [])
+        self._in_rate, self._in_channels, self._out_rate = in_rate, in_channels, out_rate
+        self.pushed: list = []
+        self.played: list = []
+
+    def get_frame(self):
+        return next(self._frames, None)
+
+    def get_audio_sample(self):
+        return next(self._samples, None)
+
+    def get_input_audio_samplerate(self):
+        return self._in_rate
+
+    def get_input_channels(self):
+        return self._in_channels
+
+    def get_output_audio_samplerate(self):
+        return self._out_rate
+
+    def push_audio_sample(self, data):
+        self.pushed.append(data)
+
+    def play_sound(self, path):
+        self.played.append(path)
+
+
 class FakeBody:
     def __init__(self):
         self.motions: list[str] = []
