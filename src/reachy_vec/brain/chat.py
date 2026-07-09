@@ -51,7 +51,8 @@ PERSONALITY = (
     "save_note stores something worth remembering about this person when they "
     "ask you to remember, or share a clear preference; send_message relays a "
     "spoken message to an enrolled teammate next time you see them; "
-    "get_weather checks the live weather outside the lab."
+    "get_weather checks the live weather outside the lab; "
+    "get_time tells the current local date and time."
 )
 
 TOOLS = [
@@ -92,6 +93,14 @@ TOOLS = [
         "function": {
             "name": "get_weather",
             "description": "Get the current live weather outside the lab.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_time",
+            "description": "Get the current local date and time.",
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -359,6 +368,7 @@ class ChatBrain:
             "save_note": self._tool_save_note,
             "send_message": self._tool_send_message,
             "get_weather": self._tool_get_weather,
+            "get_time": self._tool_get_time,
         }
         handler = handlers.get(call.function.name)
         result = handler(args) if handler else "unknown tool"
@@ -385,6 +395,10 @@ class ChatBrain:
         self._store_memories([note], person_id=self._turn.person_id)
         logger.info("save_note for %s: %r", self._turn.name, note)
         return f"noted: {note}"
+
+    def _tool_get_time(self, args: dict) -> str:
+        now = datetime.now().astimezone()
+        return f"the time is {now:%A %d %B %Y, %H:%M} ({now.tzname()})"
 
     def _tool_get_weather(self, args: dict) -> str:
         try:

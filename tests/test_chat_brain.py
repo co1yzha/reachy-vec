@@ -42,6 +42,15 @@ def make_brain(tmp_path, client, opener=None):
     )
 
 
+def test_get_time_tool_returns_local_time(tmp_path):
+    import re
+
+    brain = make_brain(tmp_path, FakeLLMClient())
+    result = brain._tool_get_time({})
+    assert "the time is" in result.lower()
+    assert re.search(r"\d{1,2}:\d{2}", result)  # HH:MM clock value
+
+
 def test_interrupt_keeps_partial_reply_and_skips_tools(tmp_path):
     client = FakeLLMClient(reply="One sentence. Two sentence. Three sentence.")
     brain = make_brain(tmp_path, client)
