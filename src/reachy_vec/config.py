@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     # Perception
     face_threshold: float = 0.45  # cosine similarity; below = unknown
     camera_index: int = 0
+    media_source: str = "auto"  # auto | robot | mac — where camera/mic/speaker live
+    audio_input_rate: int = 16000  # target rate fed to VAD/STT/ECAPA
 
     # Voice ID (Phase 2b) - ECAPA cosine scores run lower than face scores
     voice_threshold: float = 0.30  # below = unknown; within 0.05 under = "can't tell"

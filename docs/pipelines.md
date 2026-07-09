@@ -20,10 +20,13 @@ Current as of Phase 2b (speaker ID + fusion). Companion pages:
 All local models lazy-load on first use; `reachy-vec run` warms them (plus
 the OpenAI TLS connection) at startup so the first conversation isn't slow.
 
-> **Where the I/O runs:** today every step below reads from and writes to the
-> **Mac's own** camera, mic, and speaker — the robot is motion-only
-> (`media_backend="no_media"`). On-robot camera/mic/speaker is not wired yet;
-> see [architecture.md → Known gaps](architecture.md#known-gaps--toward-a-real-robot-deploy).
+> **Where the I/O runs:** selectable via `MEDIA_SOURCE` / `reachy-vec run
+> --source`. `mac` (default on a machine with no robot media) reads the
+> steps below from the Mac's own camera/mic/speaker; `robot` drives them from
+> the Reachy Mini's camera/mic/speaker over the SDK (`RobotCamera`,
+> `RobotAudioSource`, `RobotAudioSink` — robot audio out needs the `qwen-tts`
+> backend). `auto` picks robot when the daemon offers media, else Mac. See
+> [architecture.md → Known gaps](architecture.md#known-gaps--toward-a-real-robot-deploy).
 
 ## 1. Knowledge ingestion
 

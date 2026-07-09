@@ -108,14 +108,13 @@ robot is used for motion only. Closing the gap to a robot people can walk up
 to means, roughly in priority order (sequenced into shippable sub-phases in the
 [Phase 4 bring-up spec](superpowers/specs/2026-07-09-phase4-hardware-bringup-design.md)):
 
-1. **On-robot media (the big one).** `body/robot.py` connects with
-   `media_backend="no_media"`; the eye is the Mac webcam (`WebcamCamera`),
-   the ears are the Mac mic (`MicTranscriber`), and the mouth is the Mac
-   speaker (`say` / `sounddevice`). Nothing streams over WiFi yet. A real
-   deploy needs the robot's camera → face pipeline, the robot's mic → STT,
-   and TTS audio back out through the robot's speaker — all behind the
-   existing `Camera` / `Transcriber` / `Speaker` protocols, so the state
-   machine and tests don't change.
+1. **On-robot media — done in Phase 4a.** `reachy-vec run --source robot`
+   (or `MEDIA_SOURCE=robot`) now drives the loop from the robot's own camera
+   (`RobotCamera`), mic (`RobotAudioSource`), and speaker (`RobotAudioSink`,
+   cloned-voice `qwen-tts` only) via the SDK's `mini.media`, all behind the
+   existing `Camera` / `AudioSource` / `Speaker` protocols. `auto` falls back
+   to the Mac's devices when the daemon offers no media. Still open: on-robot
+   `say` output (renders Mac-side for now) and far-field mic gain tuning.
 2. **`ROBOT_HOST` is declared but unused.** `make_body` always talks to the
    local daemon; there is no remote-address wiring or reconnection/health
    check during a session (any failure degrades silently to `NullBody`).
