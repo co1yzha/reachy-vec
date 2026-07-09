@@ -20,6 +20,8 @@ uv run reachy-vec sync-mongo         # pull aixlab.demos into LanceDB (needs MON
 uv run reachy-vec ingest <path>      # add .md/.txt docs
 uv run reachy-vec enroll "Name"      # webcam face enrollment
 uv run reachy-vec run --preview      # full Oracle loop (webcam + mic)
+#   cloned voice: REACHY_VEC_TTS_BACKEND=qwen-tts + REACHY_VEC_VOICE_SAMPLE=<wav>
+#   (Qwen3-TTS via mlx-audio, local; default backend is macOS `say`)
 uv run reachy-vec dashboard          # local web UI to browse the LanceDB store
 
 # simulator (separate terminal, needed for `run` body motions):
@@ -46,6 +48,6 @@ Configuration is all `pydantic-settings` in `config.py`: env vars with the `REAC
 ## Conventions
 
 - Modules map to roles: `store/` persistence, `brain/` reasoning, `perception/` identity, `audio/` I/O, `body/` robot motions, `cli/` one file per command.
-- Heavy imports (torch, insightface, sentence-transformers, faster-whisper) are deferred to inside methods/functions so `import reachy_vec` and the test suite stay fast.
+- Heavy imports (torch, insightface, sentence-transformers, faster-whisper, mlx-audio) are deferred to inside methods/functions so `import reachy_vec` and the test suite stay fast.
 - Everything the robot hears and says is logged to `data/reachy.log` — privacy-relevant; never commit `data/`.
 - New behavior gets a test against the fakes first; see `docs/testing.md` for the manual smoke-test checklist before claiming hardware-facing work done.
