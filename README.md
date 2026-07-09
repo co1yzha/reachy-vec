@@ -58,8 +58,10 @@ uv run mjpython .venv/bin/reachy-mini-daemon --sim
 uv run reachy-mini-daemon --sim --headless
 ```
 
-Dashboard: http://localhost:8000. If the daemon reports a weird state after
-a crashed run, a stale process may hold port 8000: `pkill -f reachy-mini-daemon`.
+Daemon dashboard: http://localhost:8000 (robot state — not to be confused
+with the LanceDB store dashboard below). If the daemon reports a weird state
+after a crashed run, a stale process may hold port 8000:
+`pkill -f reachy-mini-daemon`.
 
 ### Cloned voice (optional)
 
@@ -76,22 +78,42 @@ voice (fully local, Qwen3-TTS on MLX):
 3. `uv run reachy-vec run --preview` — the first run downloads the model
    (~1.5 GB); expect 1–3 s of synthesis per sentence.
 
+## Usage
+
+```bash
+uv run reachy-vec chat               # text-only brain check (needs OPENAI_API_KEY)
+uv run reachy-vec sync-mongo         # pull aixlab.demos into LanceDB (needs MONGODB_URI)
+uv run reachy-vec ingest <path>      # add .md/.txt docs to the knowledge base
+uv run reachy-vec enroll "Name"      # webcam face enrollment
+uv run reachy-vec run --preview      # full Oracle loop (webcam + mic + robot/sim)
+uv run reachy-vec dashboard          # browse the LanceDB store in the browser
+```
+
+### Store dashboard
+
+`uv run reachy-vec dashboard` serves a local web UI at http://127.0.0.1:8400
+(opens automatically; `--port`/`--no-open` to override) showing live contents
+of every LanceDB table — docs, people, voices, greetings, memories, and
+messages. Handy for checking what the robot ingested, who is enrolled, and
+which memories/messages it has stored. Localhost-only by default; the data
+includes transcripts and embeddings of enrolled teammates, so keep it that way.
+
 ## Layout
 
 ```
 src/reachy_vec/
   config.py        # settings (robot host, model choices, data dir)
   store/           # persistence: LanceDB connection + table schemas
-    schemas.py, db.py
-  brain/           # reasoning: intent routing, RAG, conversation loop
-    intents.py, rag.py, loop.py
+    schemas.py, db.py, embeddings.py, ingestion.py, mongo_sync.py
+  brain/           # reasoning: Oracle state machine, RAG chat, intents
+    oracle.py, chat.py, intents.py, loop.py
   body/            # robot I/O: connection/streaming + motion primitives
     robot.py, motions.py
   perception/      # identity: face ID + speaker ID + fusion
-    face.py, voice.py, fusion.py
-  audio/           # audio front-end and output
+    face.py, voice.py, fusion.py, camera.py, preview.py
+  audio/           # audio front-end and output (say / qwen-tts voice clone)
     listen.py, speak.py
   cli/             # entry points, one file per command
-    chat.py, ingest.py, enroll.py, run.py
+    chat.py, ingest.py, enroll.py, run.py, sync.py, dashboard.py
 tests/
 ```
