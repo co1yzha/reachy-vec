@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # Robot (wireless Reachy Mini on the local network); None = simulator/headless
     robot_host: str | None = None
     robot_port: int = 8000  # daemon port; used with robot_host in network mode
+    robot_reconnect: bool = True  # rebuild the body connection after a transient drop
+    body_reconnect_attempts: int = 3  # consecutive motion failures before giving up
 
     # Models
     llm_model: str = "gpt-5-mini"
