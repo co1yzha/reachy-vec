@@ -1,9 +1,41 @@
 import numpy as np
 
-from reachy_vec.audio.listen import MicTranscriber, Utterance, collect_utterance
+from reachy_vec.audio.listen import (
+    MicSource,
+    MicTranscriber,
+    Utterance,
+    _AudioCapture,
+    collect_utterance,
+)
 from tests.conftest import FakeTranscriber
 
 SPEECH, SILENCE = "s", "."
+
+
+class ScriptedSource:
+    """AudioSource fake: yields pre-baked frames, then stops (silence -> None)."""
+
+    def __init__(self, frames):
+        self._frames = frames
+
+    def frames(self, chunk_samples):
+        yield from self._frames
+
+
+def test_capture_uses_injected_source():
+    # two "speech" frames then two "silence" frames; VAD keyed on frame[0]
+    speech = np.ones(512, dtype=np.float32)
+    silence = np.zeros(512, dtype=np.float32)
+    cap = _AudioCapture(source=ScriptedSource([speech, speech, silence, silence]))
+    cap._load_vad = lambda: None  # skip the real model
+    cap._vad = lambda frame, rate: type("P", (), {"item": lambda self: float(frame[0])})()
+    out = cap._capture(timeout_s=5)
+    assert out is not None
+    assert len(out) == 512 * 4  # 2 speech + 2 trailing silence (max_silence not hit)
+
+
+def test_default_source_is_mic():
+    assert isinstance(_AudioCapture()._source, MicSource)
 
 
 def run_collect(pattern: str, max_silence: int = 2):
