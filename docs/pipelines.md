@@ -144,6 +144,8 @@ embedded and stored as its own `people` row; frames also saved to
 | `save_note` | stores a memory about the current person | requires a recognized visit; near-duplicates (cosine ≥ 0.97) skipped |
 | `send_message` | queues a relay in the `messages` table | recipient must be enrolled (case-insensitive name match) |
 | `get_weather` | live conditions via Open-Meteo (no API key) | location from `WEATHER_LAT/LON`; 5 s timeout |
+| `get_time` | current local date and time | none (pure `datetime`) |
+| `web_search` | live web answer via Tavily (`answer` field) | off unless `WEB_SEARCH=true` + `TAVILY_API_KEY`; 5 s timeout; prompt limits it to genuine current-info needs; Tavily 432/433 (out of credits) → spoken "used up my allowance", 429 → rate-limited message |
 
 ## 5. Memory pipeline (Phase 2)
 

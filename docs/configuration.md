@@ -11,6 +11,7 @@ Unknown keys in `.env` are ignored.
 |---|---|---|
 | `OPENAI_API_KEY` | openai SDK directly | `chat`, `run` (LLM), `STT_BACKEND=openai` |
 | `MONGODB_URI` | `cli/sync.py` | `sync-mongo` only |
+| `TAVILY_API_KEY` | `brain/chat.py` (`web_search` tool) | only when `WEB_SEARCH=true`; free tier is limited — the tool tells the user when credits run out (Tavily 432/433) |
 
 ## Models
 
@@ -53,6 +54,12 @@ Unknown keys in `.env` are ignored.
 | `IDLE_SLEEP_S` | `300` | no faces for this long → sleep motion; wakes on the next face |
 | `BARGE_IN` | `true` | let someone talk over a reply to interrupt it; the current sentence stops and their utterance becomes the next turn. `false` = reply always plays to the end |
 | `BARGE_IN_MIN_SPEECH_S` | `0.7` | sustained speech needed to trigger an interrupt; raise if a loud room false-triggers (no echo cancellation — the robot's own speaker near its mic is the usual culprit) |
+
+## Tools
+
+| Setting | Default | Notes |
+|---|---|---|
+| `WEB_SEARCH` | `false` | enable the Tavily `web_search` tool; also needs `TAVILY_API_KEY`. Off by default to protect a limited credit budget. When enabled, the system prompt restricts it to genuine current/live-info questions; out-of-credits (Tavily 432/433) degrades to a spoken notice |
 
 ## Environment
 
