@@ -54,7 +54,7 @@ Unknown keys in `.env` are ignored.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `ROBOT_HOST` | unset | wireless Reachy Mini address; unset = simulator/headless body |
+| `ROBOT_HOST` | unset | **reserved, not yet consumed.** `body/robot.py:make_body` currently always connects to the local daemon (`ReachyMini(media_backend="no_media")`) and falls back to a logging `NullBody` if none is reachable. Point a remote robot at the brain by running the daemon against it; this knob will wire an explicit address later |
 | `DATA_DIR` | `data` | holds `lancedb/` (all tables), `faces/` (enrollment JPEGs), `reachy.log` (transcript log — privacy-relevant, gitignored) |
 | `WEATHER_LAT` / `WEATHER_LON` | `53.4084` / `-2.9916` | lab location for `get_weather` (Liverpool, UK; Open-Meteo, no key) |
 

@@ -96,3 +96,11 @@ disk for next time.
 The sample and the model stay entirely on the Mac — nothing is uploaded. Clone
 only your own voice, or someone else's with their explicit permission. The WAV
 under `data/` is git-ignored and never committed.
+
+## Current limitations
+
+- **Playback is through the Mac speaker, not the robot.** Synthesis runs
+  locally and plays on the Mac; on-robot audio output isn't wired yet (see
+  [architecture.md → Known gaps](architecture.md#known-gaps--toward-a-real-robot-deploy)).
+- **You can't interrupt it.** Barge-in (talking over a reply) is specced but
+  not implemented, so a long cloned-voice answer plays to the end.

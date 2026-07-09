@@ -20,6 +20,11 @@ Current as of Phase 2b (speaker ID + fusion). Companion pages:
 All local models lazy-load on first use; `reachy-vec run` warms them (plus
 the OpenAI TLS connection) at startup so the first conversation isn't slow.
 
+> **Where the I/O runs:** today every step below reads from and writes to the
+> **Mac's own** camera, mic, and speaker — the robot is motion-only
+> (`media_backend="no_media"`). On-robot camera/mic/speaker is not wired yet;
+> see [architecture.md → Known gaps](architecture.md#known-gaps--toward-a-real-robot-deploy).
+
 ## 1. Knowledge ingestion
 
 Two entry points writing into the same LanceDB `docs` table; queried

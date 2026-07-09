@@ -98,6 +98,15 @@ question, and confirm:
 - a conversation survives a synthesis hiccup — the robot skips the sentence
   rather than crashing.
 
+### Not yet exercisable
+
+Two things the docs describe as *intended* have no code to smoke-test yet:
+**barge-in** (interrupting a reply — specced in phase 2c, not built) and
+**on-robot media** (camera/mic/speaker still run on the Mac). See
+[architecture.md → Known gaps](architecture.md#known-gaps--toward-a-real-robot-deploy).
+All hardware smoke tests above therefore use the Mac's devices with the
+robot/sim as a motion-only body.
+
 ## Troubleshooting
 
 - **What did it hear/say?** `reachy-vec run` writes every transcribed

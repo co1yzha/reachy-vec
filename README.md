@@ -31,10 +31,11 @@ Docs:
 - **Phase 1 — Oracle:** walk up, get greeted by name, ask a question, hear the answer.
 - **Phase 2 — Memory keeper:** per-person attribution of spoken notes, recall by person.
 - **Phase 3 — Messenger:** "tell Bob…" relayed when Bob is next seen.
+- **Phase 4 — On-robot deployment** *(planned)*: perception + speech move onto the robot's own camera/mic/speaker (today they run on the Mac), plus `ROBOT_HOST` wiring, barge-in, and autostart. See the [bring-up spec](docs/superpowers/specs/2026-07-09-phase4-hardware-bringup-design.md).
 
 ## Setup
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync

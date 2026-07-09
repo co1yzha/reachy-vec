@@ -99,3 +99,36 @@ Env vars / `.env` with the `REACHY_VEC_` prefix; secrets (`OPENAI_API_KEY`,
 `MONGODB_URI`) have no prefix. Full reference with defaults and tuning
 notes: **[configuration.md](configuration.md)**. Per-pipeline detail (which
 model runs at each step): **[pipelines.md](pipelines.md)**.
+
+## Known gaps / toward a real-robot deploy
+
+The diagram above is the *intended* shape. What actually ships today runs
+the entire perception + speech loop on the **Mac's own devices**, and the
+robot is used for motion only. Closing the gap to a robot people can walk up
+to means, roughly in priority order (sequenced into shippable sub-phases in the
+[Phase 4 bring-up spec](superpowers/specs/2026-07-09-phase4-hardware-bringup-design.md)):
+
+1. **On-robot media (the big one).** `body/robot.py` connects with
+   `media_backend="no_media"`; the eye is the Mac webcam (`WebcamCamera`),
+   the ears are the Mac mic (`MicTranscriber`), and the mouth is the Mac
+   speaker (`say` / `sounddevice`). Nothing streams over WiFi yet. A real
+   deploy needs the robot's camera → face pipeline, the robot's mic → STT,
+   and TTS audio back out through the robot's speaker — all behind the
+   existing `Camera` / `Transcriber` / `Speaker` protocols, so the state
+   machine and tests don't change.
+2. **`ROBOT_HOST` is declared but unused.** `make_body` always talks to the
+   local daemon; there is no remote-address wiring or reconnection/health
+   check during a session (any failure degrades silently to `NullBody`).
+3. **Barge-in is specced but not built.** No `Speaker.stop()`, no
+   `BargeInMonitor`, no `SpeechInterrupted` — see
+   [phase-2c spec](superpowers/specs/2026-07-08-phase2c-voice-bargein-design.md).
+   The robot cannot yet be interrupted mid-reply.
+4. **Cloud dependency / no offline fallback.** Answers require the OpenAI
+   API; a WiFi or API outage yields a spoken apology, not a degraded local
+   answer. The Mac↔robot link is also assumed reliable.
+5. **Attention is face-only.** No wake word and no sound localization —
+   someone off-camera can't get the robot's attention or make it turn toward
+   the speaker; multi-party turn-taking beyond voice attribution is untested.
+6. **Operational polish.** No autostart/service, no metrics beyond
+   `data/reachy.log`, and identity management (delete/rename/merge a person,
+   consent + retention controls) is not exposed anywhere but the raw store.

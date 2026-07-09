@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Team Familiar: an embodied team assistant on a Reachy Mini robot. The robot recognizes teammates by face, answers questions from a shared knowledge base (RAG), remembers per-person notes, and relays messages. The brain runs on a Mac; the robot (or MuJoCo simulator) is a thin body. Currently at Phase 3 (messenger).
 
+**Not yet wired (see `docs/architecture.md` → Known gaps):** the robot is motion-only — camera, mic, and speaker are all the *Mac's* (`media_backend="no_media"`); on-robot media does not stream over WiFi yet. `ROBOT_HOST` is declared in `config.py` but unused. Barge-in (interrupting a reply) is specced in `docs/superpowers/specs/2026-07-08-phase2c-...` but not implemented — only the cloned-voice half of that spec shipped. Answers require the OpenAI API (no offline fallback).
+
 ## Commands
 
 ```bash
