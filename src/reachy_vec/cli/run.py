@@ -160,6 +160,7 @@ def run(
         client=client,
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
+        web_search=settings.web_search,
     )
     body = wrap_reconnect(
         body,

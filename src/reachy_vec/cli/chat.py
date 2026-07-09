@@ -26,5 +26,6 @@ def chat() -> None:
         client=OpenAI(),
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
+        web_search=settings.web_search,
     )
     chat_loop(brain=brain)

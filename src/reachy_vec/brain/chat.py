@@ -9,6 +9,7 @@ three memories about the person into the store.
 
 import json
 import logging
+import os
 import subprocess
 import uuid
 from collections.abc import Callable
@@ -51,7 +52,8 @@ PERSONALITY = (
     "save_note stores something worth remembering about this person when they "
     "ask you to remember, or share a clear preference; send_message relays a "
     "spoken message to an enrolled teammate next time you see them; "
-    "get_weather checks the live weather outside the lab."
+    "get_weather checks the live weather outside the lab; "
+    "get_time tells the current local date and time."
 )
 
 TOOLS = [
@@ -98,6 +100,14 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_time",
+            "description": "Get the current local date and time.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "send_message",
             "description": (
                 "Relay a message to an enrolled teammate; it is spoken to them "
@@ -114,6 +124,46 @@ TOOLS = [
         },
     },
 ]
+
+WEB_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": (
+            "Search the live web for current, real-time, or very recent information "
+            "that isn't in the team library and isn't stable general knowledge."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "what to search for"}},
+            "required": ["query"],
+        },
+    },
+}
+
+WEB_SEARCH_HINT = (
+    " web_search looks things up on the live web - use it only when the user wants "
+    "current or up-to-the-minute info you can't give from the team library or your "
+    "own knowledge (it costs a limited search budget, so don't use it for chit-chat)."
+)
+
+
+def fetch_tavily(query: str, api_key: str, max_results: int = 3, timeout: float = 5.0) -> str:
+    """Tavily search; returns the spoken-ready `answer`. Raises urllib errors."""
+    import urllib.request
+
+    body = json.dumps(
+        {"query": query, "include_answer": True, "max_results": max_results}
+    ).encode()
+    req = urllib.request.Request(
+        "https://api.tavily.com/search",
+        data=body,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        data = json.loads(response.read())
+    return (data.get("answer") or "").strip()
+
 
 SUMMARY_PROMPT = (
     "Review the conversation you just had with {name}. Write up to 3 short "
@@ -177,6 +227,8 @@ class ChatBrain:
         reasoning_effort: str | None = None,
         opener: Callable[[str], None] = default_opener,
         k: int = 5,
+        web_search: bool = False,
+        web_search_fetch=None,
     ):
         self._store = store
         self._embedder = embedder
@@ -190,6 +242,13 @@ class ChatBrain:
         )
         self._opener = opener
         self._k = k
+        if web_search_fetch is None and web_search:
+            key = os.getenv("TAVILY_API_KEY")
+            if key:
+                web_search_fetch = lambda q: fetch_tavily(q, key)  # noqa: E731
+            else:
+                logger.warning("web_search enabled but TAVILY_API_KEY missing; disabling")
+        self._web_search_fetch = web_search_fetch
         self._history: list[dict] = []
         self._person_id: str | None = None
         self._person_name: str | None = None
@@ -302,12 +361,18 @@ class ChatBrain:
             memories="\n".join(f"- {h.text}" for h in hits),
         )
 
+    def _active_tools(self) -> list:
+        return [*TOOLS, WEB_SEARCH_TOOL] if self._web_search_fetch else TOOLS
+
+    def _system_prompt(self) -> str:
+        return PERSONALITY + WEB_SEARCH_HINT if self._web_search_fetch else PERSONALITY
+
     def _complete(self, on_sentence: Callable[[str], None] | None = None):
         if on_sentence is None:
             response = self._client.chat.completions.create(
                 model=self._model,
-                messages=[{"role": "system", "content": PERSONALITY}, *self._history],
-                tools=TOOLS,
+                messages=[{"role": "system", "content": self._system_prompt()}, *self._history],
+                tools=self._active_tools(),
                 **self._llm_kwargs,
             )
             return response.choices[0].message
@@ -316,8 +381,8 @@ class ChatBrain:
     def _complete_streaming(self, on_sentence: Callable[[str], None]):
         stream = self._client.chat.completions.create(
             model=self._model,
-            messages=[{"role": "system", "content": PERSONALITY}, *self._history],
-            tools=TOOLS,
+            messages=[{"role": "system", "content": self._system_prompt()}, *self._history],
+            tools=self._active_tools(),
             stream=True,
             **self._llm_kwargs,
         )
@@ -359,6 +424,8 @@ class ChatBrain:
             "save_note": self._tool_save_note,
             "send_message": self._tool_send_message,
             "get_weather": self._tool_get_weather,
+            "get_time": self._tool_get_time,
+            "web_search": self._tool_web_search,
         }
         handler = handlers.get(call.function.name)
         result = handler(args) if handler else "unknown tool"
@@ -385,6 +452,39 @@ class ChatBrain:
         self._store_memories([note], person_id=self._turn.person_id)
         logger.info("save_note for %s: %r", self._turn.name, note)
         return f"noted: {note}"
+
+    def _tool_get_time(self, args: dict) -> str:
+        now = datetime.now().astimezone()
+        return f"the time is {now:%A %d %B %Y, %H:%M} ({now.tzname()})"
+
+    def _tool_web_search(self, args: dict) -> str:
+        query = args.get("query", "").strip()
+        if not query:
+            return "can't search: empty query"
+        if self._web_search_fetch is None:
+            return "web search isn't set up right now"
+        import urllib.error
+
+        try:
+            answer = self._web_search_fetch(query)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (432, 433):
+                logger.warning("Tavily credits exhausted (HTTP %s)", exc.code)
+                return (
+                    "I've used up my web-search allowance for now, so I can't look "
+                    "that up - tell the user plainly."
+                )
+            if exc.code == 429:
+                return "web search is rate-limited right now; suggest trying again in a moment"
+            if exc.code == 401:
+                logger.error("Tavily auth failed (HTTP 401) - check TAVILY_API_KEY")
+                return "web search isn't set up properly right now"
+            logger.exception("Tavily HTTP error %s", exc.code)
+            return "couldn't reach web search just now"
+        except Exception:
+            logger.exception("Tavily request failed")
+            return "couldn't reach web search just now"
+        return answer or "I searched but didn't find a clear answer"
 
     def _tool_get_weather(self, args: dict) -> str:
         try:
