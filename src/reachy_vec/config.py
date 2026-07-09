@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     greet_cooldown_s: float = 7200.0  # full spoken greeting at most every 2h
     silence_timeout_s: float = 30.0   # end conversation after this much quiet
     idle_sleep_s: float = 300.0       # no faces for this long -> robot sleeps
+    barge_in: bool = True  # allow talking over a reply to interrupt it
+    barge_in_min_speech_s: float = 0.7  # sustained speech needed to fire (raise if false triggers)
 
     # Weather (Open-Meteo, no API key); default: Liverpool, UK
     weather_lat: float = 53.4084

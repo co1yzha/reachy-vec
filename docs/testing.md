@@ -119,14 +119,30 @@ question, and confirm:
 - a conversation survives a synthesis hiccup — the robot skips the sentence
   rather than crashing.
 
-### Not yet exercisable
+### 6. Barge-in (Phase 4c)
 
-Two things the docs describe as *intended* have no code to smoke-test yet:
-**barge-in** (interrupting a reply — specced in phase 2c, not built) and
-**on-robot media** (camera/mic/speaker still run on the Mac). See
+`BARGE_IN` defaults on. During a reply (a long one helps), confirm on real
+mic/speaker hardware:
+
+| You do | Expected |
+|---|---|
+| Talk over a long answer | Current sentence stops within a beat; your new utterance is answered as the next turn |
+| Say a brief "mm-hm" / cough while it talks | No interrupt (sustained-speech gate); raise `BARGE_IN_MIN_SPEECH_S` if it false-triggers |
+| Set `REACHY_VEC_BARGE_IN=false` | Old behavior — the reply always plays to the end |
+
+This is the one behavior pytest can't fully prove (it needs concurrent mic
+input *while speaking*); the automated tests cover the wiring and logic with
+fakes, so this manual check is required before calling barge-in done. With
+`--source robot`, expect a coarser cut (on-robot audio-out `stop()` is
+per-sentence best-effort); the `say` and Mac `sounddevice` backends cut
+mid-sentence.
+
+### Still deferred
+
+**Live media→Mac hot-swap** (robot media dying mid-visit switches to the
+Mac's devices) is not built — robot media soft-degrades (blank frame /
+silence) until it returns. See
 [architecture.md → Known gaps](architecture.md#known-gaps--toward-a-real-robot-deploy).
-All hardware smoke tests above therefore use the Mac's devices with the
-robot/sim as a motion-only body.
 
 ## Troubleshooting
 

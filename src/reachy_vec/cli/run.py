@@ -29,6 +29,24 @@ def resolve_media_source(requested: str, media_available: bool) -> str:
     return "robot" if media_available else "mac"
 
 
+def make_barge_in_factory(chosen: str, media):
+    """Zero-arg factory building a fresh BargeInMonitor per reply, or None."""
+    if not settings.barge_in:
+        return None
+    from reachy_vec.audio.listen import BargeInMonitor, MicSource
+    from reachy_vec.audio.sources import RobotAudioSource
+
+    def factory():
+        source = (
+            RobotAudioSource(media, target_rate=settings.audio_input_rate)
+            if chosen == "robot"
+            else MicSource()
+        )
+        return BargeInMonitor(source, min_speech_s=settings.barge_in_min_speech_s)
+
+    return factory
+
+
 def wrap_reconnect(body, connect_body, announce):
     """Wrap a RobotBody so motions survive a daemon/WiFi drop; pass others through."""
     from reachy_vec.body.robot import ReconnectingBody, RobotBody
@@ -163,6 +181,7 @@ def run(
         idle_sleep_s=settings.idle_sleep_s,
         speaker_id=speaker_id,
         voice_passive_cap=settings.voice_passive_cap,
+        barge_in_factory=make_barge_in_factory(chosen, media),
     )
     typer.echo("Oracle running - walk into frame. Ctrl+C to stop.")
     try:

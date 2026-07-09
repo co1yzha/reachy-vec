@@ -51,6 +51,8 @@ Unknown keys in `.env` are ignored.
 | `GREET_COOLDOWN_S` | `7200` | spoken "Hi <name>!" at most every 2 h per person; within cooldown = silent acknowledge |
 | `SILENCE_TIMEOUT_S` | `30` | quiet time that ends a conversation (triggers memory distillation) |
 | `IDLE_SLEEP_S` | `300` | no faces for this long → sleep motion; wakes on the next face |
+| `BARGE_IN` | `true` | let someone talk over a reply to interrupt it; the current sentence stops and their utterance becomes the next turn. `false` = reply always plays to the end |
+| `BARGE_IN_MIN_SPEECH_S` | `0.7` | sustained speech needed to trigger an interrupt; raise if a loud room false-triggers (no echo cancellation — the robot's own speaker near its mic is the usual culprit) |
 
 ## Environment
 
