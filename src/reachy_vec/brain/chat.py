@@ -21,6 +21,11 @@ from reachy_vec.store.schemas import MemoryRow
 
 logger = logging.getLogger(__name__)
 
+
+class SpeechInterrupted(Exception):
+    """Raised from on_sentence when the user barges in; caught in ChatBrain."""
+
+
 PERSONALITY = (
     "You are Reachy, the team's desk robot - a small, expressive robot from "
     "the north of England who works as the lab's resident data scientist and "
@@ -253,16 +258,28 @@ class ChatBrain:
             }
         )
         message = self._complete(on_sentence)
-        if getattr(message, "tool_calls", None):
+        interrupted = getattr(message, "interrupted", False)
+        if not interrupted and getattr(message, "tool_calls", None):
             self._history.append(_assistant_tool_message(message))
             for call in message.tool_calls:
                 self._history.append(self._execute_tool(call))
             message = self._complete(on_sentence)
+            interrupted = getattr(message, "interrupted", False)
         text = (message.content or "").strip()
-        self._history.append({"role": "assistant", "content": text})
+        self._history.append(
+            {
+                "role": "assistant",
+                "content": f"{text} -- (interrupted)" if interrupted else text,
+            }
+        )
         self._exchanges += 1
         self._trim()
-        logger.info("reply to %s: %r", self._turn.name or "user", text)
+        logger.info(
+            "reply to %s: %r%s",
+            self._turn.name or "user",
+            text,
+            " (interrupted)" if interrupted else "",
+        )
         return text
 
     # -- internals ------------------------------------------------------------
@@ -306,25 +323,30 @@ class ChatBrain:
         )
         content, buffer = "", ""
         tool_calls: dict[int, dict] = {}
-        for chunk in stream:
-            delta = chunk.choices[0].delta
-            for tc in getattr(delta, "tool_calls", None) or []:
-                entry = tool_calls.setdefault(
-                    tc.index, {"id": None, "name": "", "arguments": ""}
-                )
-                if tc.id:
-                    entry["id"] = tc.id
-                if getattr(tc.function, "name", None):
-                    entry["name"] = tc.function.name
-                if getattr(tc.function, "arguments", None):
-                    entry["arguments"] += tc.function.arguments
-            if getattr(delta, "content", None):
-                content += delta.content
-                if not tool_calls:  # don't speak alongside pending tool calls
-                    buffer += delta.content
-                    buffer = _flush_sentences(buffer, on_sentence)
-        if not tool_calls and buffer.strip():
-            on_sentence(buffer.strip())
+        try:
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                for tc in getattr(delta, "tool_calls", None) or []:
+                    entry = tool_calls.setdefault(
+                        tc.index, {"id": None, "name": "", "arguments": ""}
+                    )
+                    if tc.id:
+                        entry["id"] = tc.id
+                    if getattr(tc.function, "name", None):
+                        entry["name"] = tc.function.name
+                    if getattr(tc.function, "arguments", None):
+                        entry["arguments"] += tc.function.arguments
+                if getattr(delta, "content", None):
+                    content += delta.content
+                    if not tool_calls:  # don't speak alongside pending tool calls
+                        buffer += delta.content
+                        buffer = _flush_sentences(buffer, on_sentence)
+            if not tool_calls and buffer.strip():
+                on_sentence(buffer.strip())
+        except SpeechInterrupted:
+            if hasattr(stream, "close"):
+                stream.close()
+            return _StreamedMessage(content, {}, interrupted=True)
         return _StreamedMessage(content, tool_calls)
 
     def _execute_tool(self, call) -> dict:
@@ -501,8 +523,9 @@ class _ToolCall:
 
 
 class _StreamedMessage:
-    def __init__(self, content: str, tool_calls: dict[int, dict]):
+    def __init__(self, content: str, tool_calls: dict[int, dict], interrupted: bool = False):
         self.content = content or None
+        self.interrupted = interrupted
         self.tool_calls = [
             _ToolCall(entry["id"] or f"call_{index}", entry["name"], entry["arguments"])
             for index, entry in sorted(tool_calls.items())
