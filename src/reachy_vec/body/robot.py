@@ -46,20 +46,44 @@ class RobotBody:
             )
 
 
-def make_body() -> Body:
-    """Connect to the daemon if possible; otherwise degrade to NullBody.
+def make_robot(with_media: bool = False, connect=None) -> tuple[Body, object | None]:
+    """Connect to the daemon; optionally acquire camera+mic+speaker media.
 
-    Registers an atexit disconnect: ReachyMini keeps non-daemon threads
-    alive, which would otherwise hang interpreter shutdown.
+    Returns (body, media). `media` is mini.media when with_media and the
+    connection succeed, else None. Any failure degrades to (NullBody(), None).
+    Registers an atexit cleanup: ReachyMini keeps non-daemon threads alive,
+    which would otherwise hang interpreter shutdown. `connect` is injectable
+    for tests.
     """
     try:
         import atexit
 
-        from reachy_mini import ReachyMini
+        if connect is None:
+            from reachy_mini import ReachyMini
 
-        mini = ReachyMini(media_backend="no_media")
+            def connect(**kw):
+                return ReachyMini(**kw)
+
+        backend = "default" if with_media else "no_media"
+        mini = connect(media_backend=backend)
+        if with_media:
+            mini.acquire_media()
+
+            def _cleanup():
+                try:
+                    mini.release_media()
+                finally:
+                    mini.client.disconnect()
+
+            atexit.register(_cleanup)
+            return RobotBody(mini), mini.media
         atexit.register(mini.client.disconnect)
-        return RobotBody(mini)
+        return RobotBody(mini), None
     except Exception as exc:  # daemon down, robot absent, etc.
         logger.warning("No robot/daemon available (%s); running body-less.", exc)
-        return NullBody()
+        return NullBody(), None
+
+
+def make_body() -> Body:
+    """Body only (no media); back-compat wrapper over make_robot."""
+    return make_robot(with_media=False)[0]

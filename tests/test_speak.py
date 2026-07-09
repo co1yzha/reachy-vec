@@ -1,9 +1,16 @@
 import logging
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from reachy_vec.audio.speak import QwenTTSSpeaker, SaySpeaker, make_speaker
+from reachy_vec.audio.speak import (
+    QwenTTSSpeaker,
+    RobotAudioSink,
+    SaySpeaker,
+    make_speaker,
+)
+from tests.conftest import FakeMedia
 
 
 def test_say_speaker_invokes_say():
@@ -90,3 +97,35 @@ def test_qwen_speaker_logs_and_skips_on_synthesis_error(caplog):
         speaker.speak("hello")  # must not raise
     assert played == []
     assert "TTS synthesis failed" in caplog.text
+
+
+def test_robot_sink_pushes_resampled_audio_to_media():
+    media = FakeMedia(out_rate=16000)  # no resample when rates match
+    sink = RobotAudioSink(media)
+    audio = np.array([0.1, -0.1, 0.2], dtype=np.float32)
+    sink(audio, sample_rate=16000)
+    assert len(media.pushed) == 1
+    np.testing.assert_allclose(media.pushed[0], audio)
+
+
+def test_robot_sink_resamples_to_output_rate():
+    media = FakeMedia(out_rate=48000)
+    RobotAudioSink(media)(np.zeros(16000, dtype=np.float32), sample_rate=16000)
+    assert abs(len(media.pushed[0]) - 48000) <= 2  # upsampled ~3x
+
+
+def test_make_speaker_qwen_uses_robot_sink_when_media_given(monkeypatch, tmp_path):
+    sample = tmp_path / "me.wav"
+    sample.write_bytes(b"RIFF")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "qwen-tts")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.voice_sample", sample)
+    speaker = make_speaker(media=FakeMedia())
+    assert isinstance(speaker._play, RobotAudioSink)
+
+
+def test_make_speaker_say_with_media_warns_and_stays_local(monkeypatch, caplog):
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "say")
+    with caplog.at_level(logging.WARNING):
+        speaker = make_speaker(media=FakeMedia())
+    assert isinstance(speaker, SaySpeaker)
+    assert "say" in caplog.text.lower()

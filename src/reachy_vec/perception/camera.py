@@ -16,3 +16,13 @@ class WebcamCamera:
     def read(self):
         ok, frame = self._cap.read()
         return frame if ok else None
+
+
+class RobotCamera:
+    """Frames from the robot's camera via the Reachy Mini SDK (mini.media)."""
+
+    def __init__(self, media):
+        self._media = media
+
+    def read(self):
+        return self._media.get_frame()  # BGR ndarray or None, same as WebcamCamera

@@ -20,6 +20,8 @@ Docs:
   tuning note
 - **[Testing guide](docs/testing.md)** — automated suite + manual smoke
   tests + troubleshooting
+- **[Voice cloning](docs/voice-cloning.md)** — make the robot speak in your
+  own voice (qwen-tts backend)
 - **[Design spec](docs/superpowers/specs/2026-07-06-team-familiar-design.md)** —
   aims, architecture decisions, and the phased roadmap ([all specs & plans](docs/superpowers/))
 
@@ -29,10 +31,11 @@ Docs:
 - **Phase 1 — Oracle:** walk up, get greeted by name, ask a question, hear the answer.
 - **Phase 2 — Memory keeper:** per-person attribution of spoken notes, recall by person.
 - **Phase 3 — Messenger:** "tell Bob…" relayed when Bob is next seen.
+- **Phase 4 — On-robot deployment** *(planned)*: perception + speech move onto the robot's own camera/mic/speaker (today they run on the Mac), plus `ROBOT_HOST` wiring, barge-in, and autostart. See the [bring-up spec](docs/superpowers/specs/2026-07-09-phase4-hardware-bringup-design.md).
 
 ## Setup
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync
@@ -68,13 +71,15 @@ after a crashed run, a stale process may hold port 8000:
 By default the robot uses the macOS `say` voice. To have it speak in a cloned
 voice (fully local, Qwen3-TTS on MLX):
 
-1. Record ~10 seconds of clean speech, e.g.
-   `sox -d -r 24000 -c 1 data/voice_sample.wav trim 0 10`
-   (or QuickTime → export WAV). Only clone voices with the speaker's consent.
-2. In `.env`, set `REACHY_VEC_TTS_BACKEND=qwen-tts` and
-   `REACHY_VEC_VOICE_SAMPLE=data/voice_sample.wav`. Optionally set
-   `REACHY_VEC_VOICE_SAMPLE_TEXT` to the sample's transcript to skip a
-   one-off auto-transcription.
+1. Record a reference sample: `uv run reachy-vec record-voice` prompts you
+   to read a sentence, captures ~10 s, and prints the exact `.env` lines to
+   paste. (Manual alternative: `sox -d -r 24000 -c 1 data/voice_sample.wav
+   trim 0 10` or QuickTime → export WAV.) Only clone voices with the
+   speaker's consent.
+2. Paste the printed lines into `.env` — `REACHY_VEC_TTS_BACKEND=qwen-tts`,
+   `REACHY_VEC_VOICE_SAMPLE=data/voice_sample.wav`, and
+   `REACHY_VEC_VOICE_SAMPLE_TEXT` (the sentence you read, so no
+   auto-transcription is needed).
 3. `uv run reachy-vec run --preview` — the first run downloads the model
    (~1.5 GB); expect 1–3 s of synthesis per sentence.
 
@@ -85,6 +90,7 @@ uv run reachy-vec chat               # text-only brain check (needs OPENAI_API_K
 uv run reachy-vec sync-mongo         # pull aixlab.demos into LanceDB (needs MONGODB_URI)
 uv run reachy-vec ingest <path>      # add .md/.txt docs to the knowledge base
 uv run reachy-vec enroll "Name"      # webcam face enrollment
+uv run reachy-vec record-voice       # record a voice sample for the cloned TTS
 uv run reachy-vec run --preview      # full Oracle loop (webcam + mic + robot/sim)
 uv run reachy-vec dashboard          # browse the LanceDB store in the browser
 ```
@@ -114,6 +120,6 @@ src/reachy_vec/
   audio/           # audio front-end and output (say / qwen-tts voice clone)
     listen.py, speak.py
   cli/             # entry points, one file per command
-    chat.py, ingest.py, enroll.py, run.py, sync.py, dashboard.py
+    chat.py, ingest.py, enroll.py, run.py, sync.py, dashboard.py, record_voice.py
 tests/
 ```

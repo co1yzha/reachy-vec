@@ -68,6 +68,20 @@ face: green = recognized (name + score), orange = unknown, gray =
 borderline. It only refreshes while the robot is scanning for faces —
 it freezes during listening/speaking; that's normal.
 
+**Media source (Phase 4a).** By default `run` picks `auto`: the robot's own
+camera/mic/speaker when the daemon is up with media, else the Mac's devices.
+Force one explicitly:
+
+```bash
+uv run reachy-vec run --source mac      # this machine's webcam/mic/speaker (desk workflow)
+uv run reachy-vec run --source robot    # the Reachy Mini's camera/mic/speaker via the SDK
+```
+
+For `--source robot`: run the daemon **with media** (not `--sim`), and set
+`REACHY_VEC_TTS_BACKEND=qwen-tts` for audio out the robot's speaker — the
+`say` backend still plays through the Mac. `--source robot` with no robot
+media available exits with an error rather than silently using the Mac.
+
 Walk through the checklist:
 
 | You do | Expected |
@@ -97,6 +111,15 @@ question, and confirm:
 - per-sentence delay is acceptable (~1–3 s);
 - a conversation survives a synthesis hiccup — the robot skips the sentence
   rather than crashing.
+
+### Not yet exercisable
+
+Two things the docs describe as *intended* have no code to smoke-test yet:
+**barge-in** (interrupting a reply — specced in phase 2c, not built) and
+**on-robot media** (camera/mic/speaker still run on the Mac). See
+[architecture.md → Known gaps](architecture.md#known-gaps--toward-a-real-robot-deploy).
+All hardware smoke tests above therefore use the Mac's devices with the
+robot/sim as a motion-only body.
 
 ## Troubleshooting
 

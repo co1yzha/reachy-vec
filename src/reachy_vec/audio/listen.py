@@ -55,11 +55,37 @@ def collect_utterance(chunks: Iterator, is_speech: Callable, max_silence_chunks:
     return collected or None
 
 
-class _AudioCapture:
-    """Shared mic + VAD front-end; lazy-loads the VAD model."""
+class AudioSource(Protocol):
+    def frames(self, chunk_samples: int) -> Iterator[np.ndarray]:
+        """Yield mono float32 frames of length chunk_samples at 16 kHz."""
+        ...
+
+
+class MicSource:
+    """Default AudioSource: the Mac's default mic via sounddevice, 16 kHz mono."""
 
     def __init__(self, sample_rate: int = SAMPLE_RATE):
         self._sample_rate = sample_rate
+
+    def frames(self, chunk_samples: int) -> Iterator[np.ndarray]:
+        import sounddevice as sd
+
+        with sd.InputStream(
+            samplerate=self._sample_rate, channels=1, dtype="float32"
+        ) as stream:
+            while True:
+                data, _overflow = stream.read(chunk_samples)
+                yield data[:, 0].copy()
+
+
+class _AudioCapture:
+    """Shared VAD front-end over a pluggable AudioSource; lazy-loads the VAD."""
+
+    def __init__(
+        self, source: "AudioSource | None" = None, sample_rate: int = SAMPLE_RATE
+    ):
+        self._sample_rate = sample_rate
+        self._source = source or MicSource(sample_rate)
         self._vad = None
 
     def _load_vad(self):
@@ -70,7 +96,6 @@ class _AudioCapture:
 
     def _capture(self, timeout_s: float) -> np.ndarray | None:
         """Record one VAD-segmented utterance; None if silence until timeout."""
-        import sounddevice as sd
         import torch
 
         self._load_vad()
@@ -78,19 +103,23 @@ class _AudioCapture:
         max_chunks = int(timeout_s / CHUNK_S)
         max_silence = int(0.8 / CHUNK_S)  # 0.8 s of quiet ends the utterance
 
-        def frames() -> Iterator[np.ndarray]:
-            with sd.InputStream(
-                samplerate=self._sample_rate, channels=1, dtype="float32"
-            ) as stream:
-                for _ in range(max_chunks):
-                    data, _overflow = stream.read(chunk_samples)
-                    yield data[:, 0].copy()
+        frame_iter = self._source.frames(chunk_samples)
+
+        def bounded() -> Iterator[np.ndarray]:
+            for _ in range(max_chunks):
+                try:
+                    yield next(frame_iter)
+                except StopIteration:
+                    return
 
         def is_speech(chunk: np.ndarray) -> bool:
             prob = self._vad(torch.from_numpy(chunk), self._sample_rate).item()
             return prob > 0.5
 
-        collected = collect_utterance(frames(), is_speech, max_silence)
+        try:
+            collected = collect_utterance(bounded(), is_speech, max_silence)
+        finally:
+            frame_iter.close()
         return np.concatenate(collected) if collected else None
 
 
@@ -102,8 +131,9 @@ class MicTranscriber(_AudioCapture):
         model_size: str | None = None,
         sample_rate: int = SAMPLE_RATE,
         initial_prompt: str | None = None,
+        source: "AudioSource | None" = None,
     ):
-        super().__init__(sample_rate)
+        super().__init__(source=source, sample_rate=sample_rate)
         self._model_size = model_size or settings.stt_model
         self._initial_prompt = initial_prompt
         self._whisper = None
@@ -138,8 +168,10 @@ class MicTranscriber(_AudioCapture):
 class OpenAITranscriber(_AudioCapture):
     """Cloud STT: gpt-4o-transcribe. Best accuracy; ~1s network latency."""
 
-    def __init__(self, client, initial_prompt: str | None = None):
-        super().__init__()
+    def __init__(
+        self, client, initial_prompt: str | None = None, source: "AudioSource | None" = None
+    ):
+        super().__init__(source=source)
         self._client = client
         self._initial_prompt = initial_prompt
 
@@ -168,11 +200,13 @@ class OpenAITranscriber(_AudioCapture):
         return Utterance(text=text, audio=audio) if text else None
 
 
-def make_transcriber(client=None, initial_prompt: str | None = None) -> Transcriber:
+def make_transcriber(
+    client=None, initial_prompt: str | None = None, source: "AudioSource | None" = None
+) -> Transcriber:
     if settings.stt_backend == "openai":
         if client is None:
             from openai import OpenAI
 
             client = OpenAI()
-        return OpenAITranscriber(client, initial_prompt=initial_prompt)
-    return MicTranscriber(initial_prompt=initial_prompt)
+        return OpenAITranscriber(client, initial_prompt=initial_prompt, source=source)
+    return MicTranscriber(initial_prompt=initial_prompt, source=source)

@@ -28,12 +28,16 @@ class Settings(BaseSettings):
     )  # BGE query instruction; set empty to disable for non-BGE models
     tts_backend: str = "say"  # say (macOS built-in) | qwen-tts (voice clone, local MLX)
     tts_model: str = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16"  # mlx-audio model id
+    # tts_model: str = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"  # mlx-audio model id
+
     voice_sample: Path | None = None  # ~10s clean WAV of the voice to clone (qwen-tts)
     voice_sample_text: str | None = None  # its transcript; omit -> auto-transcribed once
 
     # Perception
     face_threshold: float = 0.45  # cosine similarity; below = unknown
     camera_index: int = 0
+    media_source: str = "auto"  # auto | robot | mac — where camera/mic/speaker live
+    audio_input_rate: int = 16000  # target rate fed to VAD/STT/ECAPA
 
     # Voice ID (Phase 2b) - ECAPA cosine scores run lower than face scores
     voice_threshold: float = 0.30  # below = unknown; within 0.05 under = "can't tell"

@@ -22,21 +22,34 @@ def _setup_logging() -> None:
         app_logger.addHandler(handler)
 
 
+def resolve_media_source(requested: str, media_available: bool) -> str:
+    """Pick 'robot' or 'mac'. 'auto' -> robot when media is available, else mac."""
+    if requested in ("robot", "mac"):
+        return requested
+    return "robot" if media_available else "mac"
+
+
 def run(
     preview: bool = typer.Option(
         False, "--preview", help="Show a window with the webcam feed and face matches."
     ),
+    source: str = typer.Option(
+        None,
+        "--source",
+        help="Media source: auto | robot | mac (default: REACHY_VEC_MEDIA_SOURCE).",
+    ),
 ) -> None:
-    """Run the Oracle: face-triggered voice Q&A on webcam + mic (+ sim body)."""
+    """Run the Oracle: face-triggered voice Q&A on the robot's or Mac's devices."""
     from dotenv import load_dotenv
     from openai import OpenAI
 
     from reachy_vec.audio.listen import MicTranscriber, make_transcriber
+    from reachy_vec.audio.sources import RobotAudioSource
     from reachy_vec.audio.speak import make_speaker
-    from reachy_vec.body.robot import make_body
+    from reachy_vec.body.robot import make_robot
     from reachy_vec.brain.chat import ChatBrain
     from reachy_vec.brain.oracle import OracleLoop
-    from reachy_vec.perception.camera import WebcamCamera
+    from reachy_vec.perception.camera import RobotCamera, WebcamCamera
     from reachy_vec.perception.face import InsightFaceMatcher, enroll_person
     from reachy_vec.perception.voice import EcapaSpeakerIdentifier
     from reachy_vec.store.db import Store
@@ -49,14 +62,32 @@ def run(
         typer.echo("Knowledge base is empty - run 'reachy-vec ingest <path>' first.")
         raise typer.Exit(code=1)
 
-    camera = WebcamCamera(settings.camera_index)
+    # Connect the robot first (it decides whether robot media is available),
+    # then build camera / mic source / speaker for the chosen world.
+    requested = source or settings.media_source
+    body, media = make_robot(with_media=requested in ("auto", "robot"))
+    chosen = resolve_media_source(requested, media_available=media is not None)
+    if chosen == "robot" and media is None:
+        typer.echo(
+            "--source robot but no robot media available (is the daemon up with "
+            "media?).",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if chosen == "robot":
+        camera = RobotCamera(media)
+        audio_source = RobotAudioSource(media, target_rate=settings.audio_input_rate)
+    else:
+        camera = WebcamCamera(settings.camera_index)
+        audio_source = None  # MicSource default
     if camera.read() is None:
-        typer.echo("No camera frame - check webcam permission/index.", err=True)
+        typer.echo(f"No camera frame from '{chosen}' source - check the device.", err=True)
         raise typer.Exit(code=1)
 
     matcher = InsightFaceMatcher(store)
     speaker_id = EcapaSpeakerIdentifier(store)
-    speaker = make_speaker()
+    speaker = make_speaker(media=media if chosen == "robot" else None)
     embedder = BgeEmbedder(
         settings.embedding_model, query_prefix=settings.embedding_query_prefix
     )
@@ -66,7 +97,9 @@ def run(
     vocab_prompt = f"Vocabulary: {', '.join(titles)}" if titles else None
 
     typer.echo("Warming up models (STT, faces, voices, embeddings)...")
-    transcriber = make_transcriber(client=client, initial_prompt=vocab_prompt)
+    transcriber = make_transcriber(
+        client=client, initial_prompt=vocab_prompt, source=audio_source
+    )
     if isinstance(transcriber, MicTranscriber):
         transcriber.warm_up()
     matcher.observe(camera.read())   # loads insightface before the loop
@@ -101,7 +134,7 @@ def run(
         sight=sight,
         transcriber=transcriber,
         speaker=speaker,
-        body=make_body(),
+        body=body,
         brain=brain,
         enroll_capture=lambda name: enroll_person(
             name, camera, matcher, store, speaker.speak, faces_dir=settings.faces_dir

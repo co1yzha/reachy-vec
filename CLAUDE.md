@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Team Familiar: an embodied team assistant on a Reachy Mini robot. The robot recognizes teammates by face, answers questions from a shared knowledge base (RAG), remembers per-person notes, and relays messages. The brain runs on a Mac; the robot (or MuJoCo simulator) is a thin body. Currently at Phase 3 (messenger).
 
+**Not yet wired (see `docs/architecture.md` → Known gaps):** the robot is motion-only — camera, mic, and speaker are all the *Mac's* (`media_backend="no_media"`); on-robot media does not stream over WiFi yet. `ROBOT_HOST` is declared in `config.py` but unused. Barge-in (interrupting a reply) is specced in `docs/superpowers/specs/2026-07-08-phase2c-...` but not implemented — only the cloned-voice half of that spec shipped. Answers require the OpenAI API (no offline fallback).
+
 ## Commands
 
 ```bash
@@ -19,6 +21,7 @@ uv run reachy-vec chat               # text-only brain check (needs OPENAI_API_K
 uv run reachy-vec sync-mongo         # pull aixlab.demos into LanceDB (needs MONGODB_URI)
 uv run reachy-vec ingest <path>      # add .md/.txt docs
 uv run reachy-vec enroll "Name"      # webcam face enrollment
+uv run reachy-vec record-voice       # record ~10s mic sample for cloned TTS -> data/voice_sample.wav
 uv run reachy-vec run --preview      # full Oracle loop (webcam + mic)
 #   cloned voice: REACHY_VEC_TTS_BACKEND=qwen-tts + REACHY_VEC_VOICE_SAMPLE=<wav>
 #   (Qwen3-TTS via mlx-audio, local; default backend is macOS `say`)

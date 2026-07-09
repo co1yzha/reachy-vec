@@ -1,5 +1,5 @@
 from reachy_vec.body.motions import MOTIONS, Keyframe
-from reachy_vec.body.robot import Body, NullBody, RobotBody
+from reachy_vec.body.robot import Body, NullBody, RobotBody, make_robot
 
 EXPECTED = {"greet", "nod", "listen", "idle", "acknowledge", "goodbye"}
 
@@ -57,3 +57,38 @@ def test_robot_body_ignores_unknown_motion():
     mini = RecordingMini()
     RobotBody(mini).perform("moonwalk")
     assert mini.calls == []
+
+
+class FakeMini:
+    def __init__(self):
+        self.acquired = self.released = False
+        self.media = object()
+
+        class _Client:
+            def disconnect(self_):
+                pass
+
+        self.client = _Client()
+
+    def acquire_media(self):
+        self.acquired = True
+
+    def release_media(self):
+        self.released = True
+
+
+def test_make_robot_with_media_acquires_and_returns_media():
+    mini = FakeMini()
+    body, media = make_robot(with_media=True, connect=lambda **kw: mini)
+    assert isinstance(body, RobotBody)
+    assert media is mini.media
+    assert mini.acquired is True
+
+
+def test_make_robot_degrades_to_nullbody_on_connect_failure():
+    def boom(**kw):
+        raise RuntimeError("no daemon")
+
+    body, media = make_robot(with_media=True, connect=boom)
+    assert isinstance(body, NullBody)
+    assert media is None

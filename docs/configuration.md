@@ -32,7 +32,9 @@ Unknown keys in `.env` are ignored.
 | Setting | Default | Notes |
 |---|---|---|
 | `FACE_THRESHOLD` | `0.45` | cosine gate for recognition; lower (e.g. 0.40) if known people show as unknown; within 0.05 below = ignored as "no face" |
-| `CAMERA_INDEX` | `0` | which webcam OpenCV opens |
+| `CAMERA_INDEX` | `0` | which webcam OpenCV opens (Mac source only) |
+| `MEDIA_SOURCE` | `auto` | where the camera/mic/speaker live: `robot` (Reachy Mini via the SDK), `mac` (this machine's devices), or `auto` (robot if the daemon offers media, else Mac). Override per-run with `reachy-vec run --source robot\|mac\|auto`. Robot audio out needs `TTS_BACKEND=qwen-tts` (`say` still plays on the Mac) |
+| `AUDIO_INPUT_RATE` | `16000` | target sample rate fed to VAD/STT/ECAPA; the robot mic source resamples its native rate down to this |
 
 ## Voice ID (Phase 2b)
 
@@ -54,7 +56,7 @@ Unknown keys in `.env` are ignored.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `ROBOT_HOST` | unset | wireless Reachy Mini address; unset = simulator/headless body |
+| `ROBOT_HOST` | unset | **reserved, not yet consumed.** `body/robot.py:make_robot` connects to the local daemon and (for `MEDIA_SOURCE=robot/auto`) acquires its camera/mic/speaker media; it falls back to a logging `NullBody` if none is reachable. Point a remote robot at the brain by running the daemon against it; explicit-address wiring lands in Phase 4b |
 | `DATA_DIR` | `data` | holds `lancedb/` (all tables), `faces/` (enrollment JPEGs), `reachy.log` (transcript log — privacy-relevant, gitignored) |
 | `WEATHER_LAT` / `WEATHER_LON` | `53.4084` / `-2.9916` | lab location for `get_weather` (Liverpool, UK; Open-Meteo, no key) |
 

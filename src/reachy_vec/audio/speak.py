@@ -40,6 +40,22 @@ def _play_blocking(audio, sample_rate: int) -> None:
     sd.wait()
 
 
+class RobotAudioSink:
+    """Play TTS audio through the robot's speaker via mini.media.push_audio_sample."""
+
+    def __init__(self, media):
+        self._media = media
+
+    def __call__(self, audio, sample_rate: int) -> None:
+        import numpy as np
+
+        from reachy_vec.audio.resample import to_mono_16k
+
+        out_rate = self._media.get_output_audio_samplerate()
+        data = to_mono_16k(np.asarray(audio, dtype=np.float32), sample_rate, out_rate)
+        self._media.push_audio_sample(data)
+
+
 class QwenTTSSpeaker:
     """Qwen3-TTS via mlx-audio — clones the voice in `sample_path`.
 
@@ -90,9 +106,14 @@ class QwenTTSSpeaker:
             logger.exception("TTS synthesis failed; skipping sentence")
 
 
-def make_speaker() -> Speaker:
+def make_speaker(media=None) -> Speaker:
     backend = settings.tts_backend
     if backend == "say":
+        if media is not None:
+            logger.warning(
+                "tts_backend='say' has no on-robot output yet; playing through the "
+                "Mac speaker. Use 'qwen-tts' for robot audio."
+            )
         return SaySpeaker()
     if backend == "qwen-tts":
         sample = settings.voice_sample
@@ -105,6 +126,7 @@ def make_speaker() -> Speaker:
             sample_path=Path(sample),
             sample_text=settings.voice_sample_text,
             model_id=settings.tts_model,
+            play=RobotAudioSink(media) if media is not None else None,
         )
     raise NotImplementedError(
         f"TTS backend {backend!r} is not wired - use 'say' or 'qwen-tts'"
