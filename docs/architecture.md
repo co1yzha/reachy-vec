@@ -122,10 +122,12 @@ to means, roughly in priority order (sequenced into shippable sub-phases in the
    `BODY_RECONNECT_ATTEMPTS`. Still open: **robot media** does not hot-recover
    — on a stream drop the camera/mic go quiet (soft-degrade) until it returns;
    live media→Mac fallback is a later phase.
-3. **Barge-in is specced but not built.** No `Speaker.stop()`, no
-   `BargeInMonitor`, no `SpeechInterrupted` — see
-   [phase-2c spec](superpowers/specs/2026-07-08-phase2c-voice-bargein-design.md).
-   The robot cannot yet be interrupted mid-reply.
+3. **Barge-in — done in Phase 4c.** Talking over a reply stops the current
+   sentence (`Speaker.stop()`), abandons the in-flight LLM stream (partial
+   reply kept in history), and makes the interruption the next turn — via a
+   `BargeInMonitor` watching the mic and `SpeechInterrupted` in `ChatBrain`.
+   Gated by `BARGE_IN`. Caveat: on-robot audio-out `stop()` is best-effort
+   (per-sentence buffer); the `say`/local backends cut mid-sentence.
 4. **Cloud dependency / no offline fallback.** Answers require the OpenAI
    API; a WiFi or API outage yields a spoken apology, not a degraded local
    answer. The Mac↔robot link is also assumed reliable.

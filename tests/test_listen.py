@@ -1,6 +1,7 @@
 import numpy as np
 
 from reachy_vec.audio.listen import (
+    BargeInMonitor,
     MicSource,
     MicTranscriber,
     Utterance,
@@ -36,6 +37,44 @@ def test_capture_uses_injected_source():
 
 def test_default_source_is_mic():
     assert isinstance(_AudioCapture()._source, MicSource)
+
+
+def _inline(fn):
+    fn()  # run the watch synchronously; returns None (no thread)
+
+
+def test_barge_in_fires_after_sustained_speech():
+    speech = np.ones(512, dtype=np.float32)
+    src = ScriptedSource([speech] * 5)
+    fired = []
+    mon = BargeInMonitor(
+        src, min_speech_s=0.096, is_speech=lambda f: bool(f[0]), spawn=_inline
+    )  # 0.096 / 0.032 = 3 chunks
+    mon.start(on_fire=lambda: fired.append(True))
+    assert mon.fired is True
+    assert fired == [True]
+
+
+def test_barge_in_ignores_brief_speech():
+    speech, silence = np.ones(512, dtype=np.float32), np.zeros(512, dtype=np.float32)
+    src = ScriptedSource([speech, silence, speech, silence])  # never 3 in a row
+    mon = BargeInMonitor(
+        src, min_speech_s=0.096, is_speech=lambda f: bool(f[0]), spawn=_inline
+    )
+    mon.start(on_fire=lambda: None)
+    assert mon.fired is False
+
+
+def test_barge_in_survives_a_broken_source():
+    class Boom:
+        def frames(self, chunk_samples):
+            raise RuntimeError("mic gone")
+            yield  # pragma: no cover
+
+    mon = BargeInMonitor(Boom(), is_speech=lambda f: True, spawn=_inline)
+    mon.start(on_fire=lambda: None)  # must not raise
+    assert mon.broken is True
+    assert mon.fired is False
 
 
 def run_collect(pattern: str, max_silence: int = 2):

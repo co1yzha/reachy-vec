@@ -63,6 +63,22 @@ def test_wrap_reconnect_disabled_returns_body_unchanged(monkeypatch):
     assert wrap_reconnect(body, connect_body=lambda: body, announce=lambda m: None) is body
 
 
+def test_barge_in_factory_none_when_disabled(monkeypatch):
+    from reachy_vec.cli.run import make_barge_in_factory
+
+    monkeypatch.setattr("reachy_vec.cli.run.settings.barge_in", False)
+    assert make_barge_in_factory("mac", media=None) is None
+
+
+def test_barge_in_factory_builds_monitor_when_enabled(monkeypatch):
+    from reachy_vec.audio.listen import BargeInMonitor
+    from reachy_vec.cli.run import make_barge_in_factory
+
+    monkeypatch.setattr("reachy_vec.cli.run.settings.barge_in", True)
+    factory = make_barge_in_factory("mac", media=None)
+    assert isinstance(factory(), BargeInMonitor)
+
+
 def test_help_lists_all_commands():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0

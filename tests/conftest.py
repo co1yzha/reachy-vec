@@ -149,13 +149,17 @@ class FakeBrain:
 
 
 class FakeSpeaker:
-    """Records spoken lines."""
+    """Records spoken lines and stop() calls."""
 
     def __init__(self):
         self.spoken: list[str] = []
+        self.stopped = 0
 
     def speak(self, text: str) -> None:
         self.spoken.append(text)
+
+    def stop(self) -> None:
+        self.stopped += 1
 
 
 class FakeTranscriber:
@@ -180,6 +184,29 @@ class FakeCamera:
 
     def read(self):
         return next(self._it, None)
+
+
+class FakeBargeInMonitor:
+    """Scripted barge-in: records start/stop; .trip() simulates the mic firing."""
+
+    def __init__(self):
+        self.fired = False
+        self.started = 0
+        self.stopped = 0
+        self._on_fire = lambda: None
+
+    def start(self, on_fire):
+        self.started += 1
+        self.fired = False
+        self._on_fire = on_fire
+
+    def stop(self):
+        self.stopped += 1
+
+    def trip(self):
+        """Simulate the monitor thread firing while Reachy speaks."""
+        self.fired = True
+        self._on_fire()
 
 
 class FakeMedia:

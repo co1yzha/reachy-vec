@@ -13,17 +13,61 @@ from reachy_vec.audio.speak import (
 from tests.conftest import FakeMedia
 
 
+class _FakeProc:
+    def __init__(self):
+        self.terminated = False
+        self._done = False
+
+    def wait(self):
+        self._done = True
+
+    def poll(self):
+        return 0 if self._done else None
+
+    def terminate(self):
+        self.terminated = True
+
+
 def test_say_speaker_invokes_say():
-    calls = []
-    speaker = SaySpeaker(run=lambda cmd, **kw: calls.append(cmd))
-    speaker.speak("hello team")
-    assert calls == [["say", "hello team"]]
+    cmds = []
+
+    def popen(cmd):
+        cmds.append(cmd)
+        return _FakeProc()
+
+    SaySpeaker(popen=popen).speak("hello team")
+    assert cmds == [["say", "hello team"]]
 
 
 def test_say_speaker_skips_empty_text():
-    calls = []
-    SaySpeaker(run=lambda cmd, **kw: calls.append(cmd)).speak("   ")
-    assert calls == []
+    cmds = []
+    SaySpeaker(popen=lambda cmd: cmds.append(cmd) or _FakeProc()).speak("   ")
+    assert cmds == []
+
+
+def test_say_speaker_stop_terminates_running_process():
+    proc = _FakeProc()
+    speaker = SaySpeaker(popen=lambda cmd: proc)
+    speaker.speak("a long sentence")  # _FakeProc.wait() marks it done immediately
+    proc._done = False                # pretend it's still playing
+    speaker.stop()
+    assert proc.terminated is True
+
+
+def test_say_speaker_stop_is_safe_when_idle():
+    SaySpeaker(popen=lambda cmd: _FakeProc()).stop()  # must not raise
+
+
+def test_qwen_speaker_stop_calls_injected_stop():
+    stops = []
+    speaker = QwenTTSSpeaker(
+        sample_path=Path("me.wav"),
+        generate=lambda text: ("AUDIO", 24000),
+        play=lambda audio, sr: None,
+        stop=lambda: stops.append(True),
+    )
+    speaker.stop()
+    assert stops == [True]
 
 
 def test_make_speaker_say_backend(monkeypatch):

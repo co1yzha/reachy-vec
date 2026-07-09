@@ -1,6 +1,6 @@
 import json
 
-from reachy_vec.brain.chat import ChatBrain
+from reachy_vec.brain.chat import ChatBrain, SpeechInterrupted
 from reachy_vec.perception.fusion import TurnIdentity
 from reachy_vec.store.db import Store
 from reachy_vec.store.schemas import DocChunk
@@ -40,6 +40,23 @@ def make_brain(tmp_path, client, opener=None):
         model="gpt-4o",
         opener=opener or (lambda url: None),
     )
+
+
+def test_interrupt_keeps_partial_reply_and_skips_tools(tmp_path):
+    client = FakeLLMClient(reply="One sentence. Two sentence. Three sentence.")
+    brain = make_brain(tmp_path, client)
+    spoken = []
+
+    def on_sentence(text):
+        spoken.append(text)
+        if len(spoken) == 1:  # interrupt right after the first sentence
+            raise SpeechInterrupted()
+
+    text = brain.respond("hi", on_sentence=on_sentence)
+    assert spoken == ["One sentence."]           # only the first was spoken
+    assert text.startswith("One sentence.")      # partial returned
+    assert brain._history[-1]["content"].endswith(" -- (interrupted)")
+    assert brain._exchanges == 1
 
 
 def test_context_and_speaker_injected_each_turn(tmp_path):
