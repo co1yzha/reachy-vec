@@ -556,7 +556,7 @@ class ChatBrain:
     def _tool_look(self, args: dict) -> str:
         if self._look_fn is None:
             return "I can't see right now."
-        question = args.get("question", "").strip()
+        question = (args.get("question") or "").strip()
         try:
             return self._look_fn(question)
         except Exception:

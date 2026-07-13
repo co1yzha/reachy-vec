@@ -124,6 +124,16 @@ def test_selfie_no_frame_writes_nothing(tmp_path):
     assert not (tmp_path / "photos").exists() or not list((tmp_path / "photos").glob("*.jpg"))
 
 
+def test_selfie_two_rapid_calls_do_not_overwrite(tmp_path):
+    selfie = make_selfie_fn(
+        FakeCamera([_frame(), _frame()]), tmp_path / "photos",
+        body=FakeBody(), speak=lambda t: None, opener=lambda p: None,
+    )
+    selfie()
+    selfie()
+    assert len(list((tmp_path / "photos").glob("*.jpg"))) == 2
+
+
 def test_selfie_best_effort_failures_still_save(tmp_path):
     opened = []
 

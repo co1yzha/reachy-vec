@@ -591,6 +591,17 @@ def test_look_tool_failure_is_friendly(tmp_path):
     assert "trouble" in brain._tool_look({"question": "x"}).lower()
 
 
+def test_look_tool_handles_null_question(tmp_path):
+    seen = []
+    brain = ChatBrain(
+        store=seeded_store(tmp_path), embedder=FakeEmbedder(),
+        client=FakeLLMClient(), model="gpt-4o", opener=lambda url: None,
+        look_fn=lambda q: seen.append(q) or "a wall",
+    )
+    assert brain._tool_look({"question": None}) == "a wall"
+    assert seen == [""]  # null coerced to empty string, passed through
+
+
 def test_selfie_tool_offered_only_when_enabled(tmp_path):
     off = make_brain(tmp_path, FakeLLMClient())
     on = ChatBrain(

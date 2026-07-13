@@ -105,7 +105,7 @@ def make_selfie_fn(
             import cv2
 
             photos_dir.mkdir(parents=True, exist_ok=True)
-            path = photos_dir / f"{datetime.now():%Y-%m-%d-%H%M%S}.jpg"
+            path = photos_dir / f"{datetime.now():%Y-%m-%d-%H%M%S-%f}.jpg"
             if not cv2.imwrite(str(path), frame):
                 raise OSError("imwrite returned False")
         except Exception:
