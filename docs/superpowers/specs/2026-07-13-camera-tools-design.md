@@ -1,20 +1,28 @@
-# `look()` tool — design
+# Camera tools: `look()` and `selfie()` — design
 
 **Date:** 2026-07-13
 **Status:** Approved, ready for implementation planning
 
 ## Summary
 
-Add a `look()` tool to `ChatBrain` so the robot can answer questions about what
-its camera currently sees: "what's on my desk?", "how many people are here?",
-"read this whiteboard". The brain calls `look(question?)`; the robot performs a
-short expressive "look" head gesture, grabs the current camera frame, sends it to
-an OpenAI vision model in an isolated call, and returns a short spoken-ready text
-answer that flows back through the normal tool-calling loop.
+Add two camera tools to `ChatBrain`, both behind the same
+`perception/vision.py` capture-and-gesture plumbing:
 
-This is the highest-value, lowest-effort use of the Reachy camera for a team
-assistant — far more useful than 3D reconstruction — and it reuses infrastructure
-already in place (OpenAI client, the camera, the text-in/text-out tool pattern).
+- **`look(question?)`** — answer questions about what the camera currently sees
+  ("what's on my desk?", "how many people are here?", "read this whiteboard").
+  The robot performs a short "look" head gesture, grabs a frame, sends it to an
+  OpenAI vision model, and returns a short spoken-ready text answer.
+- **`selfie()`** — take a photo of whoever is in front of the robot, save it to
+  `data/photos/`, and open it so they can see it. The robot says "Smile!",
+  performs a "pose" gesture, snaps, and shows the photo.
+
+(Reachy has a single *outward*-facing camera, so a "selfie" is the robot's photo
+of the person(s) in front of it, not a front-camera self-portrait.)
+
+These are the highest-value, lowest-effort uses of the Reachy camera for a team
+assistant — far more useful than 3D reconstruction — and they reuse
+infrastructure already in place (OpenAI client, the camera, the body, the
+speaker, the text-in/text-out tool pattern).
 
 ## Hardware / context
 
@@ -148,6 +156,66 @@ The tool is available **only in `run`** (where a camera exists). In the text-onl
 `chat` command and in tests, `look_fn` is absent, so the tool is simply not
 offered and never called.
 
+### 6. `selfie()` tool
+
+A second camera tool that takes a photo of whoever's in front of the robot, saves
+it, and opens it to show them. It shares `perception/vision.py` and the
+inject-a-closure pattern; unlike `look()` it saves a file and displays it rather
+than calling a vision model.
+
+**`perception/vision.py` addition:**
+
+```python
+def make_selfie_fn(
+    camera, photos_dir, *, body=None, speak=None, opener=default_opener
+) -> Callable[[], str]:
+    """Return a selfie() closure over the camera, save dir, body, and speaker."""
+```
+
+The `selfie() -> str` closure:
+
+0. If `speak` is set, say a short line ("Smile!" / "Say cheese!") — best-effort,
+   before the shutter. If `body` is set, `body.perform("pose")` — best-effort.
+1. `frame = camera.read()`. If `None`, return
+   `"I couldn't take the photo — no camera frame."`
+2. Ensure `photos_dir` exists; write `photos_dir / "<timestamp>.jpg"` via
+   `cv2.imwrite` (BGR frame → correct JPEG). Timestamp from `datetime.now()`.
+3. `opener(str(path))` — best-effort; opens the saved file in the default viewer
+   (macOS `open` handles file paths, same as `default_opener`).
+4. Return a short confirmation (e.g. `"took a photo and popped it up"`) so the
+   brain speaks something like "there you go!".
+5. Any exception → logged + friendly fallback string.
+
+**`ChatBrain` changes (`brain/chat.py`):**
+
+- `__init__` gains `selfie_fn: Callable[[], str] | None = None`, stored as
+  `self._selfie_fn`. Same shape as `look_fn`.
+- Add `SELFIE_TOOL` (function `selfie`, no parameters) and describe it in the
+  `PERSONALITY`/hint text — "take a photo of the person and show it; use when
+  asked for a photo, selfie, or picture."
+- `_active_tools()` appends `SELFIE_TOOL` when `self._selfie_fn` is set;
+  `_system_prompt()` mentions it likewise.
+- `_execute_tool`'s handler dict gains `"selfie": self._tool_selfie`, which
+  ignores args, calls `self._selfie_fn()` in a try/except, returns a friendly
+  string on failure.
+
+**Physical motion (`body/motions.py`):** add a `"pose"` keyframe motion — a
+distinct "posing for a photo" gesture (e.g. antennas perk up, slight head lift,
+settle), separate from `"look"`.
+
+**Config (`config.py`):** add `photos_dir` (a `Path`, default `data_dir /
+"photos"`), following the existing `faces_dir` pattern.
+
+**Wiring (`cli/run.py`):** with the wrapped `body`, `camera`, `speaker`, and
+`default_opener` in scope, build
+`selfie_fn = make_selfie_fn(camera, settings.photos_dir, body=body,
+speak=speaker.speak, opener=default_opener)` and pass `selfie_fn=selfie_fn` into
+`ChatBrain`. Available **only in `run`**; absent in `chat`/tests.
+
+**Privacy:** saved photos are pictures of people written under `data/` (already
+git-ignored and never committed), consistent with the existing transcript-log
+privacy stance. Note it in `docs/`.
+
 ## Data flow
 
 ```
@@ -162,6 +230,17 @@ brain streams a turn
   → answer appended to history as tool result
   → brain re-completes and speaks the answer
   → Oracle's existing post-reply nod fires
+
+selfie:
+brain emits tool_call selfie()
+  → _tool_selfie → selfie_fn()
+      → speak("Smile!")          (best-effort)
+      → body.perform("pose")     (best-effort)
+      → camera.read() → BGR frame
+      → cv2.imwrite(data/photos/<timestamp>.jpg)
+      → opener(path)             (photo pops up, best-effort)
+      → confirmation string
+  → brain re-completes and speaks "there you go!"
 ```
 
 ## Error handling
@@ -173,6 +252,10 @@ brain streams a turn
 - `body.perform("look")` raises (daemon/WiFi drop) → caught inside `look_fn`;
   capture proceeds without the gesture. `body=None` → no gesture, look still
   works (e.g. Mac webcam with no robot).
+- `selfie()`: no camera frame → friendly string, no file written. `speak`/`body`/
+  `opener` failures are each caught best-effort — the photo is still saved even if
+  the gesture, "Smile!", or the viewer fails. `imwrite` failure → logged +
+  friendly string.
 
 ## Testing (against fakes, no devices/network)
 
@@ -187,13 +270,21 @@ brain streams a turn
 - `make_look_fn` with a `FakeBody` + fake camera/client: asserts
   `body.perform("look")` is recorded before the frame is read, and that a
   raising `FakeBody` does not prevent capture/answer.
+- Inject a fake `selfie_fn` into `ChatBrain`: `selfie` offered iff present;
+  `_tool_selfie` calls it and returns its result; a raising `selfie_fn` →
+  friendly fallback.
+- `make_selfie_fn` with `FakeBody` + fake camera + recording `speak`/`opener`
+  into a `tmp_path` photos dir: asserts the order (speak → pose → capture → file
+  written → opener called with the path), that a `.jpg` is actually created, and
+  that best-effort failures (raising `speak`/`body`/`opener`) still save the file.
 - No new dependencies (`opencv-python` is already required).
 
 ## Notes / decisions
 
 - **Logging:** each `look()` call logs the question and a short form of the
-  answer to `data/reachy.log` — privacy-relevant (it describes the room),
-  consistent with existing logging of everything heard and said.
+  answer, and each `selfie()` logs the saved path, to `data/reachy.log` —
+  privacy-relevant (describes the room / stores a photo), consistent with existing
+  logging of everything heard and said.
 - **Latency:** `look()` adds one extra round-trip mid-turn (brain → tool → vision
   call → brain re-completion), the same shape as `web_search`, plus ~0.5–1s for
   the blocking "look" gesture before capture. Accepted.
@@ -202,8 +293,10 @@ brain streams a turn
   neutral and does not attempt to reposition the camera on a target. A dedicated
   `"look"` motion was chosen over reusing `idle`. Fire-and-forget (non-blocking)
   motion was deferred — the body layer is synchronous with no threading.
-- **Scope: read-only.** `look()` never writes to the store. If the brain wants to
-  remember what it saw, it calls `save_note` separately. No auto-remember.
+- **Scope.** Neither tool writes to the LanceDB store. `look()` is fully
+  read-only; if the brain wants to remember what it saw, it calls `save_note`
+  separately. `selfie()` writes only a plain image file to `data/photos/` — not
+  linked to any person or DB row.
 - **No spoken filler** (e.g. "let me have a look…") in v1 — deferred.
 - **`vision_image_max_px` default = 1024** — confirmed acceptable; can be raised
   via env var for OCR-heavy scenes.
