@@ -177,6 +177,23 @@ LOOK_HINT = (
     "people; describe only what you can see."
 )
 
+SELFIE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "selfie",
+        "description": (
+            "Take a photo of the person(s) in front of you and show it to them. "
+            "Use when asked for a photo, selfie, or picture."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+SELFIE_HINT = (
+    " selfie snaps a photo through your camera and pops it up on screen - use it "
+    "when the user asks you to take a photo, selfie, or picture of them."
+)
+
 
 def fetch_tavily(query: str, api_key: str, max_results: int = 3, timeout: float = 5.0) -> str:
     """Tavily search; returns the spoken-ready `answer`. Raises urllib errors."""
@@ -260,6 +277,7 @@ class ChatBrain:
         web_search: bool = False,
         web_search_fetch=None,
         look_fn: Callable[[str], str] | None = None,
+        selfie_fn: Callable[[], str] | None = None,
     ):
         self._store = store
         self._embedder = embedder
@@ -281,6 +299,7 @@ class ChatBrain:
                 logger.warning("web_search enabled but TAVILY_API_KEY missing; disabling")
         self._web_search_fetch = web_search_fetch
         self._look_fn = look_fn
+        self._selfie_fn = selfie_fn
         self._history: list[dict] = []
         self._person_id: str | None = None
         self._person_name: str | None = None
@@ -399,6 +418,8 @@ class ChatBrain:
             tools.append(WEB_SEARCH_TOOL)
         if self._look_fn:
             tools.append(LOOK_TOOL)
+        if self._selfie_fn:
+            tools.append(SELFIE_TOOL)
         return tools
 
     def _system_prompt(self) -> str:
@@ -407,6 +428,8 @@ class ChatBrain:
             prompt += WEB_SEARCH_HINT
         if self._look_fn:
             prompt += LOOK_HINT
+        if self._selfie_fn:
+            prompt += SELFIE_HINT
         return prompt
 
     def _complete(self, on_sentence: Callable[[str], None] | None = None):
@@ -469,6 +492,7 @@ class ChatBrain:
             "get_time": self._tool_get_time,
             "web_search": self._tool_web_search,
             "look": self._tool_look,
+            "selfie": self._tool_selfie,
         }
         handler = handlers.get(call.function.name)
         result = handler(args) if handler else "unknown tool"
@@ -538,6 +562,15 @@ class ChatBrain:
         except Exception:
             logger.exception("look tool failed")
             return "I had trouble seeing just now."
+
+    def _tool_selfie(self, args: dict) -> str:
+        if self._selfie_fn is None:
+            return "I can't take a photo right now."
+        try:
+            return self._selfie_fn()
+        except Exception:
+            logger.exception("selfie tool failed")
+            return "I couldn't take the photo just now."
 
     def _tool_get_weather(self, args: dict) -> str:
         try:

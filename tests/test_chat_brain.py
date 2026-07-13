@@ -589,3 +589,37 @@ def test_look_tool_failure_is_friendly(tmp_path):
         look_fn=boom,
     )
     assert "trouble" in brain._tool_look({"question": "x"}).lower()
+
+
+def test_selfie_tool_offered_only_when_enabled(tmp_path):
+    off = make_brain(tmp_path, FakeLLMClient())
+    on = ChatBrain(
+        store=seeded_store(tmp_path), embedder=FakeEmbedder(),
+        client=FakeLLMClient(), model="gpt-4o", opener=lambda url: None,
+        selfie_fn=lambda: "took a photo and popped it up",
+    )
+    assert not any(t["function"]["name"] == "selfie" for t in off._active_tools())
+    assert any(t["function"]["name"] == "selfie" for t in on._active_tools())
+
+
+def test_selfie_tool_invokes_closure(tmp_path):
+    calls = []
+    brain = ChatBrain(
+        store=seeded_store(tmp_path), embedder=FakeEmbedder(),
+        client=FakeLLMClient(), model="gpt-4o", opener=lambda url: None,
+        selfie_fn=lambda: calls.append(1) or "took a photo and popped it up",
+    )
+    assert brain._tool_selfie({}) == "took a photo and popped it up"
+    assert calls == [1]
+
+
+def test_selfie_tool_failure_is_friendly(tmp_path):
+    def boom():
+        raise RuntimeError("cam died")
+
+    brain = ChatBrain(
+        store=seeded_store(tmp_path), embedder=FakeEmbedder(),
+        client=FakeLLMClient(), model="gpt-4o", opener=lambda url: None,
+        selfie_fn=boom,
+    )
+    assert "couldn't take" in brain._tool_selfie({}).lower()
