@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     tts_model: str = ""  # mlx-audio model id
     # tts_model: str = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"  # mlx-audio model id
 
+    # Vision (look() tool); None => reuse llm_model
+    vision_model: str | None = None
+    vision_image_max_px: int = 1024  # downscale long edge before encoding, to cut vision tokens
+
     voice_sample: Path | None = None  # ~10s clean WAV of the voice to clone (qwen-tts)
     voice_sample_text: str | None = None  # its transcript; omit -> auto-transcribed once
 
@@ -71,6 +75,10 @@ class Settings(BaseSettings):
     @property
     def faces_dir(self) -> Path:
         return self.data_dir / "faces"
+
+    @property
+    def photos_dir(self) -> Path:
+        return self.data_dir / "photos"
 
 
 settings = Settings()
