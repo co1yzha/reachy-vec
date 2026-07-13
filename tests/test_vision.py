@@ -2,7 +2,7 @@ import base64
 
 import numpy as np
 
-from reachy_vec.perception.vision import encode_frame_jpeg, make_look_fn
+from reachy_vec.perception.vision import encode_frame_jpeg, make_look_fn, make_selfie_fn
 from tests.conftest import FakeBody, FakeCamera, FakeLLMClient
 
 
@@ -81,3 +81,59 @@ def test_look_fn_vision_error_is_friendly():
     look = make_look_fn(FakeCamera([_frame()]), BoomClient(),
                         model="gpt-5-mini", max_px=1024)
     assert "trouble" in look("hi").lower()
+
+
+def test_selfie_saves_file_and_opens_it(tmp_path):
+    opened = []
+    selfie = make_selfie_fn(
+        FakeCamera([_frame()]), tmp_path / "photos",
+        body=FakeBody(), speak=lambda t: None, opener=opened.append,
+    )
+    result = selfie()
+    saved = list((tmp_path / "photos").glob("*.jpg"))
+    assert len(saved) == 1
+    assert opened == [str(saved[0])]
+    assert "photo" in result.lower()
+
+
+def test_selfie_ceremony_order(tmp_path):
+    events = []
+
+    class RecCamera:
+        def read(self):
+            events.append("capture")
+            return _frame()
+
+    class RecBody:
+        def perform(self, motion):
+            events.append(f"motion:{motion}")
+
+    selfie = make_selfie_fn(
+        RecCamera(), tmp_path / "photos",
+        body=RecBody(), speak=lambda t: events.append("speak"),
+        opener=lambda p: events.append("open"),
+    )
+    selfie()
+    assert events == ["speak", "motion:pose", "capture", "open"]
+
+
+def test_selfie_no_frame_writes_nothing(tmp_path):
+    selfie = make_selfie_fn(FakeCamera([None]), tmp_path / "photos",
+                            body=FakeBody(), speak=lambda t: None, opener=lambda p: None)
+    assert "couldn't take" in selfie().lower()
+    assert not (tmp_path / "photos").exists() or not list((tmp_path / "photos").glob("*.jpg"))
+
+
+def test_selfie_best_effort_failures_still_save(tmp_path):
+    opened = []
+
+    def boom(*a):
+        raise RuntimeError("hardware")
+
+    selfie = make_selfie_fn(
+        FakeCamera([_frame()]), tmp_path / "photos",
+        body=type("B", (), {"perform": boom})(), speak=boom, opener=opened.append,
+    )
+    result = selfie()
+    assert list((tmp_path / "photos").glob("*.jpg"))  # saved despite speak+pose failing
+    assert "photo" in result.lower()

@@ -6,6 +6,7 @@ Heavy imports (cv2) are deferred per repo convention.
 import base64
 import logging
 from collections.abc import Callable
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -74,3 +75,47 @@ def make_look_fn(camera, client, model: str, max_px: int, body=None) -> Callable
         return answer or "I looked but I'm not sure what I'm seeing."
 
     return look
+
+
+def make_selfie_fn(
+    camera, photos_dir, *, body=None, speak=None, opener=None
+) -> Callable[[], str]:
+    """Return a selfie() closure: say 'Smile!', pose, capture, save, and open.
+    speak/body/opener are all best-effort; a failure in any never blocks the save.
+    """
+    from reachy_vec.brain.chat import default_opener
+
+    open_file = opener if opener is not None else default_opener
+
+    def selfie() -> str:
+        if speak is not None:
+            try:
+                speak("Smile!")
+            except Exception:
+                logger.exception("selfie 'Smile!' failed; continuing")
+        if body is not None:
+            try:
+                body.perform("pose")
+            except Exception:
+                logger.exception("selfie pose failed; continuing")
+        frame = camera.read()
+        if frame is None:
+            return "I couldn't take the photo - no camera frame."
+        try:
+            import cv2
+
+            photos_dir.mkdir(parents=True, exist_ok=True)
+            path = photos_dir / f"{datetime.now():%Y-%m-%d-%H%M%S}.jpg"
+            if not cv2.imwrite(str(path), frame):
+                raise OSError("imwrite returned False")
+        except Exception:
+            logger.exception("selfie save failed")
+            return "I couldn't save the photo just now."
+        try:
+            open_file(str(path))
+        except Exception:
+            logger.exception("selfie open failed; photo is still saved")
+        logger.info("selfie -> %s", path)
+        return "took a photo and popped it up"
+
+    return selfie
