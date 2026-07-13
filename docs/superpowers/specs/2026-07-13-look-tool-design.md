@@ -7,10 +7,10 @@
 
 Add a `look()` tool to `ChatBrain` so the robot can answer questions about what
 its camera currently sees: "what's on my desk?", "how many people are here?",
-"read this whiteboard". The brain calls `look(question?)`; a handler grabs the
-current camera frame, sends it to an OpenAI vision model in an isolated call, and
-returns a short spoken-ready text answer that flows back through the normal
-tool-calling loop.
+"read this whiteboard". The brain calls `look(question?)`; the robot performs a
+short expressive "look" head gesture, grabs the current camera frame, sends it to
+an OpenAI vision model in an isolated call, and returns a short spoken-ready text
+answer that flows back through the normal tool-calling loop.
 
 This is the highest-value, lowest-effort use of the Reachy camera for a team
 assistant — far more useful than 3D reconstruction — and it reuses infrastructure
@@ -53,12 +53,17 @@ Keeps OpenCV / image-encoding logic out of `ChatBrain`.
 def encode_frame_jpeg(frame, max_px: int) -> str:
     """BGR ndarray -> long-edge-downscaled JPEG -> base64 data URL."""
 
-def make_look_fn(camera, client, model: str, max_px: int) -> Callable[[str], str]:
-    """Return a look(question) closure over the camera + OpenAI client."""
+def make_look_fn(camera, client, model: str, max_px: int, body=None) -> Callable[[str], str]:
+    """Return a look(question) closure over the camera + OpenAI client.
+    If `body` is given, perform the 'look' gesture before capturing."""
 ```
 
 `make_look_fn` returns a `look(question: str) -> str` closure that:
 
+0. If `body` is set, `body.perform("look")` — a short expressive "peering"
+   gesture — inside a try/except so a motion failure never blocks seeing. Blocking
+   (adds ~0.5–1s), runs before capture so the frame is grabbed after the head
+   settles.
 1. `frame = camera.read()`. If `None`, return
    `"I can't see anything right now — no camera frame."`
 2. Downscale the long edge to `max_px`, JPEG-encode, base64-encode into a
@@ -92,7 +97,22 @@ def make_look_fn(camera, client, model: str, max_px: int) -> Callable[[str], str
   `self._look_fn(question)` inside a try/except that logs and returns a friendly
   string on failure.
 
-### 3. Config (`config.py`)
+### 3. Physical motion (`body/motions.py`)
+
+Add a new keyframe motion named `"look"` to the `MOTIONS` dict — a short,
+legible "peering" gesture (e.g. slight head pitch-down + a small yaw scan,
+antennas perking up), ending back near neutral so the captured frame is
+front-facing. It follows the existing `Keyframe` structure (head pitch/yaw/roll
+degrees, antenna radians, per-frame duration); no new `Body` API — it is invoked
+via the existing `perform("look")`.
+
+`Body` motions are blocking/synchronous and `ChatBrain` has no body access; the
+motion is therefore triggered entirely from within the `look_fn` closure (built
+in `run.py`, where `body` is in scope), keeping `ChatBrain` free of any body
+dependency. The Oracle's existing post-reply `nod` fires afterward as usual, so
+the full beat is: **look gesture → capture → answer → nod**.
+
+### 4. Config (`config.py`)
 
 - `vision_model: str | None = None` (env `REACHY_VEC_VISION_MODEL`). `None` means
   **reuse `llm_model`** (gpt-5-mini). Optional override only — nothing extra to
@@ -101,10 +121,15 @@ def make_look_fn(camera, client, model: str, max_px: int) -> Callable[[str], str
   Downscale the long edge of the 12MP / 120° frame before encoding, to cut vision
   token cost.
 
-### 4. Wiring (`cli/run.py`)
+### 5. Wiring (`cli/run.py`)
 
-After `client` and `camera` are constructed and before/at `ChatBrain`
-construction (`run.py:157`):
+Move the existing `wrap_reconnect(body, ...)` call (currently `run.py:165-169`,
+*after* `ChatBrain` construction) to *before* the `ChatBrain` construction, so the
+resilient (reconnecting) `body` is the one handed to `look_fn`. This is a pure
+reorder — no behavior change; `OracleLoop` still receives the same wrapped `body`.
+
+Then, after `client`, `camera`, and the wrapped `body` exist and before the
+`ChatBrain` construction (`run.py:157`):
 
 ```python
 from reachy_vec.perception.vision import make_look_fn
@@ -114,6 +139,7 @@ look_fn = make_look_fn(
     client,
     model=settings.vision_model or settings.llm_model,
     max_px=settings.vision_image_max_px,
+    body=body,
 )
 brain = ChatBrain(..., look_fn=look_fn)
 ```
@@ -128,12 +154,14 @@ offered and never called.
 brain streams a turn
   → emits tool_call look(question)
   → _tool_look → look_fn(question)
+      → body.perform("look")  (expressive gesture, blocking, best-effort)
       → camera.read() → BGR frame
       → downscale + JPEG + base64 data URL
       → OpenAI vision call (frame + question)
       → text answer
   → answer appended to history as tool result
   → brain re-completes and speaks the answer
+  → Oracle's existing post-reply nod fires
 ```
 
 ## Error handling
@@ -142,6 +170,9 @@ brain streams a turn
 - OpenAI / network error in the vision call → caught, logged, friendly string.
 - Empty `question` → default prompt `"Describe what you see."`.
 - `look_fn` absent → tool not offered (cannot be called).
+- `body.perform("look")` raises (daemon/WiFi drop) → caught inside `look_fn`;
+  capture proceeds without the gesture. `body=None` → no gesture, look still
+  works (e.g. Mac webcam with no robot).
 
 ## Testing (against fakes, no devices/network)
 
@@ -153,6 +184,9 @@ brain streams a turn
 - Unit-test `encode_frame_jpeg` on a small synthetic numpy array: verifies
   downscaling of the long edge to `max_px` and the `data:image/jpeg;base64,`
   shape.
+- `make_look_fn` with a `FakeBody` + fake camera/client: asserts
+  `body.perform("look")` is recorded before the frame is read, and that a
+  raising `FakeBody` does not prevent capture/answer.
 - No new dependencies (`opencv-python` is already required).
 
 ## Notes / decisions
@@ -161,7 +195,13 @@ brain streams a turn
   answer to `data/reachy.log` — privacy-relevant (it describes the room),
   consistent with existing logging of everything heard and said.
 - **Latency:** `look()` adds one extra round-trip mid-turn (brain → tool → vision
-  call → brain re-completion), the same shape as `web_search`. Accepted.
+  call → brain re-completion), the same shape as `web_search`, plus ~0.5–1s for
+  the blocking "look" gesture before capture. Accepted.
+- **Motion is expressive, not functional:** the `Body` layer has no gaze-target /
+  look-at primitive and we capture a single frame, so the gesture ends near
+  neutral and does not attempt to reposition the camera on a target. A dedicated
+  `"look"` motion was chosen over reusing `idle`. Fire-and-forget (non-blocking)
+  motion was deferred — the body layer is synchronous with no threading.
 - **Scope: read-only.** `look()` never writes to the store. If the brain wants to
   remember what it saw, it calls `save_note` separately. No auto-remember.
 - **No spoken filler** (e.g. "let me have a look…") in v1 — deferred.
