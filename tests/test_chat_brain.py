@@ -554,3 +554,38 @@ def test_keyword_only_match_ranks_first_in_context(tmp_path):
     brain.respond("who is Jane Smith?", identity=YANG)
     context = client.chat.completions.last_kwargs["messages"][-1]["content"]
     assert context.index("Robot Arm Teleop") < context.index("Food Mapping")
+
+
+def test_look_tool_offered_only_when_enabled(tmp_path):
+    off = make_brain(tmp_path, FakeLLMClient())
+    on = ChatBrain(
+        store=seeded_store(tmp_path), embedder=FakeEmbedder(),
+        client=FakeLLMClient(), model="gpt-4o", opener=lambda url: None,
+        look_fn=lambda q: "a desk",
+    )
+    assert not any(t["function"]["name"] == "look" for t in off._active_tools())
+    assert any(t["function"]["name"] == "look" for t in on._active_tools())
+    assert "camera" in on._system_prompt().lower()
+
+
+def test_look_tool_passes_question_and_returns_answer(tmp_path):
+    seen = []
+    brain = ChatBrain(
+        store=seeded_store(tmp_path), embedder=FakeEmbedder(),
+        client=FakeLLMClient(), model="gpt-4o", opener=lambda url: None,
+        look_fn=lambda q: seen.append(q) or "two monitors",
+    )
+    assert brain._tool_look({"question": "what's on my desk?"}) == "two monitors"
+    assert seen == ["what's on my desk?"]
+
+
+def test_look_tool_failure_is_friendly(tmp_path):
+    def boom(q):
+        raise RuntimeError("cam died")
+
+    brain = ChatBrain(
+        store=seeded_store(tmp_path), embedder=FakeEmbedder(),
+        client=FakeLLMClient(), model="gpt-4o", opener=lambda url: None,
+        look_fn=boom,
+    )
+    assert "trouble" in brain._tool_look({"question": "x"}).lower()
