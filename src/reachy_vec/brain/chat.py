@@ -147,6 +147,53 @@ WEB_SEARCH_HINT = (
     "own knowledge (it costs a limited search budget, so don't use it for chit-chat)."
 )
 
+LOOK_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "look",
+        "description": (
+            "Look through the robot's camera and answer about what's physically "
+            "in view right now (surroundings, objects, how many people, or to "
+            "read visible text)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": (
+                        "what to look for or answer about the scene; "
+                        "omit to describe the view"
+                    ),
+                },
+            },
+        },
+    },
+}
+
+LOOK_HINT = (
+    " look lets you actually see through your camera - use it when the user asks "
+    "about your physical surroundings, to read something in view, or to count "
+    "people; describe only what you can see."
+)
+
+SELFIE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "selfie",
+        "description": (
+            "Take a photo of the person(s) in front of you and show it to them. "
+            "Use when asked for a photo, selfie, or picture."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+SELFIE_HINT = (
+    " selfie snaps a photo through your camera and pops it up on screen - use it "
+    "when the user asks you to take a photo, selfie, or picture of them."
+)
+
 
 def fetch_tavily(query: str, api_key: str, max_results: int = 3, timeout: float = 5.0) -> str:
     """Tavily search; returns the spoken-ready `answer`. Raises urllib errors."""
@@ -229,6 +276,8 @@ class ChatBrain:
         k: int = 5,
         web_search: bool = False,
         web_search_fetch=None,
+        look_fn: Callable[[str], str] | None = None,
+        selfie_fn: Callable[[], str] | None = None,
     ):
         self._store = store
         self._embedder = embedder
@@ -249,6 +298,8 @@ class ChatBrain:
             else:
                 logger.warning("web_search enabled but TAVILY_API_KEY missing; disabling")
         self._web_search_fetch = web_search_fetch
+        self._look_fn = look_fn
+        self._selfie_fn = selfie_fn
         self._history: list[dict] = []
         self._person_id: str | None = None
         self._person_name: str | None = None
@@ -362,10 +413,24 @@ class ChatBrain:
         )
 
     def _active_tools(self) -> list:
-        return [*TOOLS, WEB_SEARCH_TOOL] if self._web_search_fetch else TOOLS
+        tools = list(TOOLS)
+        if self._web_search_fetch:
+            tools.append(WEB_SEARCH_TOOL)
+        if self._look_fn:
+            tools.append(LOOK_TOOL)
+        if self._selfie_fn:
+            tools.append(SELFIE_TOOL)
+        return tools
 
     def _system_prompt(self) -> str:
-        return PERSONALITY + WEB_SEARCH_HINT if self._web_search_fetch else PERSONALITY
+        prompt = PERSONALITY
+        if self._web_search_fetch:
+            prompt += WEB_SEARCH_HINT
+        if self._look_fn:
+            prompt += LOOK_HINT
+        if self._selfie_fn:
+            prompt += SELFIE_HINT
+        return prompt
 
     def _complete(self, on_sentence: Callable[[str], None] | None = None):
         if on_sentence is None:
@@ -426,6 +491,8 @@ class ChatBrain:
             "get_weather": self._tool_get_weather,
             "get_time": self._tool_get_time,
             "web_search": self._tool_web_search,
+            "look": self._tool_look,
+            "selfie": self._tool_selfie,
         }
         handler = handlers.get(call.function.name)
         result = handler(args) if handler else "unknown tool"
@@ -485,6 +552,25 @@ class ChatBrain:
             logger.exception("Tavily request failed")
             return "couldn't reach web search just now"
         return answer or "I searched but didn't find a clear answer"
+
+    def _tool_look(self, args: dict) -> str:
+        if self._look_fn is None:
+            return "I can't see right now."
+        question = (args.get("question") or "").strip()
+        try:
+            return self._look_fn(question)
+        except Exception:
+            logger.exception("look tool failed")
+            return "I had trouble seeing just now."
+
+    def _tool_selfie(self, args: dict) -> str:
+        if self._selfie_fn is None:
+            return "I can't take a photo right now."
+        try:
+            return self._selfie_fn()
+        except Exception:
+            logger.exception("selfie tool failed")
+            return "I couldn't take the photo just now."
 
     def _tool_get_weather(self, args: dict) -> str:
         try:

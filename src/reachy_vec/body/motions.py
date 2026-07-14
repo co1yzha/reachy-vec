@@ -42,4 +42,14 @@ MOTIONS: dict[str, list[Keyframe]] = {
         Keyframe(head={"pitch": 18}, antennas=(-0.8, -0.8), duration=0.6),
         NEUTRAL,
     ],
+    "look": [
+        Keyframe(head={"pitch": -6, "yaw": 8}, antennas=(0.4, 0.4), duration=0.35),
+        Keyframe(head={"pitch": -6, "yaw": -8}, antennas=(0.4, 0.4), duration=0.35),
+        NEUTRAL,
+    ],
+    "pose": [
+        Keyframe(head={"pitch": -10}, antennas=(0.7, 0.7), duration=0.4),
+        Keyframe(head={"pitch": -10, "roll": 4}, antennas=(0.7, 0.7), duration=0.4),
+        NEUTRAL,
+    ],
 }

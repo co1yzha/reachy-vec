@@ -78,10 +78,11 @@ def run(
     from reachy_vec.audio.sources import RobotAudioSource
     from reachy_vec.audio.speak import make_speaker
     from reachy_vec.body.robot import make_robot
-    from reachy_vec.brain.chat import ChatBrain
+    from reachy_vec.brain.chat import ChatBrain, default_opener
     from reachy_vec.brain.oracle import OracleLoop
     from reachy_vec.perception.camera import RobotCamera, WebcamCamera
     from reachy_vec.perception.face import InsightFaceMatcher, enroll_person
+    from reachy_vec.perception.vision import make_look_fn, make_selfie_fn
     from reachy_vec.perception.voice import EcapaSpeakerIdentifier
     from reachy_vec.store.db import Store
     from reachy_vec.store.embeddings import BgeEmbedder
@@ -154,6 +155,25 @@ def run(
     else:
         sight = lambda: matcher.observe(camera.read())  # noqa: E731
 
+    body = wrap_reconnect(
+        body,
+        connect_body=lambda: make_robot(with_media=False)[0],
+        announce=speaker.speak,
+    )
+    look_fn = make_look_fn(
+        camera,
+        client,
+        model=settings.vision_model or settings.llm_model,
+        max_px=settings.vision_image_max_px,
+        body=body,
+    )
+    selfie_fn = make_selfie_fn(
+        camera,
+        settings.photos_dir,
+        body=body,
+        speak=speaker.speak,
+        opener=default_opener,
+    )
     brain = ChatBrain(
         store=store,
         embedder=embedder,
@@ -161,11 +181,8 @@ def run(
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
         web_search=settings.web_search,
-    )
-    body = wrap_reconnect(
-        body,
-        connect_body=lambda: make_robot(with_media=False)[0],
-        announce=speaker.speak,
+        look_fn=look_fn,
+        selfie_fn=selfie_fn,
     )
     loop = OracleLoop(
         sight=sight,

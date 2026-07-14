@@ -137,3 +137,5 @@ to means, roughly in priority order (sequenced into shippable sub-phases in the
 6. **Operational polish.** No autostart/service, no metrics beyond
    `data/reachy.log`, and identity management (delete/rename/merge a person,
    consent + retention controls) is not exposed anywhere but the raw store.
+   - `selfie()` writes photos to `data/photos/` — pictures of people;
+     git-ignored, never committed (same privacy stance as `data/reachy.log`).

@@ -2,7 +2,7 @@ from reachy_vec.body.motions import MOTIONS, Keyframe
 from reachy_vec.body.robot import Body, NullBody, RobotBody, make_robot
 from reachy_vec.config import settings as _settings
 
-EXPECTED = {"greet", "nod", "listen", "idle", "acknowledge", "goodbye"}
+EXPECTED = {"greet", "nod", "listen", "idle", "acknowledge", "goodbye", "look", "pose"}
 
 
 def test_all_motions_defined_and_well_formed():
@@ -14,6 +14,16 @@ def test_all_motions_defined_and_well_formed():
             assert kf.duration > 0
             assert len(kf.antennas) == 2
             assert set(kf.head) <= {"x", "y", "z", "roll", "pitch", "yaw"}
+
+
+def test_look_and_pose_motions_exist_and_are_valid():
+    from reachy_vec.body.motions import MOTIONS, Keyframe
+
+    for name in ("look", "pose"):
+        frames = MOTIONS[name]
+        assert frames and all(isinstance(kf, Keyframe) for kf in frames)
+        assert all(kf.duration > 0 for kf in frames)
+        assert frames[-1].head == {} and frames[-1].antennas == (0.0, 0.0)  # ends neutral
 
 
 def test_null_body_is_silent_noop():
