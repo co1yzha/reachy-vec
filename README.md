@@ -31,7 +31,7 @@ Docs:
 - **Phase 1 — Oracle:** walk up, get greeted by name, ask a question, hear the answer.
 - **Phase 2 — Memory keeper:** per-person attribution of spoken notes, recall by person.
 - **Phase 3 — Messenger:** "tell Bob…" relayed when Bob is next seen.
-- **Phase 4 — On-robot deployment** *(planned)*: perception + speech move onto the robot's own camera/mic/speaker (today they run on the Mac), plus `ROBOT_HOST` wiring, barge-in, and autostart. See the [bring-up spec](docs/superpowers/specs/2026-07-09-phase4-hardware-bringup-design.md).
+- **Phase 4 — On-robot deployment** *(in progress)*: 4a on-robot media (`--source robot`), 4b `ROBOT_HOST` + reconnect, and 4c barge-in have shipped; 4d autostart + offline degradation remains. See the [bring-up spec](docs/superpowers/specs/2026-07-09-phase4-hardware-bringup-design.md).
 
 ## Setup
 
@@ -66,6 +66,40 @@ with the LanceDB store dashboard below). If the daemon reports a weird state
 after a crashed run, a stale process may hold port 8000:
 `pkill -f reachy-mini-daemon`.
 
+### Running on the real robot (wireless)
+
+The wireless Reachy Mini is controlled entirely over WiFi — its USB-C port
+is **power-only**. One-time setup: power it on, join the `reachy-mini-ap`
+hotspot it broadcasts, and use the Reachy Mini Control app ("First time
+connecting…") to hand it your WiFi credentials. It then appears on your
+network as `reachy-mini.local` (mDNS), with the daemon dashboard at
+http://reachy-mini.local:8000. Enterprise WiFi (eduroam etc.) usually
+rejects embedded devices — use a phone/Mac hotspot or a personal router,
+with the Mac on the same network.
+
+```bash
+# .env
+REACHY_VEC_ROBOT_HOST=reachy-mini.local   # or the robot's IP
+
+# robot moves, Mac supplies camera/mic/speaker (desk workflow):
+uv run reachy-vec run --preview --source mac
+
+# everything on the robot: its camera, mics, and speaker
+# (set REACHY_VEC_TTS_BACKEND=qwen-tts so replies play on the robot):
+uv run reachy-vec run --preview --source robot
+```
+
+Troubleshooting:
+
+- **Robot connected but not moving** (commands succeed, head stays still):
+  the onboard daemon can wedge at boot —
+  `curl -X POST http://reachy-mini.local:8000/api/daemon/restart`, or
+  power-cycle the robot.
+- **One media client at a time.** Don't run two `reachy-vec run` instances
+  against the robot; the second steals or kills the first's stream.
+- **Keep SDK and daemon versions matched** (dashboard → System Updates);
+  mismatches cause subtle media bring-up failures.
+
 ### Cloned voice (optional)
 
 By default the robot uses the macOS `say` voice. To have it speak in a cloned
@@ -92,6 +126,7 @@ uv run reachy-vec ingest <path>      # add .md/.txt docs to the knowledge base
 uv run reachy-vec enroll "Name"      # webcam face enrollment
 uv run reachy-vec record-voice       # record a voice sample for the cloned TTS
 uv run reachy-vec run --preview      # full Oracle loop (webcam + mic + robot/sim)
+#   --source auto|robot|mac: whose camera/mic/speaker (see "Running on the real robot")
 uv run reachy-vec dashboard          # browse the LanceDB store in the browser
 ```
 

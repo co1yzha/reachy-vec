@@ -36,6 +36,8 @@ uv run reachy-mini-daemon --sim --headless              # headless
 
 Gotchas: after (re)creating `.venv`, re-link libpython for MuJoCo (see README). A crashed daemon can hold port 8000: `pkill -f reachy-mini-daemon`. Secrets (`OPENAI_API_KEY`, `MONGODB_URI`) live in `.env` (template: `.env.example`). No CI — run `ruff check` + `pytest` locally before pushing; both must pass.
 
+Robot hardware gotchas (wireless Reachy Mini, WiFi-only — USB-C is power-only): robot connected but not moving while every command "succeeds" = wedged onboard daemon — `curl -X POST http://reachy-mini.local:8000/api/daemon/restart` (its dashboard lives at that host:port). Only one media client at a time, and constructing a `no_media` SDK connection *releases* the daemon's media, killing another client's live stream (why `ReconnectingBody` is seeded with the initial body). Robot WebRTC camera frames arrive read-only and the first frame takes ~2 s. Pytest fakes can pass while production wiring is broken — hardware-facing changes need the `docs/testing.md` smoke checklist on the real robot.
+
 ## Architecture
 
 Full detail in `docs/architecture.md` and `docs/pipelines.md` (models per step, config knobs). Design specs and phase plans: `docs/superpowers/`.
