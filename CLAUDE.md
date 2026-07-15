@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Team Familiar: an embodied team assistant on a Reachy Mini robot. The robot recognizes teammates by face, answers questions from a shared knowledge base (RAG), remembers per-person notes, and relays messages. The brain runs on a Mac; the robot (or MuJoCo simulator) is a thin body. Currently at Phase 3 (messenger).
+Team Familiar: an embodied team assistant on a Reachy Mini robot. The robot recognizes teammates by face, answers questions from a shared knowledge base (RAG), remembers per-person notes, and relays messages. The brain runs on a Mac; the robot (or MuJoCo simulator) is a thin body for motion, and (since Phase 4a) optionally for camera/mic/speaker too. Currently mid-Phase 4 (hardware bring-up): 4a on-robot media, 4b `ROBOT_HOST` + reconnect, and 4c barge-in have shipped; 4d (autostart + offline degradation) has not.
 
-**Not yet wired (see `docs/architecture.md` → Known gaps):** the robot is motion-only — camera, mic, and speaker are all the *Mac's* (`media_backend="no_media"`); on-robot media does not stream over WiFi yet. `ROBOT_HOST` is declared in `config.py` but unused. Barge-in (interrupting a reply) is specced in `docs/superpowers/specs/2026-07-08-phase2c-...` but not implemented — only the cloned-voice half of that spec shipped. Answers require the OpenAI API (no offline fallback).
+**Remaining gaps (see `docs/architecture.md` → Known gaps):** on-robot `say` TTS output still renders Mac-side (`qwen-tts` is the on-robot backend); far-field mic gain is untuned; robot media does not hot-recover from a stream drop (soft-degrades until it returns — no live media→Mac fallback). Answers require the OpenAI API (no offline fallback; local-LLM fallback is deliberately deferred).
 
 ## Commands
 
@@ -23,6 +23,8 @@ uv run reachy-vec ingest <path>      # add .md/.txt docs
 uv run reachy-vec enroll "Name"      # webcam face enrollment
 uv run reachy-vec record-voice       # record ~10s mic sample for cloned TTS -> data/voice_sample.wav
 uv run reachy-vec run --preview      # full Oracle loop (webcam + mic)
+#   --source auto|robot|mac (or REACHY_VEC_MEDIA_SOURCE): whose camera/mic/speaker
+#   REACHY_VEC_ROBOT_HOST=<ip> connects to a remote robot (network mode)
 #   cloned voice: REACHY_VEC_TTS_BACKEND=qwen-tts + REACHY_VEC_VOICE_SAMPLE=<wav>
 #   (Qwen3-TTS via mlx-audio, local; default backend is macOS `say`)
 uv run reachy-vec dashboard          # local web UI to browse the LanceDB store
@@ -42,7 +44,7 @@ The core pattern: **every heavy dependency sits behind a small Protocol with a t
 
 Data layer: one embedded LanceDB database (`data/lancedb`) with six tables — `docs` (384-dim BGE chunks), `people` (512-dim insightface embeddings, one row per captured frame), `voices` (192-dim ECAPA embeddings, enrolled + passive), `greetings`, `memories` (per-person notes), `messages` (queued relays). All access goes through `store/db.py:Store`; schemas in `store/schemas.py`.
 
-Control flow: `cli/run.py` wires everything and hands it to `brain/oracle.py:OracleLoop`, a synchronous state machine (idle → greet/enroll → listen → think → speak). Each utterance is voice-identified and fused with the face observation (`perception/fusion.py`: voice is the authority, face the tie-breaker) into a per-turn `TurnIdentity`. `brain/chat.py:ChatBrain` does the per-turn work: embed question → scored LanceDB search (docs + the turn speaker's memories) → one streaming OpenAI call with tools (`open_url`, `save_note`, `send_message`, `get_weather`); sentences are spoken as they stream. Conversations end on silence; `end_conversation()` distills up to 3 memories per enrolled speaker via extra LLM calls.
+Control flow: `cli/run.py` wires everything and hands it to `brain/oracle.py:OracleLoop`, a synchronous state machine (idle → greet/enroll → listen → think → speak). Each utterance is voice-identified and fused with the face observation (`perception/fusion.py`: voice is the authority, face the tie-breaker) into a per-turn `TurnIdentity`. `brain/chat.py:ChatBrain` does the per-turn work: embed question → scored LanceDB search (docs + the turn speaker's memories) → one streaming OpenAI call with tools (`open_url`, `save_note`, `send_message`, `get_weather`, `get_time`; `web_search` if `TAVILY_API_KEY` is set; camera tools `look`/`selfie` injected only by `run`); sentences are spoken as they stream. Barge-in (`BARGE_IN`, on by default): talking over a reply stops the sentence and makes the interruption the next turn. Conversations end on silence; `end_conversation()` distills up to 3 memories per enrolled speaker via extra LLM calls.
 
 Identity rule (from the design spec): **never guess.** Face match below threshold = unknown; borderline (within 0.05 under threshold) = treated as no face at all — neither greeted nor offered enrollment. Voices follow the same rule (`VOICE_THRESHOLD`, same margin); an anonymous turn is answered but never written to the store.
 
