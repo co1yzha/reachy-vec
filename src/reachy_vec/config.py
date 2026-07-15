@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     idle_sleep_s: float = 300.0       # no faces for this long -> robot sleeps
     barge_in: bool = True  # allow talking over a reply to interrupt it
     barge_in_min_speech_s: float = 0.7  # sustained speech needed to fire (raise if false triggers)
+    speech_wobble: bool = True  # audio-synced head sway while the robot speaker plays
 
     # Weather (Open-Meteo, no API key); default: Liverpool, UK
     weather_lat: float = 53.4084

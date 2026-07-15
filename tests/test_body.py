@@ -81,6 +81,7 @@ def test_robot_body_ignores_unknown_motion():
 class FakeMini:
     def __init__(self):
         self.acquired = self.released = False
+        self.wobbling = False
         self.media = object()
 
         class _Client:
@@ -94,6 +95,9 @@ class FakeMini:
 
     def release_media(self):
         self.released = True
+
+    def enable_wobbling(self):
+        self.wobbling = True
 
 
 def test_make_robot_with_media_acquires_and_returns_media():
@@ -149,6 +153,41 @@ def test_make_robot_preacquire_failure_is_not_fatal():
         with_media=True, connect=lambda **kw: FakeMini(), pre_acquire=boom_acquire
     )
     assert not isinstance(body, NullBody)  # still connected; SDK may cope
+    assert media is not None
+
+
+def test_make_robot_enables_speech_wobble_with_media(monkeypatch):
+    monkeypatch.setattr(_settings, "speech_wobble", True)
+    mini = FakeMini()
+    make_robot(with_media=True, connect=lambda **kw: mini, pre_acquire=lambda: None)
+    assert mini.wobbling
+
+
+def test_make_robot_skips_wobble_when_knob_off(monkeypatch):
+    monkeypatch.setattr(_settings, "speech_wobble", False)
+    mini = FakeMini()
+    make_robot(with_media=True, connect=lambda **kw: mini, pre_acquire=lambda: None)
+    assert not mini.wobbling
+
+
+def test_make_robot_skips_wobble_without_media(monkeypatch):
+    monkeypatch.setattr(_settings, "speech_wobble", True)
+    mini = FakeMini()
+    make_robot(with_media=False, connect=lambda **kw: mini)
+    assert not mini.wobbling
+
+
+def test_make_robot_wobble_failure_is_not_fatal(monkeypatch):
+    monkeypatch.setattr(_settings, "speech_wobble", True)
+
+    class WobbleBoomMini(FakeMini):
+        def enable_wobbling(self):
+            raise RuntimeError("old daemon")
+
+    body, media = make_robot(
+        with_media=True, connect=lambda **kw: WobbleBoomMini(), pre_acquire=lambda: None
+    )
+    assert not isinstance(body, NullBody)
     assert media is not None
 
 

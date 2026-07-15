@@ -158,6 +158,13 @@ def make_robot(
         mini = connect(**kwargs)
         if with_media:
             mini.acquire_media()
+            if settings.speech_wobble:
+                try:
+                    mini.enable_wobbling()
+                except Exception as exc:
+                    logger.warning(
+                        "could not enable speech wobble (%s); continuing.", exc
+                    )
 
             def _cleanup():
                 try:
