@@ -52,4 +52,15 @@ MOTIONS: dict[str, list[Keyframe]] = {
         Keyframe(head={"pitch": -10, "roll": 4}, antennas=(0.7, 0.7), duration=0.4),
         NEUTRAL,
     ],
+    "wakeup": [
+        # stretch up, antennas high
+        Keyframe(head={"pitch": -20}, antennas=(0.9, 0.9), duration=0.8),
+        # look left, then right — "who's there?"
+        Keyframe(head={"pitch": -10, "yaw": 25}, antennas=(0.6, -0.6), duration=0.6),
+        Keyframe(head={"pitch": -10, "yaw": -25}, antennas=(-0.6, 0.6), duration=0.6),
+        # quick antenna wiggle
+        Keyframe(head={"pitch": -5}, antennas=(0.8, -0.8), duration=0.3),
+        Keyframe(head={"pitch": -5}, antennas=(-0.8, 0.8), duration=0.3),
+        NEUTRAL,
+    ],
 }
