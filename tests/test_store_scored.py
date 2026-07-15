@@ -96,3 +96,18 @@ def test_no_query_text_uses_vector_path(tmp_path):
     store.add_doc_chunks([chunk("c1", "food mapping demo", "demo: Food")])
     results = store.search_docs_scored(FakeEmbedder().embed(["food mapping demo"])[0])
     assert results[0][0].chunk_id == "c1"
+
+
+def test_hybrid_search_survives_quotes_in_query_text(tmp_path):
+    """STT can emit quote characters (a near-silent segment once transcribed
+    as '""'); LanceDB FTS treats quotes as phrase-query syntax and errors.
+    Quotes must be stripped, and an all-quotes query falls back to vector."""
+    store = Store(tmp_path / "db")
+    store.add_doc_chunks(
+        [chunk("c1", "Demo: Food Mapping\nAuthors: Bob", "demo: Food")]
+    )
+    vec = FakeEmbedder().embed_query("food mapping")
+    quoted = store.search_docs_scored(vec, k=1, query_text='say "food mapping" now')
+    assert quoted[0][0].chunk_id == "c1"
+    only_quotes = store.search_docs_scored(vec, k=1, query_text='""')
+    assert only_quotes[0][0].chunk_id == "c1"  # vector-only fallback, no crash

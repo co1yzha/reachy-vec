@@ -71,6 +71,11 @@ class Store:
         if self.doc_count() == 0:
             return []
         table = self._docs()
+        if query_text:
+            # Quotes are FTS phrase-query syntax our index doesn't support,
+            # and STT can emit them (a near-silent segment once came out as
+            # '""'). Strip them; an empty remainder means vector-only.
+            query_text = query_text.replace('"', " ").strip() or None
         if query_text and any(i.name == "text_idx" for i in table.list_indices()):
             rows = (
                 table.search(query_type="hybrid")
