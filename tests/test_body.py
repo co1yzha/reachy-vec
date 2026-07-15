@@ -265,6 +265,32 @@ def test_reconnecting_body_gives_up_and_announces_once():
     assert "body" in said[0].lower()
 
 
+def test_reconnecting_body_skips_slow_motion_without_redialing():
+    """A TimeoutError means the daemon is busy (e.g. its own wake
+    choreography overran goto_target's duration+1s wait) - NOT gone.
+    Re-dialing would release the robot's media stream (no_media connect),
+    so the motion is skipped and the connection kept (live incident,
+    2026-07-15: 1.9.0 wake timed out and killed rung-3 media)."""
+    from reachy_vec.body.robot import ReconnectingBody
+
+    class SlowOnceBody(FlakyBody):
+        def perform(self, motion):
+            if self._fail > 0:
+                self._fail -= 1
+                raise TimeoutError("Task did not complete in time.")
+            self.motions.append(motion)
+
+    inner = SlowOnceBody(fail=1)
+    body = ReconnectingBody(
+        connect_body=lambda: (_ for _ in ()).throw(AssertionError("re-dialed!")),
+        max_attempts=3,
+        initial=inner,
+    )
+    body.perform("wake")   # times out -> skipped, connection kept
+    body.perform("nod")    # same inner body still in use
+    assert inner.motions == ["nod"]
+
+
 def test_reconnecting_body_reuses_initial_body_without_reconnecting():
     """A second connect at startup is not just wasteful: constructing a
     no_media SDK client RELEASES the daemon's media, killing the robot

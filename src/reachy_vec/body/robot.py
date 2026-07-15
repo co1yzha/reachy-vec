@@ -86,7 +86,12 @@ class ReconnectingBody:
                 self._inner = inner
             self._inner.perform(motion)
             self._failures = 0
-        except (ConnectionError, TimeoutError) as exc:
+        except TimeoutError as exc:
+            # Daemon busy (e.g. its own choreography overran the SDK's
+            # duration+1s wait) - not gone. Re-dialing would release the
+            # robot's media stream, so just skip this motion.
+            logger.warning("Body command %r timed out (%s); skipped.", motion, exc)
+        except ConnectionError as exc:
             self._inner = None
             self._failures += 1
             logger.warning(
