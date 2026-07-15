@@ -61,11 +61,15 @@ class ReconnectingBody:
         connect_body: "Callable[[], Body]",
         max_attempts: int = 3,
         announce: "Callable[[str], None] | None" = None,
+        initial: "Body | None" = None,
     ):
         self._connect_body = connect_body
         self._max_attempts = max_attempts
         self._announce = announce or (lambda _msg: None)
-        self._inner: Body | None = None
+        # Seed with the already-connected body: a fresh no_media connect at
+        # startup would RELEASE the daemon's media and kill the robot
+        # camera/mic stream. Only re-dial after an actual failure.
+        self._inner: Body | None = initial
         self._failures = 0
         self._dead = False
 

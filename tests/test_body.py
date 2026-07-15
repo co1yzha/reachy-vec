@@ -224,6 +224,23 @@ def test_reconnecting_body_gives_up_and_announces_once():
     assert "body" in said[0].lower()
 
 
+def test_reconnecting_body_reuses_initial_body_without_reconnecting():
+    """A second connect at startup is not just wasteful: constructing a
+    no_media SDK client RELEASES the daemon's media, killing the robot
+    camera/mic stream mid-run (live incident, 2026-07-15)."""
+    from reachy_vec.body.robot import ReconnectingBody
+
+    initial = FlakyBody(fail=0)
+    body = ReconnectingBody(
+        connect_body=lambda: (_ for _ in ()).throw(AssertionError("reconnected!")),
+        max_attempts=3,
+        initial=initial,
+    )
+    body.perform("greet")
+    body.perform("nod")
+    assert initial.motions == ["greet", "nod"]  # no reconnect ever attempted
+
+
 def test_reconnecting_body_treats_nullbody_reconnect_as_failure():
     """Production wires connect_body=make_robot, which degrades to NullBody
     instead of raising. A NullBody must count as a failed reconnect - not

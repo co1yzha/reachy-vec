@@ -72,6 +72,7 @@ def wrap_reconnect(body, connect_body, announce):
             connect_body=connect_body,
             max_attempts=settings.body_reconnect_attempts,
             announce=announce,
+            initial=body,
         )
     return body
 

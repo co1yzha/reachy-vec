@@ -76,6 +76,7 @@ def test_wrap_reconnect_wraps_a_robot_body(monkeypatch):
     body = RobotBody(_StubMini())
     wrapped = wrap_reconnect(body, connect_body=lambda: body, announce=lambda m: None)
     assert isinstance(wrapped, ReconnectingBody)
+    assert wrapped._inner is body  # seeded with the live connection - no re-dial at startup
 
 
 def test_wrap_reconnect_leaves_nullbody_alone(monkeypatch):
