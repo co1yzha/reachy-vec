@@ -27,3 +27,25 @@ def test_preview_sight_no_frame_skips_render():
     )
     assert sight() is None
     assert shown == []
+
+
+def test_annotate_draws_on_readonly_float_bbox_frame():
+    """Robot WebRTC frames arrive read-only, and bboxes can be numpy floats;
+    annotation must copy the frame and coerce coords, not crash cv2."""
+    import numpy as np
+
+    frame = np.zeros((48, 64, 3), dtype=np.uint8)
+    frame.setflags(write=False)
+    bbox = (np.float32(5.0), np.float32(6.0), np.float32(40.0), np.float32(42.0))
+    out = PreviewSight._annotate(frame, ALICE, bbox)
+    assert out.flags.writeable
+    assert out.any()  # the green box was actually drawn
+
+
+def test_annotate_without_bbox_passes_frame_through():
+    import numpy as np
+
+    frame = np.zeros((8, 8, 3), dtype=np.uint8)
+    frame.setflags(write=False)
+    out = PreviewSight._annotate(frame, None, None)
+    assert not out.any()
