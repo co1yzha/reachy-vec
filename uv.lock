@@ -2039,6 +2039,15 @@ wheels = [
 ]
 
 [[package]]
+name = "platformdirs"
+version = "4.10.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d7/47/e4501f49c178ae1d9f4a75073fda4204f52647993f075a9db4d14930e0c5/platformdirs-4.10.0.tar.gz", hash = "sha256:31e761a6a0ca04faf7353ea759bdba55652be214725111e5aac52dfa29d4bef7", size = 31224, upload-time = "2026-05-28T03:32:53.587Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/e6/cd9575ac904136b3cbf7aa7ee819ef86eedb7274e46f230e94ea4342e729/platformdirs-4.10.0-py3-none-any.whl", hash = "sha256:fb516cdb12eb0d857d0cd85a7c57cea4d060bee4578d6cf5a14dfdf8cbf8784a", size = 22743, upload-time = "2026-05-28T03:32:52.175Z" },
+]
+
+[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2582,7 +2591,7 @@ wheels = [
 
 [[package]]
 name = "reachy-mini"
-version = "1.8.4"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -2594,7 +2603,9 @@ dependencies = [
     { name = "libusb-package" },
     { name = "log-throttling" },
     { name = "numpy" },
+    { name = "onnxruntime" },
     { name = "pip" },
+    { name = "platformdirs" },
     { name = "psutil" },
     { name = "pulsectl", marker = "sys_platform == 'linux'" },
     { name = "pycaw", marker = "sys_platform == 'win32'" },
@@ -2617,9 +2628,9 @@ dependencies = [
     { name = "websockets" },
     { name = "zeroconf" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c2/3f/0791b804b7ce72be23679b009454f7e90ba74748f310db6b960392d018cb/reachy_mini-1.8.4.tar.gz", hash = "sha256:c22c79065f3158a7cac88d36cbd60f89df9deb42624ed3be9059565ddce9a88e", size = 24795048, upload-time = "2026-06-25T11:29:05.854Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0e/ae/da44c9dd1d7c67715fef69b0a78c22ec21384fbcc3a63300b1da821acf94/reachy_mini-1.9.0.tar.gz", hash = "sha256:3a7e022cd585396c4b5ba7dbf356f93509cba9211bb1e06d90417dec7a3ee7cf", size = 23496378, upload-time = "2026-07-09T15:53:05.795Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cb/02/45d8d11ba712cdc14087720fcfd677b48e386c4bc0befafea98f9721cf85/reachy_mini-1.8.4-py3-none-any.whl", hash = "sha256:75e73b4c64110514df4a0457784fc4bb86e7a076fb11d55e4361da64afcd8ed9", size = 24892580, upload-time = "2026-06-25T11:29:03.14Z" },
+    { url = "https://files.pythonhosted.org/packages/50/06/c27a17a3d922e419d83cb7427c47cf5a95dba94578a16374f642d3df26f3/reachy_mini-1.9.0-py3-none-any.whl", hash = "sha256:9d3f8551c42bd12b43f47a1f3fe5e8c39ca0c2ff6d02c27b094ed0f5586c7655", size = 23577272, upload-time = "2026-07-09T15:53:01.96Z" },
 ]
 
 [package.optional-dependencies]
