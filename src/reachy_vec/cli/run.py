@@ -177,6 +177,12 @@ def run(
         connect_body=lambda: make_robot(with_media=False)[0],
         announce=speaker.speak,
     )
+    if chosen != "robot":
+        # Robot-speaker replies get the SDK's audio-synced wobble (make_robot);
+        # Mac-speaker replies get a gentle sway loop instead.
+        from reachy_vec.body.sway import SpeakingSway, SwayingSpeaker
+
+        speaker = SwayingSpeaker(speaker, SpeakingSway(body))
     look_fn = make_look_fn(
         camera,
         client,

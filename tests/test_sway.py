@@ -1,6 +1,6 @@
 import time
 
-from reachy_vec.body.sway import SpeakingSway
+from reachy_vec.body.sway import SpeakingSway, SwayingSpeaker
 from tests.test_body import FlakyBody
 
 
@@ -50,3 +50,56 @@ def test_speaking_sway_ends_quietly_when_body_raises():
     sway.start()
     time.sleep(0.05)
     sway.stop()  # thread already dead from the exception; join is clean
+
+
+class RecordingSway:
+    def __init__(self):
+        self.events: list[str] = []
+
+    def start(self) -> None:
+        self.events.append("start")
+
+    def stop(self) -> None:
+        self.events.append("stop")
+
+
+class ScriptedSpeaker:
+    def __init__(self, boom=False):
+        self.spoken: list[str] = []
+        self.stopped = 0
+        self._boom = boom
+
+    def speak(self, text: str) -> None:
+        if self._boom:
+            raise RuntimeError("tts hiccup")
+        self.spoken.append(text)
+
+    def stop(self) -> None:
+        self.stopped += 1
+
+
+def test_swaying_speaker_brackets_each_sentence():
+    sway, inner = RecordingSway(), ScriptedSpeaker()
+    speaker = SwayingSpeaker(inner, sway)
+    speaker.speak("hello")
+    speaker.speak("world")
+    assert inner.spoken == ["hello", "world"]
+    assert sway.events == ["start", "stop", "start", "stop"]
+
+
+def test_swaying_speaker_stops_sway_on_speak_error():
+    sway = RecordingSway()
+    speaker = SwayingSpeaker(ScriptedSpeaker(boom=True), sway)
+    try:
+        speaker.speak("hello")
+    except RuntimeError:
+        pass
+    assert sway.events == ["start", "stop"]  # finally clause ran
+
+
+def test_swaying_speaker_stop_halts_sway_too():
+    sway, inner = RecordingSway(), ScriptedSpeaker()
+    speaker = SwayingSpeaker(inner, sway)
+    speaker.stop()  # barge-in path
+    assert inner.stopped == 1
+    assert sway.events == ["stop"]
