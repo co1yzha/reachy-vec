@@ -74,7 +74,12 @@ class ReconnectingBody:
             return
         try:
             if self._inner is None:
-                self._inner = self._connect_body()
+                inner = self._connect_body()
+                if isinstance(inner, NullBody):
+                    # make_robot degrades to NullBody instead of raising; a
+                    # silent no-op body must not pass for a live reconnect.
+                    raise ConnectionError("daemon still unreachable")
+                self._inner = inner
             self._inner.perform(motion)
             self._failures = 0
         except (ConnectionError, TimeoutError) as exc:

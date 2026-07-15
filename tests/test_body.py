@@ -185,6 +185,40 @@ def test_reconnecting_body_gives_up_and_announces_once():
     assert "body" in said[0].lower()
 
 
+def test_reconnecting_body_treats_nullbody_reconnect_as_failure():
+    """Production wires connect_body=make_robot, which degrades to NullBody
+    instead of raising. A NullBody must count as a failed reconnect - not
+    silently absorb motions forever - so a real body takes over when the
+    daemon returns (live incident, 2026-07-15)."""
+    from reachy_vec.body.robot import NullBody, ReconnectingBody
+
+    healthy = FlakyBody(fail=0)
+    # drop: first body fails once; reconnect #1 finds the daemon still down
+    # (NullBody); reconnect #2 finds it back.
+    bodies = iter([FlakyBody(fail=1), NullBody(), healthy])
+    said: list[str] = []
+    body = ReconnectingBody(
+        connect_body=lambda: next(bodies), max_attempts=3, announce=said.append
+    )
+    body.perform("greet")   # raises inside -> failure 1
+    body.perform("nod")     # NullBody reconnect -> must be failure 2, not success
+    body.perform("look")    # daemon back -> healthy body performs
+    assert healthy.motions == ["look"]
+    assert said == []       # transient: recovered before max_attempts
+
+
+def test_reconnecting_body_announces_when_reconnect_only_finds_nullbody():
+    from reachy_vec.body.robot import NullBody, ReconnectingBody
+
+    said: list[str] = []
+    body = ReconnectingBody(
+        connect_body=lambda: NullBody(), max_attempts=3, announce=said.append
+    )
+    for _ in range(5):
+        body.perform("nod")
+    assert len(said) == 1  # daemon never returns -> gives up audibly
+
+
 def test_reconnecting_body_is_noop_after_death():
     from reachy_vec.body.robot import ReconnectingBody
 
