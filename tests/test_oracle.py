@@ -191,7 +191,11 @@ def test_sleeps_after_idle_and_wakes_on_face(tmp_path):
     assert body.motions == ["sleep"]
     sights.append(ALICE)                         # someone walks up
     assert loop.run_once() == "conversation"
-    assert body.motions[1] == "wake"             # woke before greeting
+    from reachy_vec.brain.oracle import WAKE_LINES
+
+    assert body.motions[1:3] == ["wake", "wakeup"]   # woke with a flourish, before greeting
+    assert speaker.spoken[0] in WAKE_LINES           # announced it's awake, before the greeting
+    assert len(speaker.spoken) >= 2                  # normal greeting still follows
 
 
 # -- Phase 2b: voice fusion, passive backfill, voice enrollment ---------------

@@ -5,6 +5,7 @@ sight() is polled; transcriber.listen_once(timeout) blocks and paces the loop.
 """
 
 import logging
+import random
 import time
 import uuid
 from datetime import UTC, datetime
@@ -17,6 +18,14 @@ logger = logging.getLogger(__name__)
 
 APOLOGY = "Sorry, my brain isn't responding right now."
 OFFER = "Hi! I don't think we've met. Would you like me to remember you? Say yes or no."
+
+# Short lines spoken on waking from idle sleep, so a wake is unmissable.
+WAKE_LINES = (
+    "Mm — I'm up!",
+    "Oh! Hello again.",
+    "Yawn... I'm awake now.",
+    "Back with you!",
+)
 
 
 def _is_yes(utterance) -> bool:
@@ -242,6 +251,8 @@ class OracleLoop:
         if self._asleep:
             logger.info("face detected - waking up")
             self._body.perform("wake")
+            self._body.perform("wakeup")
+            self._speaker.speak(random.choice(WAKE_LINES))
             self._asleep = False
 
     # -- helpers ----------------------------------------------------------
