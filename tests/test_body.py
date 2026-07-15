@@ -2,7 +2,9 @@ from reachy_vec.body.motions import MOTIONS, Keyframe
 from reachy_vec.body.robot import Body, NullBody, RobotBody, make_robot
 from reachy_vec.config import settings as _settings
 
-EXPECTED = {"greet", "nod", "listen", "idle", "acknowledge", "goodbye", "look", "pose", "wakeup"}
+EXPECTED = {
+    "greet", "nod", "listen", "idle", "acknowledge", "goodbye", "look", "pose", "wakeup", "sway",
+}
 
 
 def test_all_motions_defined_and_well_formed():

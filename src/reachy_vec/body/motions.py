@@ -63,4 +63,9 @@ MOTIONS: dict[str, list[Keyframe]] = {
         Keyframe(head={"pitch": -5}, antennas=(-0.8, 0.8), duration=0.3),
         NEUTRAL,
     ],
+    "sway": [
+        # soft talking sway - looped by SpeakingSway while a reply plays
+        Keyframe(head={"yaw": 4, "pitch": -3}, antennas=(0.2, 0.15), duration=0.6),
+        Keyframe(head={"yaw": -4, "pitch": -1}, antennas=(0.15, 0.2), duration=0.6),
+    ],
 }
