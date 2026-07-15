@@ -129,3 +129,26 @@ def test_mic_transcriber_silence_returns_none(monkeypatch):
     monkeypatch.setattr(t, "_capture", lambda timeout_s: None)
     monkeypatch.setattr(t, "_load", lambda: None)
     assert t.listen_once(5) is None
+
+
+def test_gate_quiet_discards_near_silence():
+    """VAD can trigger on room noise; near-silent segments make STT
+    hallucinate its vocabulary prompt (it 'heard' demo names nobody said)."""
+    from reachy_vec.audio.listen import gate_quiet
+
+    noise = (np.random.default_rng(0).standard_normal(16000) * 0.001).astype(np.float32)
+    assert gate_quiet(noise, min_rms=0.005) is None
+
+
+def test_gate_quiet_passes_real_speech_levels():
+    from reachy_vec.audio.listen import gate_quiet
+
+    speech = (np.sin(np.linspace(0, 400 * np.pi, 16000)) * 0.05).astype(np.float32)
+    out = gate_quiet(speech, min_rms=0.005)
+    assert out is speech
+
+
+def test_gate_quiet_passes_none_through():
+    from reachy_vec.audio.listen import gate_quiet
+
+    assert gate_quiet(None, min_rms=0.005) is None

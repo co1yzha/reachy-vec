@@ -153,6 +153,22 @@ def _daemon_spawn(fn):
     return thread
 
 
+def gate_quiet(audio: "np.ndarray | None", min_rms: float) -> "np.ndarray | None":
+    """Discard a captured utterance whose level says it isn't speech.
+
+    VAD can trigger on room noise, and near-silent segments make STT
+    hallucinate its vocabulary prompt (it once 'heard' demo names nobody
+    said). Below min_rms the segment is treated as nothing heard.
+    """
+    if audio is None:
+        return None
+    rms = float(np.sqrt(np.mean(np.square(audio))))
+    if rms < min_rms:
+        logger.info("utterance below RMS gate (%.4f < %.4f) - discarded", rms, min_rms)
+        return None
+    return audio
+
+
 class _AudioCapture:
     """Shared VAD front-end over a pluggable AudioSource; lazy-loads the VAD."""
 
@@ -195,7 +211,8 @@ class _AudioCapture:
             collected = collect_utterance(bounded(), is_speech, max_silence)
         finally:
             frame_iter.close()
-        return np.concatenate(collected) if collected else None
+        utterance = np.concatenate(collected) if collected else None
+        return gate_quiet(utterance, settings.min_utterance_rms)
 
 
 class MicTranscriber(_AudioCapture):
