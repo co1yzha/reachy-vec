@@ -113,6 +113,45 @@ def test_make_robot_degrades_to_nullbody_on_connect_failure():
     assert media is None
 
 
+def test_make_robot_preacquires_media_over_rest_before_connecting():
+    """Daemon 1.8.0 only starts the WebRTC signalling server after
+    /api/media/acquire; the SDK media client needs it DURING construction,
+    so the REST acquire must happen first (live incident, 2026-07-15)."""
+    calls = []
+
+    def connect(**kw):
+        calls.append("connect")
+        return FakeMini()
+
+    make_robot(
+        with_media=True,
+        connect=connect,
+        pre_acquire=lambda: calls.append("rest-acquire"),
+    )
+    assert calls == ["rest-acquire", "connect"]
+
+
+def test_make_robot_skips_preacquire_without_media():
+    calls = []
+    make_robot(
+        with_media=False,
+        connect=lambda **kw: FakeMini(),
+        pre_acquire=lambda: calls.append("rest-acquire"),
+    )
+    assert calls == []
+
+
+def test_make_robot_preacquire_failure_is_not_fatal():
+    def boom_acquire():
+        raise OSError("connection refused")
+
+    body, media = make_robot(
+        with_media=True, connect=lambda **kw: FakeMini(), pre_acquire=boom_acquire
+    )
+    assert not isinstance(body, NullBody)  # still connected; SDK may cope
+    assert media is not None
+
+
 def test_make_robot_uses_network_mode_when_robot_host_set(monkeypatch):
     monkeypatch.setattr(_settings, "robot_host", "reachy.local")
     monkeypatch.setattr(_settings, "robot_port", 8123)

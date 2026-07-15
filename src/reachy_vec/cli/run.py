@@ -22,6 +22,22 @@ def _setup_logging() -> None:
         app_logger.addHandler(handler)
 
 
+def wait_for_frame(camera, timeout_s: float = 10.0, clock=None, sleep=None):
+    """First frame from the camera, or None after timeout_s. The robot camera
+    streams over WebRTC and takes a couple of seconds to deliver its first
+    frame - a single instant read() would falsely report a dead camera."""
+    import time
+
+    clock = clock or time.monotonic
+    sleep = sleep or time.sleep
+    deadline = clock() + timeout_s
+    while True:
+        frame = camera.read()
+        if frame is not None or clock() >= deadline:
+            return frame
+        sleep(0.25)
+
+
 def resolve_media_source(requested: str, media_available: bool) -> str:
     """Pick 'robot' or 'mac'. 'auto' -> robot when media is available, else mac."""
     if requested in ("robot", "mac"):
@@ -113,7 +129,7 @@ def run(
     else:
         camera = WebcamCamera(settings.camera_index)
         audio_source = None  # MicSource default
-    if camera.read() is None:
+    if wait_for_frame(camera) is None:
         typer.echo(f"No camera frame from '{chosen}' source - check the device.", err=True)
         raise typer.Exit(code=1)
 

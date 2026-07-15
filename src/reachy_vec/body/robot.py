@@ -99,14 +99,34 @@ class ReconnectingBody:
                 )
 
 
-def make_robot(with_media: bool = False, connect=None) -> tuple[Body, object | None]:
+def _rest_acquire_media() -> None:
+    """Ask the daemon to start its media pipeline before the SDK connects.
+
+    On daemon 1.8.0 the WebRTC signalling server only starts after
+    /api/media/acquire, and the SDK media client needs it DURING
+    construction - so the REST call must come first.
+    """
+    import time
+    import urllib.request
+
+    host = settings.robot_host or "localhost"
+    req = urllib.request.Request(
+        f"http://{host}:{settings.robot_port}/api/media/acquire", method="POST"
+    )
+    urllib.request.urlopen(req, timeout=5).close()
+    time.sleep(2.0)  # let the signalling server come up
+
+
+def make_robot(
+    with_media: bool = False, connect=None, pre_acquire=None
+) -> tuple[Body, object | None]:
     """Connect to the daemon; optionally acquire camera+mic+speaker media.
 
     Returns (body, media). `media` is mini.media when with_media and the
     connection succeed, else None. Any failure degrades to (NullBody(), None).
     Registers an atexit cleanup: ReachyMini keeps non-daemon threads alive,
-    which would otherwise hang interpreter shutdown. `connect` is injectable
-    for tests.
+    which would otherwise hang interpreter shutdown. `connect` and
+    `pre_acquire` are injectable for tests.
     """
     try:
         import atexit
@@ -116,6 +136,12 @@ def make_robot(with_media: bool = False, connect=None) -> tuple[Body, object | N
 
             def connect(**kw):
                 return ReachyMini(**kw)
+
+        if with_media:
+            try:
+                (pre_acquire or _rest_acquire_media)()
+            except Exception as exc:
+                logger.warning("media pre-acquire failed (%s); continuing.", exc)
 
         backend = "default" if with_media else "no_media"
         kwargs = {"media_backend": backend}

@@ -1,7 +1,7 @@
 from typer.testing import CliRunner
 
 from reachy_vec.cli import app
-from reachy_vec.cli.run import resolve_media_source
+from reachy_vec.cli.run import resolve_media_source, wait_for_frame
 from reachy_vec.store.db import Store
 from tests.conftest import FakeEmbedder
 
@@ -33,6 +33,39 @@ class _StubMini:
 
     def wake_up(self):
         pass
+
+
+class _ScriptedCamera:
+    def __init__(self, frames):
+        self._frames = iter(frames)
+
+    def read(self):
+        return next(self._frames, None)
+
+
+def test_wait_for_frame_retries_until_first_frame():
+    # robot camera over WebRTC delivers its first frame after ~2s, not instantly
+    cam = _ScriptedCamera([None, None, None, "frame"])
+    t = {"now": 0.0}
+    frame = wait_for_frame(
+        cam,
+        timeout_s=10.0,
+        clock=lambda: t["now"],
+        sleep=lambda s: t.__setitem__("now", t["now"] + s),
+    )
+    assert frame == "frame"
+
+
+def test_wait_for_frame_gives_up_after_timeout():
+    cam = _ScriptedCamera([])  # never a frame
+    t = {"now": 0.0}
+    frame = wait_for_frame(
+        cam,
+        timeout_s=2.0,
+        clock=lambda: t["now"],
+        sleep=lambda s: t.__setitem__("now", t["now"] + s),
+    )
+    assert frame is None
 
 
 def test_wrap_reconnect_wraps_a_robot_body(monkeypatch):
