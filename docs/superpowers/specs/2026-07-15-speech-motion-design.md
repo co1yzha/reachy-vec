@@ -26,9 +26,10 @@ Two paths, matching where the reply audio actually plays:
    `body/sway.py`) runs a background thread looping a soft keyframe sway
    (small alternating yaw/pitch, slight antenna lift, ~1.2 s per cycle)
    through the existing `body.perform`. A thin `Speaker` wrapper in `run.py`
-   starts the sway when a reply sentence begins, and stops it (thread
-   joined) when speaking finishes; `stop()` (barge-in) also halts it
-   immediately. With `NullBody` (no robot) it is a harmless no-op.
+   starts the sway on each `speak()` call and stops it (thread joined)
+   before that call returns — replies stream sentence-by-sentence, so sway
+   runs per sentence with negligible gaps; `stop()` (barge-in) also halts
+   it immediately. With `NullBody` (no robot) it is a harmless no-op.
 
 ## Concurrency
 
