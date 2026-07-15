@@ -197,6 +197,7 @@ def run(
         greet_cooldown_s=settings.greet_cooldown_s,
         silence_timeout_s=settings.silence_timeout_s,
         idle_sleep_s=settings.idle_sleep_s,
+        start_asleep=True,
         speaker_id=speaker_id,
         voice_passive_cap=settings.voice_passive_cap,
         barge_in_factory=make_barge_in_factory(chosen, media),

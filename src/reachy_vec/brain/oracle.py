@@ -52,6 +52,7 @@ class OracleLoop:
         silence_timeout_s: float = 30.0,
         unknown_stable_polls: int = 3,
         idle_sleep_s: float = 300.0,
+        start_asleep: bool = False,
         speaker_id=None,
         voice_passive_cap: int = 10,
         barge_in_factory=None,
@@ -72,7 +73,9 @@ class OracleLoop:
         self._unknown_stable_polls = unknown_stable_polls
         self._idle_sleep_s = idle_sleep_s
         self._last_face_at = clock()
-        self._asleep = False
+        # Start asleep so a robot physically left in sleep pose (previous
+        # session, power cycle) is woken by the first face it sees.
+        self._asleep = start_asleep
 
     # -- public ---------------------------------------------------------
 

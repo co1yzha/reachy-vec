@@ -198,6 +198,28 @@ def test_sleeps_after_idle_and_wakes_on_face(tmp_path):
     assert len(speaker.spoken) >= 2                  # normal greeting still follows
 
 
+def test_start_asleep_wakes_with_flourish_on_first_face(tmp_path):
+    """A robot physically in sleep pose at launch (previous session, power cycle)
+    must be woken by the first face; without start_asleep it would stay slumped."""
+    sights: list = [ALICE]
+    speaker, body = FakeSpeaker(), FakeBody()
+    loop = OracleLoop(
+        sight=lambda: sights.pop(0) if sights else None,
+        transcriber=FakeTranscriber([]),
+        speaker=speaker,
+        body=body,
+        brain=FakeBrain(),
+        enroll_capture=lambda name: None,
+        store=Store(tmp_path / "db"),
+        start_asleep=True,
+    )
+    from reachy_vec.brain.oracle import WAKE_LINES
+
+    assert loop.run_once() == "conversation"
+    assert body.motions[0:2] == ["wake", "wakeup"]   # first face of the day wakes it
+    assert speaker.spoken[0] in WAKE_LINES
+
+
 # -- Phase 2b: voice fusion, passive backfill, voice enrollment ---------------
 
 
