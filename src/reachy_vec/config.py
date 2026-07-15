@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     audio_input_rate: int = 16000  # target rate fed to VAD/STT/ECAPA
     min_utterance_rms: float = 0.005  # discard quieter captures (STT hallucinates on
     # near-silence); raise if phantom demo names persist, lower if real speech drops
+    utterance_max_silence_s: float = 1.2  # quiet that ends an utterance; raise if
+    # long sentences get split at natural pauses, lower if turn-taking feels slow
+    utterance_max_s: float = 30.0  # hard cap on one utterance once speech starts
+    stt_target_rms: float = 0.05  # boost quiet captures to this level before STT
+    # (far-field mic runs quiet; low level hurts accuracy); 0 = off
 
     # Voice ID (Phase 2b) - ECAPA cosine scores run lower than face scores
     voice_threshold: float = 0.30  # below = unknown; within 0.05 under = "can't tell"
@@ -57,6 +62,8 @@ class Settings(BaseSettings):
     greet_cooldown_s: float = 7200.0  # full spoken greeting at most every 2h
     silence_timeout_s: float = 30.0   # end conversation after this much quiet
     idle_sleep_s: float = 300.0       # no faces for this long -> robot sleeps
+    post_speech_settle_s: float = 0.3  # mic opens this long after the robot stops
+    # talking, so the echo tail of its own voice isn't heard as an utterance
     barge_in: bool = True  # allow talking over a reply to interrupt it
     barge_in_min_speech_s: float = 0.7  # sustained speech needed to fire (raise if false triggers)
     speech_wobble: bool = True  # audio-synced head sway while the robot speaker plays

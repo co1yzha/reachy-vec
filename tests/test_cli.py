@@ -138,3 +138,36 @@ def test_ingest_command_writes_chunks(tmp_path, monkeypatch):
 def test_ingest_command_rejects_missing_path(tmp_path):
     result = runner.invoke(app, ["ingest", str(tmp_path / "nope")])
     assert result.exit_code != 0
+
+
+def test_self_voice_checker_none_without_clone_voice(monkeypatch):
+    from reachy_vec.cli.run import make_self_voice_checker
+
+    monkeypatch.setattr("reachy_vec.cli.run.settings.tts_backend", "say")
+    assert make_self_voice_checker(store=None) is None
+
+
+def test_self_voice_checker_compares_against_clone_sample(monkeypatch, tmp_path):
+    import numpy as np
+
+    from reachy_vec.cli.run import make_self_voice_checker
+
+    sample = tmp_path / "voice.wav"
+    sample.write_bytes(b"stub")  # existence is all the factory checks
+    monkeypatch.setattr("reachy_vec.cli.run.settings.tts_backend", "qwen-tts")
+    monkeypatch.setattr("reachy_vec.cli.run.settings.voice_sample", sample)
+    monkeypatch.setattr("reachy_vec.cli.run.settings.voice_threshold", 0.30)
+
+    class FakeIdent:
+        def embed(self, audio):
+            return None if audio is None else [float(audio[0])] * 3
+
+    checker = make_self_voice_checker(
+        store=None,
+        identifier=FakeIdent(),
+        read_sample=lambda path: np.ones(16000, dtype=np.float32),
+    )
+    assert checker is not None
+    assert checker(np.ones(16000, dtype=np.float32)) is True    # same voice
+    assert checker(-np.ones(16000, dtype=np.float32)) is False  # different voice
+    assert checker(None) is False                               # can't tell -> not self

@@ -29,6 +29,8 @@ def make_loop(
     brain=None,
     speaker_id=None,
     barge_in_factory=None,
+    settle_s=0.0,
+    sleep=None,
 ):
     sights_iter = iter(sights)
     speaker, body = FakeSpeaker(), FakeBody()
@@ -46,6 +48,8 @@ def make_loop(
         unknown_stable_polls=2,
         speaker_id=speaker_id,
         barge_in_factory=barge_in_factory,
+        settle_s=settle_s,
+        sleep=sleep,
     )
     return loop, speaker, body, store, brain
 
@@ -328,3 +332,28 @@ def test_enrollment_survives_missing_voice(tmp_path):
     )
     assert loop.run_once() == "enrolled"  # face-only enrollment still succeeds
     assert store.match_voice(VOICE_VEC) is None
+
+
+def test_settles_before_each_listen_so_echo_tail_is_not_captured(tmp_path):
+    """The mic opens a beat after the robot stops talking; without the pause
+    the reverb tail of its own speech becomes the next 'utterance'."""
+    naps = []
+    loop, speaker, body, store, brain = make_loop(
+        tmp_path,
+        sights=[ALICE],
+        utterances=["when is standup?"],
+        settle_s=0.4,
+        sleep=naps.append,
+    )
+    assert loop.run_once() == "conversation"
+    # two listens (the question, then the silence that ends the conversation)
+    assert naps == [0.4, 0.4]
+
+
+def test_no_settle_by_default(tmp_path):
+    naps = []
+    loop, *_ = make_loop(
+        tmp_path, sights=[ALICE], utterances=["hi"], sleep=naps.append
+    )
+    loop.run_once()
+    assert naps == []

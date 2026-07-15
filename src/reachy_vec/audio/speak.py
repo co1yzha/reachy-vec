@@ -50,10 +50,18 @@ def _play_blocking(audio, sample_rate: int) -> None:
 
 
 class RobotAudioSink:
-    """Play TTS audio through the robot's speaker via mini.media.push_audio_sample."""
+    """Play TTS audio through the robot's speaker via mini.media.push_audio_sample.
 
-    def __init__(self, media):
+    push_audio_sample queues and returns immediately, so this blocks for the
+    clip's duration — otherwise speak() returns while the robot is still
+    talking and the mic opens on its own voice.
+    """
+
+    def __init__(self, media, sleep=None):
+        import time
+
         self._media = media
+        self._sleep = sleep or time.sleep
 
     def __call__(self, audio, sample_rate: int) -> None:
         import numpy as np
@@ -63,6 +71,7 @@ class RobotAudioSink:
         out_rate = self._media.get_output_audio_samplerate()
         data = to_mono_16k(np.asarray(audio, dtype=np.float32), sample_rate, out_rate)
         self._media.push_audio_sample(data)
+        self._sleep(len(data) / out_rate)
 
 
 class QwenTTSSpeaker:

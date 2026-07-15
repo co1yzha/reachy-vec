@@ -36,23 +36,42 @@ class Transcriber(Protocol):
     def listen_once(self, timeout_s: float) -> Utterance | None: ...
 
 
-def collect_utterance(chunks: Iterator, is_speech: Callable, max_silence_chunks: int):
+def collect_utterance(
+    chunks: Iterator,
+    is_speech: Callable,
+    max_silence_chunks: int,
+    max_wait_chunks: int | None = None,
+    max_utterance_chunks: int | None = None,
+):
     """Accumulate chunks from first speech until max_silence_chunks of quiet.
 
-    Returns the collected chunk list (speech plus trailing/inner silence),
-    or None if the iterator ends before any speech occurs.
+    max_wait_chunks bounds the wait for speech to *start* only — a sentence
+    begun late in the listen window is never truncated by the wait budget.
+    max_utterance_chunks caps the utterance itself once speech has started.
+    Returns the collected chunk list (speech plus trailing/inner silence), or
+    None if no speech occurs before the iterator ends or the wait budget runs out.
     """
     collected: list = []
     silence_run = 0
+    waited = 0
     for chunk in chunks:
+        if not collected:
+            if is_speech(chunk):
+                collected.append(chunk)
+            else:
+                waited += 1
+                if max_wait_chunks is not None and waited >= max_wait_chunks:
+                    return None
+            continue
+        collected.append(chunk)
         if is_speech(chunk):
-            collected.append(chunk)
             silence_run = 0
-        elif collected:
-            collected.append(chunk)
+        else:
             silence_run += 1
             if silence_run >= max_silence_chunks:
                 break
+        if max_utterance_chunks is not None and len(collected) >= max_utterance_chunks:
+            break
     return collected or None
 
 
@@ -83,16 +102,25 @@ class BargeInMonitor:
     """Watch the mic while Reachy speaks; fire after sustained speech.
 
     Shares the AudioSource seam and silero-VAD. The ~min_speech_s hysteresis
-    is what stops Reachy's own voice (heard through the mic) from triggering.
+    rejects brief blips, but the robot's own reply IS sustained speech, so an
+    optional is_self_voice(audio) check can veto a run (speaker-embedding
+    match against the TTS voice); a vetoed run resets and watching continues.
     """
 
     def __init__(
-        self, source, min_speech_s=0.7, sample_rate=SAMPLE_RATE, is_speech=None, spawn=None
+        self,
+        source,
+        min_speech_s=0.7,
+        sample_rate=SAMPLE_RATE,
+        is_speech=None,
+        spawn=None,
+        is_self_voice=None,
     ):
         self._source = source
         self._min_chunks = max(1, int(min_speech_s / CHUNK_S))
         self._sample_rate = sample_rate
         self._is_speech = is_speech
+        self._is_self_voice = is_self_voice
         self._spawn = spawn or _daemon_spawn
         self.fired = False
         self.broken = False
@@ -113,21 +141,27 @@ class BargeInMonitor:
         try:
             is_speech = self._is_speech or self._silero_is_speech()
             chunk_samples = int(self._sample_rate * CHUNK_S)
-            run = 0
+            run: list[np.ndarray] = []
             frame_iter = self._source.frames(chunk_samples)
             try:
                 for frame in frame_iter:
                     if self._stop:
                         return
                     if is_speech(frame):
-                        run += 1
-                        if run >= self._min_chunks:
+                        run.append(frame)
+                        if len(run) >= self._min_chunks:
+                            if self._is_self_voice and self._is_self_voice(
+                                np.concatenate(run)
+                            ):
+                                logger.info("barge-in vetoed: robot's own voice")
+                                run = []
+                                continue
                             self.fired = True
                             if self._on_fire:
                                 self._on_fire()
                             return
                     else:
-                        run = 0
+                        run = []
             finally:
                 frame_iter.close()
         except Exception:
@@ -169,6 +203,24 @@ def gate_quiet(audio: "np.ndarray | None", min_rms: float) -> "np.ndarray | None
     return audio
 
 
+def normalize_rms(
+    audio: "np.ndarray | None", target_rms: float, max_gain: float = 10.0
+) -> "np.ndarray | None":
+    """Boost a quiet capture to target_rms before STT (never attenuates).
+
+    The far-field robot mic runs quiet and low-level audio measurably hurts
+    transcription accuracy. Gain is capped so silence-adjacent captures don't
+    become amplified noise. target_rms <= 0 disables.
+    """
+    if audio is None or target_rms <= 0:
+        return audio
+    rms = float(np.sqrt(np.mean(np.square(audio))))
+    if rms <= 0 or rms >= target_rms:
+        return audio
+    gain = min(target_rms / rms, max_gain)
+    return np.clip(audio * gain, -1.0, 1.0)
+
+
 class _AudioCapture:
     """Shared VAD front-end over a pluggable AudioSource; lazy-loads the VAD."""
 
@@ -186,29 +238,32 @@ class _AudioCapture:
             self._vad = load_silero_vad()
 
     def _capture(self, timeout_s: float) -> np.ndarray | None:
-        """Record one VAD-segmented utterance; None if silence until timeout."""
+        """Record one VAD-segmented utterance; None if silence until timeout.
+
+        timeout_s bounds the wait for speech to start; the utterance itself
+        is bounded separately (settings.utterance_max_s), so a sentence begun
+        late in the window is never truncated.
+        """
         import torch
 
         self._load_vad()
         chunk_samples = int(self._sample_rate * CHUNK_S)
-        max_chunks = int(timeout_s / CHUNK_S)
-        max_silence = int(0.8 / CHUNK_S)  # 0.8 s of quiet ends the utterance
+        max_silence = int(settings.utterance_max_silence_s / CHUNK_S)
 
         frame_iter = self._source.frames(chunk_samples)
-
-        def bounded() -> Iterator[np.ndarray]:
-            for _ in range(max_chunks):
-                try:
-                    yield next(frame_iter)
-                except StopIteration:
-                    return
 
         def is_speech(chunk: np.ndarray) -> bool:
             prob = self._vad(torch.from_numpy(chunk), self._sample_rate).item()
             return prob > 0.5
 
         try:
-            collected = collect_utterance(bounded(), is_speech, max_silence)
+            collected = collect_utterance(
+                frame_iter,
+                is_speech,
+                max_silence,
+                max_wait_chunks=int(timeout_s / CHUNK_S),
+                max_utterance_chunks=int(settings.utterance_max_s / CHUNK_S),
+            )
         finally:
             frame_iter.close()
         utterance = np.concatenate(collected) if collected else None
@@ -250,7 +305,9 @@ class MicTranscriber(_AudioCapture):
         if audio is None:
             return None
         segments, _info = self._whisper.transcribe(
-            audio, language="en", initial_prompt=self._initial_prompt
+            normalize_rms(audio, settings.stt_target_rms),
+            language="en",
+            initial_prompt=self._initial_prompt,
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()
         logger.info("heard: %r", text)
@@ -271,12 +328,13 @@ class OpenAITranscriber(_AudioCapture):
         audio = self._capture(timeout_s)
         if audio is None:
             return None
+        stt_audio = normalize_rms(audio, settings.stt_target_rms)
         buf = io.BytesIO()
         with wave.open(buf, "wb") as w:
             w.setnchannels(1)
             w.setsampwidth(2)
             w.setframerate(self._sample_rate)
-            w.writeframes((audio * 32767).astype(np.int16).tobytes())
+            w.writeframes((stt_audio * 32767).astype(np.int16).tobytes())
         buf.seek(0)
         buf.name = "speech.wav"  # the SDK needs a filename hint
         try:

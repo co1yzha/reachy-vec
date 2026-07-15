@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 import typer
 
@@ -45,7 +46,7 @@ def resolve_media_source(requested: str, media_available: bool) -> str:
     return "robot" if media_available else "mac"
 
 
-def make_barge_in_factory(chosen: str, media):
+def make_barge_in_factory(chosen: str, media, is_self_voice=None):
     """Zero-arg factory building a fresh BargeInMonitor per reply, or None."""
     if not settings.barge_in:
         return None
@@ -58,9 +59,59 @@ def make_barge_in_factory(chosen: str, media):
             if chosen == "robot"
             else MicSource()
         )
-        return BargeInMonitor(source, min_speech_s=settings.barge_in_min_speech_s)
+        return BargeInMonitor(
+            source,
+            min_speech_s=settings.barge_in_min_speech_s,
+            is_self_voice=is_self_voice,
+        )
 
     return factory
+
+
+def _read_wav_16k(path):
+    """Load a WAV as mono float32 at 16 kHz (the rate ECAPA embeds)."""
+    import soundfile as sf
+
+    from reachy_vec.audio.resample import to_mono_16k
+
+    data, rate = sf.read(str(path), dtype="float32")
+    return to_mono_16k(data, rate, 16000)
+
+
+def make_self_voice_checker(store, identifier=None, read_sample=None):
+    """is_self_voice(audio) for barge-in: does this sound like the robot?
+
+    Only meaningful with a cloned TTS voice (qwen-tts): the ECAPA embedding
+    of the barge-in audio is compared against the clone sample's. Returns
+    None when there is no reference voice — the duration hysteresis is then
+    the only guard. Caveat: a voice cloned from *you* also vetoes you.
+    """
+    sample = settings.voice_sample
+    if settings.tts_backend != "qwen-tts" or sample is None or not Path(sample).is_file():
+        return None
+    read_sample = read_sample or _read_wav_16k
+    state: dict = {}
+
+    def is_self_voice(audio) -> bool:
+        import numpy as np
+
+        if "ident" not in state:
+            from reachy_vec.perception.voice import EcapaSpeakerIdentifier
+
+            # barge-in runs are ~0.7s; the default 1.0s minimum would always
+            # return "can't tell", so this instance embeds shorter audio
+            state["ident"] = identifier or EcapaSpeakerIdentifier(
+                store, min_utterance_s=0.5
+            )
+            state["ref"] = state["ident"].embed(read_sample(sample))
+        ref, vec = state["ref"], state["ident"].embed(audio)
+        if ref is None or vec is None:
+            return False  # can't tell -> behave like the pre-check monitor
+        a, b = np.asarray(ref), np.asarray(vec)
+        cosine = float(a @ b / ((np.linalg.norm(a) * np.linalg.norm(b)) or 1.0))
+        return cosine >= settings.voice_threshold
+
+    return is_self_voice
 
 
 def wrap_reconnect(body, connect_body, announce):
@@ -94,6 +145,7 @@ def run(
     from reachy_vec.audio.listen import MicTranscriber, make_transcriber
     from reachy_vec.audio.sources import RobotAudioSource
     from reachy_vec.audio.speak import make_speaker
+    from reachy_vec.audio.vocab import VocabSnappingTranscriber
     from reachy_vec.body.robot import make_robot
     from reachy_vec.brain.chat import ChatBrain, default_opener
     from reachy_vec.brain.oracle import OracleLoop
@@ -142,15 +194,16 @@ def run(
     )
     client = OpenAI()
 
+    # Demo titles are matched *after* transcription (audio/vocab.py) — feeding
+    # them to STT as a prompt made it hallucinate titles verbatim on echo/noise.
     titles = store.demo_titles()
-    vocab_prompt = f"Vocabulary: {', '.join(titles)}" if titles else None
 
     typer.echo("Warming up models (STT, faces, voices, embeddings)...")
-    transcriber = make_transcriber(
-        client=client, initial_prompt=vocab_prompt, source=audio_source
-    )
+    transcriber = make_transcriber(client=client, source=audio_source)
     if isinstance(transcriber, MicTranscriber):
         transcriber.warm_up()
+    if titles:
+        transcriber = VocabSnappingTranscriber(transcriber, titles)
     matcher.observe(camera.read())   # loads insightface before the loop
     embedder.embed(["warm up"])      # loads the BGE model
     import numpy as np
@@ -223,7 +276,10 @@ def run(
         start_asleep=True,
         speaker_id=speaker_id,
         voice_passive_cap=settings.voice_passive_cap,
-        barge_in_factory=make_barge_in_factory(chosen, media),
+        barge_in_factory=make_barge_in_factory(
+            chosen, media, is_self_voice=make_self_voice_checker(store)
+        ),
+        settle_s=settings.post_speech_settle_s,
     )
     typer.echo("Oracle running - walk into frame. Ctrl+C to stop.")
     try:

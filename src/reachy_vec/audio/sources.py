@@ -22,6 +22,13 @@ class RobotAudioSource:
 
     def frames(self, chunk_samples: int) -> Iterator[np.ndarray]:
         src_rate = self._media.get_input_audio_samplerate()
+        # The daemon buffers mic audio while nobody reads it; whatever is
+        # queued when a listener attaches is stale — typically the robot's
+        # own speech, which would replay to the VAD as a phantom utterance.
+        # Reads out-pace real-time capture, so this catches up quickly.
+        for _ in range(1000):
+            if self._media.get_audio_sample() is None:
+                break
         buf = np.empty(0, dtype=np.float32)
         while True:
             sample = self._media.get_audio_sample()

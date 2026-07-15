@@ -56,6 +56,8 @@ class OracleLoop:
         speaker_id=None,
         voice_passive_cap: int = 10,
         barge_in_factory=None,
+        settle_s: float = 0.0,
+        sleep=time.sleep,
     ):
         self._sight = sight
         self._transcriber = transcriber
@@ -67,6 +69,10 @@ class OracleLoop:
         self._speaker_id = speaker_id  # None = voice ID disabled (face-only)
         self._voice_passive_cap = voice_passive_cap
         self._barge_in_factory = barge_in_factory  # None = barge-in disabled
+        # Pause before opening the mic so the reverb tail of the robot's own
+        # speech isn't captured as the next utterance.
+        self._settle_s = settle_s
+        self._sleep = sleep or time.sleep
         self._clock = clock
         self._greet_cooldown_s = greet_cooldown_s
         self._silence_timeout_s = silence_timeout_s
@@ -121,7 +127,7 @@ class OracleLoop:
         self._deliver_messages(person_id)
         while True:
             self._body.perform("listen")
-            utterance = self._transcriber.listen_once(self._silence_timeout_s)
+            utterance = self._listen(self._silence_timeout_s)
             if utterance is None:
                 self._body.perform("goodbye")
                 self._brain.end_conversation()  # distill memories of the visit
@@ -157,6 +163,11 @@ class OracleLoop:
                 continue
             self._body.perform("nod")
             self._maybe_bank_voice(face_obs, voice_obs, utterance.audio)
+
+    def _listen(self, timeout_s: float):
+        if self._settle_s > 0:
+            self._sleep(self._settle_s)
+        return self._transcriber.listen_once(timeout_s)
 
     def _identify_voice(self, audio):
         if self._speaker_id is None:
@@ -197,17 +208,17 @@ class OracleLoop:
 
     def _offer_enroll(self) -> str:
         self._speaker.speak(OFFER)
-        if not _is_yes(self._transcriber.listen_once(10)):
+        if not _is_yes(self._listen(10)):
             self._speaker.speak("No problem! I'm around if you need me.")
             return "enroll-declined"
         for _attempt in range(2):
             self._speaker.speak("Great! What's your name?")
-            heard = self._transcriber.listen_once(10)
+            heard = self._listen(10)
             if heard is None:
                 continue
             name = _clean_name(heard.text)
             self._speaker.speak(f"Nice to meet you, {name} - did I get that right?")
-            if _is_yes(self._transcriber.listen_once(10)):
+            if _is_yes(self._listen(10)):
                 self._speaker.speak("Hold still while I take a good look at you.")
                 person_id = self._enroll_capture(name)
                 if person_id is None:
@@ -226,7 +237,7 @@ class OracleLoop:
         if self._speaker_id is None:
             return
         self._speaker.speak("Now say a sentence so I learn your voice - anything you like.")
-        utterance = self._transcriber.listen_once(10)
+        utterance = self._listen(10)
         vector = self._speaker_id.embed(utterance.audio) if utterance is not None else None
         if vector is None:
             self._speaker.speak("No worries - I'll learn your voice as we talk.")

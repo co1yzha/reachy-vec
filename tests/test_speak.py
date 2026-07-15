@@ -145,7 +145,7 @@ def test_qwen_speaker_logs_and_skips_on_synthesis_error(caplog):
 
 def test_robot_sink_pushes_resampled_audio_to_media():
     media = FakeMedia(out_rate=16000)  # no resample when rates match
-    sink = RobotAudioSink(media)
+    sink = RobotAudioSink(media, sleep=lambda s: None)
     audio = np.array([0.1, -0.1, 0.2], dtype=np.float32)
     sink(audio, sample_rate=16000)
     assert len(media.pushed) == 1
@@ -154,8 +154,19 @@ def test_robot_sink_pushes_resampled_audio_to_media():
 
 def test_robot_sink_resamples_to_output_rate():
     media = FakeMedia(out_rate=48000)
-    RobotAudioSink(media)(np.zeros(16000, dtype=np.float32), sample_rate=16000)
+    sink = RobotAudioSink(media, sleep=lambda s: None)
+    sink(np.zeros(16000, dtype=np.float32), sample_rate=16000)
     assert abs(len(media.pushed[0]) - 48000) <= 2  # upsampled ~3x
+
+
+def test_robot_sink_blocks_for_the_playback_duration():
+    """push_audio_sample returns before the speaker finishes; without the
+    wait, speak() returns mid-utterance and the mic hears the robot talk."""
+    media = FakeMedia(out_rate=16000)
+    naps = []
+    sink = RobotAudioSink(media, sleep=naps.append)
+    sink(np.zeros(8000, dtype=np.float32), sample_rate=16000)  # 0.5s of audio
+    assert naps == [0.5]
 
 
 def test_make_speaker_qwen_uses_robot_sink_when_media_given(monkeypatch, tmp_path):
