@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     audio_input_rate: int = 16000  # target rate fed to VAD/STT/ECAPA
     min_utterance_rms: float = 0.005  # discard quieter captures (STT hallucinates on
     # near-silence); raise if phantom demo names persist, lower if real speech drops
+
+    # Camera-poke reaction: frame suddenly dark = someone covered the lens
+    occlusion_dark_floor: float = 28.0  # mean brightness (0-255) below = dark
+    occlusion_drop_ratio: float = 0.3   # ...and below this fraction of baseline
+    occlusion_polls: int = 2            # consecutive dark polls to fire
+    occlusion_cooldown_s: float = 10.0  # min seconds between reactions
+
     utterance_max_silence_s: float = 1.2  # quiet that ends an utterance; raise if
     # long sentences get split at natural pauses, lower if turn-taking feels slow
     utterance_max_s: float = 30.0  # hard cap on one utterance once speech starts
