@@ -39,6 +39,8 @@ class Settings(BaseSettings):
 
     voice_sample: Path | None = None  # ~10s clean WAV of the voice to clone (qwen-tts)
     voice_sample_text: str | None = None  # its transcript; omit -> auto-transcribed once
+    tts_target_rms: float = 0.1  # boost quieter TTS output to this level before
+    # playback (clone output tracks the sample's level); peak-limited, 0 = off
 
     # Perception
     face_threshold: float = 0.45  # cosine similarity; below = unknown

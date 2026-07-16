@@ -184,3 +184,120 @@ def test_make_speaker_say_with_media_warns_and_stays_local(monkeypatch, caplog):
         speaker = make_speaker(media=FakeMedia())
     assert isinstance(speaker, SaySpeaker)
     assert "say" in caplog.text.lower()
+
+
+def test_qwen_speaker_boosts_quiet_audio_to_target_rms():
+    quiet = np.full(1000, 0.01, dtype=np.float32)
+    played = []
+    speaker = QwenTTSSpeaker(
+        sample_path=Path("me.wav"),
+        generate=lambda text: (quiet, 24000),
+        play=lambda audio, sr: played.append(audio),
+        target_rms=0.1,
+    )
+    speaker.speak("hello")
+    rms = float(np.sqrt(np.mean(np.square(played[0]))))
+    assert rms == pytest.approx(0.1, rel=1e-3)
+
+
+def test_qwen_speaker_boost_never_clips():
+    """A quiet-RMS clip with a loud transient must be gain-limited by its
+    peak, not clipped - clipping is audible distortion on playback."""
+    audio = np.full(1000, 0.01, dtype=np.float32)
+    audio[0] = 0.5  # transient
+    played = []
+    speaker = QwenTTSSpeaker(
+        sample_path=Path("me.wav"),
+        generate=lambda text: (audio, 24000),
+        play=lambda a, sr: played.append(a),
+        target_rms=0.5,
+    )
+    speaker.speak("hello")
+    assert float(np.max(np.abs(played[0]))) <= 1.0
+    assert played[0][0] == pytest.approx(0.99)  # peak-limited, not clipped
+
+
+def test_qwen_speaker_leaves_loud_audio_alone():
+    loud = np.full(1000, 0.3, dtype=np.float32)
+    played = []
+    speaker = QwenTTSSpeaker(
+        sample_path=Path("me.wav"),
+        generate=lambda text: (loud, 24000),
+        play=lambda a, sr: played.append(a),
+        target_rms=0.1,
+    )
+    speaker.speak("hello")
+    np.testing.assert_array_equal(played[0], loud)
+
+
+def test_qwen_speaker_zero_target_rms_disables_boost():
+    quiet = np.full(1000, 0.01, dtype=np.float32)
+    played = []
+    speaker = QwenTTSSpeaker(
+        sample_path=Path("me.wav"),
+        generate=lambda text: (quiet, 24000),
+        play=lambda a, sr: played.append(a),
+        target_rms=0.0,
+    )
+    speaker.speak("hello")
+    np.testing.assert_array_equal(played[0], quiet)
+
+
+def test_afplay_player_writes_wav_and_plays_it():
+    from reachy_vec.audio.speak import AfplayPlayer
+
+    cmds = []
+
+    def popen(cmd):
+        cmds.append(cmd)
+        return _FakeProc()
+
+    player = AfplayPlayer(popen=popen)
+    player(np.zeros(2400, dtype=np.float32), 24000)
+    assert len(cmds) == 1 and cmds[0][0] == "afplay"
+    wav_path = Path(cmds[0][1])
+    assert not wav_path.exists()  # temp file cleaned up after playback
+
+
+def test_afplay_player_stop_terminates_playback():
+    from reachy_vec.audio.speak import AfplayPlayer
+
+    proc = _FakeProc()
+    player = AfplayPlayer(popen=lambda cmd: proc)
+    player(np.zeros(100, dtype=np.float32), 24000)
+    proc._done = False  # pretend it's still playing
+    player.stop()
+    assert proc.terminated is True
+
+
+def test_afplay_player_stop_is_safe_when_idle():
+    from reachy_vec.audio.speak import AfplayPlayer
+
+    AfplayPlayer(popen=lambda cmd: _FakeProc()).stop()  # must not raise
+
+
+def test_make_speaker_qwen_defaults_to_afplay_on_mac(monkeypatch, tmp_path):
+    """Mac playback must run out-of-process: sounddevice's Python callback
+    starves under app load (GIL) and crackles."""
+    from reachy_vec.audio.speak import AfplayPlayer
+
+    sample = tmp_path / "me.wav"
+    sample.write_bytes(b"RIFF")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "qwen-tts")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.voice_sample", sample)
+    speaker = make_speaker()
+    assert isinstance(speaker._play, AfplayPlayer)
+
+
+def test_qwen_speaker_default_stop_stops_the_afplay_player(monkeypatch, tmp_path):
+    sample = tmp_path / "me.wav"
+    sample.write_bytes(b"RIFF")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "qwen-tts")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.voice_sample", sample)
+    speaker = make_speaker()
+    proc = _FakeProc()
+    speaker._play._popen = lambda cmd: proc
+    speaker._play(np.zeros(100, dtype=np.float32), 24000)
+    proc._done = False
+    speaker.stop()
+    assert proc.terminated is True

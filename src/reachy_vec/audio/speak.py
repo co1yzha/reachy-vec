@@ -41,12 +41,65 @@ class SaySpeaker:
             proc.terminate()
 
 
-def _play_blocking(audio, sample_rate: int) -> None:
-    import numpy as np
-    import sounddevice as sd
+class AfplayPlayer:
+    """Blocking Mac playback via an `afplay` subprocess.
 
-    sd.play(np.asarray(audio, dtype=np.float32), sample_rate)
-    sd.wait()
+    sounddevice services the output device from a Python callback, which
+    needs the GIL; under app load (face detection, VAD, MLX) the callback
+    arrives late and playback crackles. A subprocess is immune. stop()
+    terminates mid-clip for barge-in, like SaySpeaker.
+    """
+
+    def __init__(self, popen=subprocess.Popen):
+        self._popen = popen
+        self._proc = None
+
+    def __call__(self, audio, sample_rate: int) -> None:
+        import os
+        import tempfile
+        import wave
+
+        import numpy as np
+
+        data = (np.clip(np.asarray(audio), -1, 1) * 32767).astype(np.int16)
+        fd, path = tempfile.mkstemp(suffix=".wav")
+        try:
+            with os.fdopen(fd, "wb") as f, wave.open(f, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(sample_rate)
+                w.writeframes(data.tobytes())
+            self._proc = self._popen(["afplay", path])
+            self._proc.wait()
+        finally:
+            os.unlink(path)
+
+    def stop(self) -> None:
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+
+
+def _normalize_loudness(audio, target_rms: float):
+    """Boost quiet TTS output toward target_rms, gain-limited by the peak.
+
+    Qwen's output level tracks the (often quietly recorded) reference sample.
+    Unlike listen.normalize_rms this never clips - hard clipping is audible
+    distortion on playback. target_rms <= 0 disables; never attenuates.
+    """
+    import numpy as np
+
+    if target_rms <= 0:
+        return audio
+    audio = np.asarray(audio, dtype=np.float32)
+    if audio.size == 0:
+        return audio
+    rms = float(np.sqrt(np.mean(np.square(audio))))
+    if rms <= 0 or rms >= target_rms:
+        return audio
+    peak = float(np.max(np.abs(audio)))
+    gain = min(target_rms / rms, 0.99 / peak)
+    return audio * gain
 
 
 class RobotAudioSink:
@@ -74,6 +127,33 @@ class RobotAudioSink:
         self._sleep(len(data) / out_rate)
 
 
+_tap_counter = 0
+
+
+def _debug_tap(audio, sample_rate: int) -> None:
+    """REACHY_VEC_TTS_TAP=<dir>: dump each clip as played, to tell generation
+    noise from playback noise. Debug aid; off unless the env var is set."""
+    import os
+
+    tap_dir = os.environ.get("REACHY_VEC_TTS_TAP")
+    if not tap_dir:
+        return
+    global _tap_counter
+    import wave
+
+    import numpy as np
+
+    _tap_counter += 1
+    path = os.path.join(tap_dir, f"tts_tap_{_tap_counter:03d}.wav")
+    data = (np.clip(np.asarray(audio), -1, 1) * 32767).astype(np.int16)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes(data.tobytes())
+    logger.info("TTS tap: %s", path)
+
+
 class QwenTTSSpeaker:
     """Qwen3-TTS via mlx-audio — clones the voice in `sample_path`.
 
@@ -89,12 +169,17 @@ class QwenTTSSpeaker:
         generate=None,
         play=None,
         stop=None,
+        target_rms: float = 0.0,
     ):
         self._sample_path = sample_path
         self._sample_text = sample_text
         self._model_id = model_id
+        self._target_rms = target_rms
         self._generate = generate
-        self._play = play or _play_blocking
+        if play is None:
+            player = AfplayPlayer()
+            play, stop = player, stop or player.stop
+        self._play = play
         self._stop = stop
 
     def _ensure_generate(self):
@@ -121,17 +206,15 @@ class QwenTTSSpeaker:
             return
         try:
             audio, sample_rate = self._ensure_generate()(text)
+            audio = _normalize_loudness(audio, self._target_rms)
+            _debug_tap(audio, sample_rate)
             self._play(audio, sample_rate)
         except Exception:
             logger.exception("TTS synthesis failed; skipping sentence")
 
     def stop(self) -> None:
-        stop = self._stop
-        if stop is None:
-            import sounddevice as sd
-
-            stop = sd.stop
-        stop()
+        if self._stop is not None:
+            self._stop()
 
 
 def make_speaker(media=None) -> Speaker:
@@ -155,6 +238,7 @@ def make_speaker(media=None) -> Speaker:
             sample_text=settings.voice_sample_text,
             model_id=settings.tts_model,
             play=RobotAudioSink(media) if media is not None else None,
+            target_rms=settings.tts_target_rms,
         )
     raise NotImplementedError(
         f"TTS backend {backend!r} is not wired - use 'say' or 'qwen-tts'"
