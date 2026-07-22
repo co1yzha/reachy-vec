@@ -32,7 +32,8 @@ def seeded_store(tmp_path) -> Store:
     return store
 
 
-def make_brain(tmp_path, client, opener=None, web_search_fetch=None):
+def make_brain(tmp_path, client, opener=None, web_search_fetch=None,
+               look_around_fn=None):
     return ChatBrain(
         store=seeded_store(tmp_path),
         embedder=FakeEmbedder(),
@@ -40,6 +41,7 @@ def make_brain(tmp_path, client, opener=None, web_search_fetch=None):
         model="gpt-4o",
         opener=opener or (lambda url: None),
         web_search_fetch=web_search_fetch,
+        look_around_fn=look_around_fn,
     )
 
 
@@ -50,6 +52,33 @@ def _http_error(code):
     return urllib.error.HTTPError(
         "https://api.tavily.com/search", code, "err", {}, io.BytesIO(b"")
     )
+
+
+def test_look_around_tool_offered_only_when_fn_present(tmp_path):
+    off = make_brain(tmp_path, FakeLLMClient())
+    on = make_brain(tmp_path, FakeLLMClient(), look_around_fn=lambda: "a room")
+    assert not any(t["function"]["name"] == "look_around" for t in off._active_tools())
+    assert any(t["function"]["name"] == "look_around" for t in on._active_tools())
+
+
+def test_look_around_tool_dispatches_to_fn(tmp_path):
+    calls = []
+
+    def fake_look_around():
+        calls.append(True)
+        return "a whiteboard on my left, two desks on my right"
+
+    tool_call = FakeToolCall("look_around", json.dumps({}))
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("Here's what I saw."),
+        ]
+    )
+    brain = make_brain(tmp_path, client, look_around_fn=fake_look_around)
+    reply = brain.respond("have a look around", identity=YANG)
+    assert calls == [True]
+    assert reply == "Here's what I saw."
 
 
 def test_web_search_returns_answer(tmp_path):

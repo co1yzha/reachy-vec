@@ -210,6 +210,24 @@ SELFIE_HINT = (
     "when the user asks you to take a photo, selfie, or picture of them."
 )
 
+LOOK_AROUND_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "look_around",
+        "description": (
+            "Physically turn to look around the room and report your "
+            "surroundings. Use when the user asks you to look/turn around, what "
+            "is around or behind you, or to check or scan the room."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+LOOK_AROUND_HINT = (
+    " look_around turns your body left and right to see the whole room - use it "
+    "when asked to look around, turn around, or say what's around or behind you."
+)
+
 
 def fetch_tavily(query: str, api_key: str, max_results: int = 3, timeout: float = 5.0) -> str:
     """Tavily search; returns the spoken-ready `answer`. Raises urllib errors."""
@@ -294,6 +312,7 @@ class ChatBrain:
         web_search_fetch=None,
         look_fn: Callable[[str], str] | None = None,
         selfie_fn: Callable[[], str] | None = None,
+        look_around_fn: Callable[[], str] | None = None,
     ):
         self._store = store
         self._embedder = embedder
@@ -316,6 +335,7 @@ class ChatBrain:
         self._web_search_fetch = web_search_fetch
         self._look_fn = look_fn
         self._selfie_fn = selfie_fn
+        self._look_around_fn = look_around_fn
         self._history: list[dict] = []
         self._person_id: str | None = None
         self._person_name: str | None = None
@@ -436,6 +456,8 @@ class ChatBrain:
             tools.append(LOOK_TOOL)
         if self._selfie_fn:
             tools.append(SELFIE_TOOL)
+        if self._look_around_fn:
+            tools.append(LOOK_AROUND_TOOL)
         return tools
 
     def _system_prompt(self) -> str:
@@ -446,6 +468,8 @@ class ChatBrain:
             prompt += LOOK_HINT
         if self._selfie_fn:
             prompt += SELFIE_HINT
+        if self._look_around_fn:
+            prompt += LOOK_AROUND_HINT
         return prompt
 
     def _complete(self, on_sentence: Callable[[str], None] | None = None):
@@ -509,6 +533,7 @@ class ChatBrain:
             "web_search": self._tool_web_search,
             "look": self._tool_look,
             "selfie": self._tool_selfie,
+            "look_around": self._tool_look_around,
         }
         handler = handlers.get(call.function.name)
         result = handler(args) if handler else "unknown tool"
@@ -587,6 +612,15 @@ class ChatBrain:
         except Exception:
             logger.exception("selfie tool failed")
             return "I couldn't take the photo just now."
+
+    def _tool_look_around(self, args: dict) -> str:
+        if self._look_around_fn is None:
+            return "I can't look around right now."
+        try:
+            return self._look_around_fn()
+        except Exception:
+            logger.exception("look_around tool failed")
+            return "I had trouble looking around just now."
 
     def _tool_get_weather(self, args: dict) -> str:
         try:
