@@ -151,7 +151,11 @@ def run(
     from reachy_vec.brain.oracle import OracleLoop
     from reachy_vec.perception.camera import RobotCamera, WebcamCamera
     from reachy_vec.perception.face import InsightFaceMatcher, enroll_person
-    from reachy_vec.perception.vision import make_look_fn, make_selfie_fn
+    from reachy_vec.perception.vision import (
+        make_look_around_fn,
+        make_look_fn,
+        make_selfie_fn,
+    )
     from reachy_vec.perception.voice import EcapaSpeakerIdentifier
     from reachy_vec.store.db import Store
     from reachy_vec.store.embeddings import BgeEmbedder
@@ -182,7 +186,8 @@ def run(
     else:
         camera = WebcamCamera(settings.camera_index)
         audio_source = None  # MicSource default
-    if wait_for_frame(camera) is None:
+    warm_frame = wait_for_frame(camera)
+    if warm_frame is None:
         typer.echo(f"No camera frame from '{chosen}' source - check the device.", err=True)
         raise typer.Exit(code=1)
 
@@ -204,7 +209,8 @@ def run(
         transcriber.warm_up()
     if titles:
         transcriber = VocabSnappingTranscriber(transcriber, titles)
-    matcher.observe(camera.read())   # loads insightface before the loop
+    matcher.observe(warm_frame)      # reuse wait_for_frame's frame; a fresh
+    #                                  camera.read() can be None between WebRTC frames
     embedder.embed(["warm up"])      # loads the BGE model
     import numpy as np
 
@@ -250,6 +256,14 @@ def run(
         speak=speaker.speak,
         opener=default_opener,
     )
+    look_around_fn = make_look_around_fn(
+        camera,
+        client,
+        model=settings.vision_model or settings.llm_model,
+        max_px=settings.vision_image_max_px,
+        body=body,
+        settle_s=settings.look_around_settle_s,
+    )
     brain = ChatBrain(
         store=store,
         embedder=embedder,
@@ -259,6 +273,7 @@ def run(
         web_search=settings.web_search,
         look_fn=look_fn,
         selfie_fn=selfie_fn,
+        look_around_fn=look_around_fn,
     )
     loop = OracleLoop(
         sight=sight,

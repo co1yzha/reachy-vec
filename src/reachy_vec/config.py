@@ -36,11 +36,17 @@ class Settings(BaseSettings):
     # Vision (look() tool); None => reuse llm_model
     vision_model: str | None = None
     vision_image_max_px: int = 1024  # downscale long edge before encoding, to cut vision tokens
+    look_around_settle_s: float = 0.8  # pause after a base turn before capturing,
+    # so the WebRTC frame catches up to the new heading (first frame lags ~2s)
 
     voice_sample: Path | None = None  # ~10s clean WAV of the voice to clone (qwen-tts)
     voice_sample_text: str | None = None  # its transcript; omit -> auto-transcribed once
-    tts_target_rms: float = 0.1  # boost quieter TTS output to this level before
-    # playback (clone output tracks the sample's level); peak-limited, 0 = off
+    tts_target_rms: float = 0.16  # boost quieter TTS output to this level before
+    # playback (clone output tracks the sample's level); a soft limiter tames
+    # peaks so the sustained body reaches the target without clipping. 0 = off
+    tts_presence_db: float = 4.0  # high-shelf lift above tts_presence_hz for
+    # clarity/intelligibility; the clone's brightness tracks the sample. 0 = off
+    tts_presence_hz: float = 3200.0  # presence shelf corner frequency
 
     # Perception
     face_threshold: float = 0.45  # cosine similarity; below = unknown
