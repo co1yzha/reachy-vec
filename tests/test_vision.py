@@ -2,7 +2,12 @@ import base64
 
 import numpy as np
 
-from reachy_vec.perception.vision import encode_frame_jpeg, make_look_fn, make_selfie_fn
+from reachy_vec.perception.vision import (
+    encode_frame_jpeg,
+    make_look_around_fn,
+    make_look_fn,
+    make_selfie_fn,
+)
 from tests.conftest import FakeBody, FakeCamera, FakeLLMClient
 
 
@@ -81,6 +86,92 @@ def test_look_fn_vision_error_is_friendly():
     look = make_look_fn(FakeCamera([_frame()]), BoomClient(),
                         model="gpt-5-mini", max_px=1024)
     assert "trouble" in look("hi").lower()
+
+
+def _image_parts(client):
+    content = client.chat.completions.last_kwargs["messages"][-1]["content"]
+    return [p for p in content if p["type"] == "image_url"]
+
+
+def test_look_around_turns_both_ways_then_recenters_and_captures_twice():
+    body = FakeBody()
+    client = FakeLLMClient(reply="a desk to my left and a window to my right")
+    look_around = make_look_around_fn(
+        FakeCamera([_frame(), _frame()]), client,
+        model="gpt-5-mini", max_px=1024, body=body, sleep=lambda s: None,
+    )
+    assert look_around() == "a desk to my left and a window to my right"
+    assert body.motions == ["turn_left", "turn_right", "turn_front"]
+    assert len(client.chat.completions.calls) == 1  # exactly one vision call
+
+
+def test_look_around_sends_both_images_labelled_left_and_right():
+    client = FakeLLMClient(reply="ok")
+    look_around = make_look_around_fn(
+        FakeCamera([_frame(), _frame()]), client,
+        model="gpt-5-mini", max_px=1024, body=FakeBody(), sleep=lambda s: None,
+    )
+    look_around()
+    content = client.chat.completions.last_kwargs["messages"][-1]["content"]
+    assert len(_image_parts(client)) == 2
+    text = " ".join(p["text"].lower() for p in content if p["type"] == "text")
+    assert "left" in text and "right" in text
+
+
+def test_look_around_uses_injected_sleep_between_turns():
+    slept = []
+    look_around = make_look_around_fn(
+        FakeCamera([_frame(), _frame()]), FakeLLMClient(reply="ok"),
+        model="gpt-5-mini", max_px=1024, body=FakeBody(),
+        settle_s=0.5, sleep=slept.append,
+    )
+    look_around()
+    assert slept == [0.5, 0.5]  # settled after each turn, no real time.sleep
+
+
+def test_look_around_no_body_captures_once_forward():
+    client = FakeLLMClient(reply="a tidy room")
+    look_around = make_look_around_fn(
+        FakeCamera([_frame()]), client,
+        model="gpt-5-mini", max_px=1024, body=None, sleep=lambda s: None,
+    )
+    assert look_around() == "a tidy room"
+    assert len(_image_parts(client)) == 1  # single forward image
+
+
+def test_look_around_drops_a_missing_direction():
+    client = FakeLLMClient(reply="just the left side")
+    look_around = make_look_around_fn(
+        FakeCamera([_frame(), None]), client,      # right frame missing
+        model="gpt-5-mini", max_px=1024, body=FakeBody(), sleep=lambda s: None,
+    )
+    assert look_around() == "just the left side"
+    assert len(_image_parts(client)) == 1
+
+
+def test_look_around_no_frames_at_all_is_friendly():
+    look_around = make_look_around_fn(
+        FakeCamera([None, None]), FakeLLMClient(reply="x"),
+        model="gpt-5-mini", max_px=1024, body=FakeBody(), sleep=lambda s: None,
+    )
+    assert "can't see" in look_around().lower()
+
+
+def test_look_around_recenters_even_when_vision_call_fails():
+    class BoomClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    raise RuntimeError("api down")
+
+    body = FakeBody()
+    look_around = make_look_around_fn(
+        FakeCamera([_frame(), _frame()]), BoomClient(),
+        model="gpt-5-mini", max_px=1024, body=body, sleep=lambda s: None,
+    )
+    assert "trouble" in look_around().lower()
+    assert body.motions[-1] == "turn_front"  # recentered despite the failure
 
 
 def test_selfie_saves_file_and_opens_it(tmp_path):

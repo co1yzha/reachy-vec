@@ -5,6 +5,7 @@ Heavy imports (cv2) are deferred per repo convention.
 
 import base64
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime
 
@@ -15,6 +16,11 @@ VISION_SYSTEM = (
     "No markdown, no lists."
 )
 DEFAULT_LOOK_PROMPT = "Describe what you see."
+LOOK_AROUND_PROMPT = (
+    "You turned your head to look around the room. Using these views, describe "
+    "your surroundings in one or two short spoken sentences, noting roughly "
+    "where things are (to your left, to your right)."
+)
 
 
 def encode_frame_jpeg(frame, max_px: int) -> str:
@@ -75,6 +81,63 @@ def make_look_fn(camera, client, model: str, max_px: int, body=None) -> Callable
         return answer or "I looked but I'm not sure what I'm seeing."
 
     return look
+
+
+def make_look_around_fn(
+    camera, client, model: str, max_px: int, body=None, *,
+    settle_s: float = 0.8, sleep=time.sleep,
+) -> Callable[[], str]:
+    """Return a look_around() closure: turn the base left then right, capture a
+    frame at each, recenter, and describe the surroundings in one vision call.
+    With no `body`, degrades to a single forward capture. Best-effort: a failed
+    turn or a missing frame never aborts the report.
+    """
+
+    def _turn(motion: str) -> None:
+        if body is None:
+            return
+        try:
+            body.perform(motion)
+        except Exception:
+            logger.exception("look_around turn %r failed", motion)
+
+    def look_around() -> str:
+        if body is None:
+            views = [("ahead", camera.read())]
+        else:
+            views = []
+            for label, motion in (("left", "turn_left"), ("right", "turn_right")):
+                _turn(motion)
+                sleep(settle_s)
+                views.append((label, camera.read()))
+            _turn("turn_front")  # recenter before the (possibly slow) vision call
+
+        present = [(label, frame) for label, frame in views if frame is not None]
+        if not present:
+            return "I can't see anything right now - no camera frame."
+
+        content = [{"type": "text", "text": LOOK_AROUND_PROMPT}]
+        for label, frame in present:
+            data_url = encode_frame_jpeg(frame, max_px)
+            content.append({"type": "text", "text": f"To your {label}:"})
+            content.append({"type": "image_url", "image_url": {"url": data_url}})
+
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": VISION_SYSTEM},
+                    {"role": "user", "content": content},
+                ],
+            )
+            answer = (response.choices[0].message.content or "").strip()
+        except Exception:
+            logger.exception("look_around vision call failed")
+            return "I had trouble seeing just now."
+        logger.info("look_around -> %r", answer[:80])
+        return answer or "I looked around but I'm not sure what I'm seeing."
+
+    return look_around
 
 
 def make_selfie_fn(
