@@ -3,7 +3,8 @@ from reachy_vec.body.robot import Body, NullBody, RobotBody, make_robot
 from reachy_vec.config import settings as _settings
 
 EXPECTED = {
-    "greet", "nod", "listen", "idle", "acknowledge", "goodbye", "look", "pose", "wakeup", "sway",
+    "greet", "nod", "listen", "idle", "acknowledge", "goodbye", "look", "pose",
+    "wakeup", "sway", "startle", "turn_left", "turn_right", "turn_front",
 }
 
 
@@ -46,9 +47,11 @@ class RecordingMini:
     def __init__(self):
         self.calls = []
         self.modes: list[str] = []
+        self.yaws: list[float | None] = []
 
-    def goto_target(self, head=None, antennas=None, duration=0.5):
+    def goto_target(self, head=None, antennas=None, duration=0.5, body_yaw=None):
         self.calls.append((head is not None, tuple(antennas), duration))
+        self.yaws.append(body_yaw)
 
     def goto_sleep(self):
         self.modes.append("sleep")
@@ -78,6 +81,36 @@ def test_robot_body_ignores_unknown_motion():
     mini = RecordingMini()
     RobotBody(mini).perform("moonwalk")
     assert mini.calls == []
+
+
+def test_keyframe_body_yaw_defaults_none():
+    kf = Keyframe(head={}, antennas=(0.0, 0.0), duration=0.4)
+    assert kf.body_yaw is None
+
+
+def test_turn_motions_defined_and_hold_a_body_yaw():
+    from reachy_vec.body.motions import LOOK_AROUND_YAW_RAD
+
+    left = MOTIONS["turn_left"][-1]
+    right = MOTIONS["turn_right"][-1]
+    front = MOTIONS["turn_front"][-1]
+    assert left.body_yaw == LOOK_AROUND_YAW_RAD          # turns one way...
+    assert right.body_yaw == -LOOK_AROUND_YAW_RAD        # ...and the other
+    assert front.body_yaw == 0.0                         # recenters
+    assert 0 < LOOK_AROUND_YAW_RAD < 2.79                # inside the joint limit
+
+
+def test_robot_body_passes_body_yaw_for_turn_motions():
+    mini = RecordingMini()
+    RobotBody(mini).perform("turn_left")
+    assert mini.yaws == [MOTIONS["turn_left"][-1].body_yaw]
+
+
+def test_robot_body_omits_body_yaw_for_plain_motions():
+    mini = RecordingMini()
+    RobotBody(mini).perform("nod")
+    # no body_yaw kwarg passed for plain motions -> SDK default (recenter) applies
+    assert mini.yaws and all(y is None for y in mini.yaws)
 
 
 class FakeMini:

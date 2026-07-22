@@ -41,11 +41,14 @@ class RobotBody:
         from reachy_mini.utils import create_head_pose
 
         for kf in frames:
-            self._mini.goto_target(
+            kwargs = dict(
                 head=create_head_pose(**kf.head),
                 antennas=list(kf.antennas),
                 duration=kf.duration,
             )
+            if kf.body_yaw is not None:
+                kwargs["body_yaw"] = kf.body_yaw
+            self._mini.goto_target(**kwargs)
 
 
 class ReconnectingBody:

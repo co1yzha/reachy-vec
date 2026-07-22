@@ -12,9 +12,12 @@ class Keyframe:
     head: dict[str, float]
     antennas: tuple[float, float]
     duration: float
+    body_yaw: float | None = None  # base rotation in radians; None = keep current yaw
 
 
 NEUTRAL = Keyframe(head={}, antennas=(0.0, 0.0), duration=0.4)
+
+LOOK_AROUND_YAW_RAD = 2.09  # ~120 deg each side; joint limit is +/-2.79 rad
 
 MOTIONS: dict[str, list[Keyframe]] = {
     "greet": [
@@ -63,9 +66,30 @@ MOTIONS: dict[str, list[Keyframe]] = {
         Keyframe(head={"pitch": -5}, antennas=(-0.8, 0.8), duration=0.3),
         NEUTRAL,
     ],
+    "startle": [
+        # sharp recoil back, antennas snapped high
+        Keyframe(head={"pitch": -22}, antennas=(1.0, 1.0), duration=0.15),
+        # quick left-right head shake, antennas flailing
+        Keyframe(head={"pitch": -18, "roll": -8}, antennas=(1.0, -0.5), duration=0.2),
+        Keyframe(head={"pitch": -18, "roll": 8}, antennas=(-0.5, 1.0), duration=0.2),
+        NEUTRAL,
+    ],
     "sway": [
         # soft talking sway - looped by SpeakingSway while a reply plays
         Keyframe(head={"yaw": 4, "pitch": -3}, antennas=(0.2, 0.15), duration=0.6),
         Keyframe(head={"yaw": -4, "pitch": -1}, antennas=(0.15, 0.2), duration=0.6),
+    ],
+    # look-around: rotate the whole base and HOLD (no return-to-neutral frame),
+    # so make_look_around_fn can capture the camera at each heading.
+    "turn_left": [
+        Keyframe(head={}, antennas=(0.5, 0.5), duration=0.9,
+                 body_yaw=LOOK_AROUND_YAW_RAD),
+    ],
+    "turn_right": [
+        Keyframe(head={}, antennas=(0.5, 0.5), duration=0.9,
+                 body_yaw=-LOOK_AROUND_YAW_RAD),
+    ],
+    "turn_front": [
+        Keyframe(head={}, antennas=(0.0, 0.0), duration=0.9, body_yaw=0.0),
     ],
 }
