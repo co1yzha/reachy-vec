@@ -1,8 +1,31 @@
 import numpy as np
 
-from reachy_vec.perception.face import Observation, enroll_person
+from reachy_vec.perception.face import InsightFaceMatcher, Observation, enroll_person
 from reachy_vec.store.db import Store
 from tests.conftest import FakeCamera, FakeFaceMatcher
+
+
+class _ExplodingApp:
+    """insightface stand-in that fails if a None frame ever reaches it."""
+
+    def get(self, frame):
+        raise AssertionError("insightface must not be called on a None frame")
+
+
+def test_embed_returns_none_for_missing_frame(tmp_path):
+    """The robot's WebRTC camera returns None between frames; embed() must
+    treat that as 'no face', not crash in insightface (img.shape on None)."""
+    matcher = InsightFaceMatcher(Store(tmp_path / "db"))
+    matcher._app = _ExplodingApp()  # pre-set so _load() skips the real model
+    assert matcher.embed(None) is None
+    assert matcher.last_face_count == 0
+    assert matcher.last_bbox is None
+
+
+def test_observe_returns_none_for_missing_frame(tmp_path):
+    matcher = InsightFaceMatcher(Store(tmp_path / "db"))
+    matcher._app = _ExplodingApp()
+    assert matcher.observe(None) is None
 
 
 def test_enroll_person_stores_frames_and_is_matchable(tmp_path):

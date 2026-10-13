@@ -15,7 +15,7 @@ Current as of Phase 2b (speaker ID + fusion). Companion pages:
 | Voice activity detection | silero-vad (16 kHz, 512-sample frames) | local | `audio/listen.py:_AudioCapture` | not configurable |
 | Face detection + embedding | insightface `buffalo_s`, 512-dim | local (onnxruntime) | `perception/face.py` | not configurable (threshold is) |
 | Speaker ID | speechbrain ECAPA-TDNN `spkrec-ecapa-voxceleb`, 192-dim | local | `perception/voice.py` | `REACHY_VEC_VOICE_THRESHOLD` |
-| Text-to-speech | macOS `say` or Qwen3-TTS 0.6B voice clone (mlx-audio) | local | `audio/speak.py` | `REACHY_VEC_TTS_BACKEND`, `REACHY_VEC_VOICE_SAMPLE` |
+| Text-to-speech | macOS `say` or Qwen3-TTS 0.6B voice clone (mlx-audio) | local | `audio/speak.py` | `REACHY_VEC_TTS_BACKEND`, `REACHY_VEC_TTS_MODEL`, `REACHY_VEC_VOICE_SAMPLE`; clone clarity/loudness (see below): `REACHY_VEC_TTS_TARGET_RMS`, `REACHY_VEC_TTS_PRESENCE_DB`, `REACHY_VEC_TTS_PRESENCE_HZ` |
 
 All local models lazy-load on first use; `reachy-vec run` warms them (plus
 the OpenAI TLS connection) at startup so the first conversation isn't slow.
@@ -27,6 +27,15 @@ the OpenAI TLS connection) at startup so the first conversation isn't slow.
 > `RobotAudioSource`, `RobotAudioSink` — robot audio out needs the `qwen-tts`
 > backend). `auto` picks robot when the daemon offers media, else Mac. See
 > [architecture.md → Known gaps](architecture.md#known-gaps--toward-a-real-robot-deploy).
+
+> **Clone clarity/loudness** (`audio/speak.py:_process_loudness`): the Qwen
+> clone's level and brightness track the (usually quiet, dull) reference
+> sample, so each sentence is post-processed before playback — a presence
+> high-shelf (`TTS_PRESENCE_DB` dB above `TTS_PRESENCE_HZ`) for intelligibility,
+> then a boost toward `TTS_TARGET_RMS` followed by a tanh soft limiter that
+> tames transients so the sustained speech reaches the target without clipping.
+> Any of the three set to 0 disables that step (`say` backend is unaffected).
+> `REACHY_VEC_TTS_TAP=<dir>` dumps each clip as played, to A/B the settings.
 
 ## 1. Knowledge ingestion
 

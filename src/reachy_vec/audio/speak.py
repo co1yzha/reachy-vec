@@ -80,26 +80,80 @@ class AfplayPlayer:
             proc.terminate()
 
 
-def _normalize_loudness(audio, target_rms: float):
-    """Boost quiet TTS output toward target_rms, gain-limited by the peak.
+def _presence_shelf(audio, sample_rate: int, gain_db: float, corner_hz: float):
+    """Lift high frequencies with an RBJ high-shelf biquad, for clarity.
 
-    Qwen's output level tracks the (often quietly recorded) reference sample.
-    Unlike listen.normalize_rms this never clips - hard clipping is audible
-    distortion on playback. target_rms <= 0 disables; never attenuates.
+    The clone's brightness tracks the (often dull) reference sample; a few dB
+    of presence above ~3 kHz makes speech more intelligible. gain_db == 0 is a
+    no-op (returns the input untouched, so callers stay byte-exact when off).
     """
     import numpy as np
 
+    if gain_db == 0:
+        return audio
+    audio = np.asarray(audio, dtype=np.float32)
+    if audio.size == 0:
+        return audio
+
+    from scipy.signal import lfilter
+
+    # RBJ Audio EQ Cookbook high-shelf, shelf slope S = 1.
+    a_gain = 10 ** (gain_db / 40)
+    w0 = 2 * np.pi * corner_hz / sample_rate
+    cos_w0, sin_w0 = np.cos(w0), np.sin(w0)
+    alpha = sin_w0 / 2 * np.sqrt((a_gain + 1 / a_gain) * (1 / 1.0 - 1) + 2)
+    two_sqrt_a_alpha = 2 * np.sqrt(a_gain) * alpha
+
+    b0 = a_gain * ((a_gain + 1) + (a_gain - 1) * cos_w0 + two_sqrt_a_alpha)
+    b1 = -2 * a_gain * ((a_gain - 1) + (a_gain + 1) * cos_w0)
+    b2 = a_gain * ((a_gain + 1) + (a_gain - 1) * cos_w0 - two_sqrt_a_alpha)
+    a0 = (a_gain + 1) - (a_gain - 1) * cos_w0 + two_sqrt_a_alpha
+    a1 = 2 * ((a_gain - 1) - (a_gain + 1) * cos_w0)
+    a2 = (a_gain + 1) - (a_gain - 1) * cos_w0 - two_sqrt_a_alpha
+
+    b = np.array([b0, b1, b2]) / a0
+    a = np.array([1.0, a1 / a0, a2 / a0])
+    return lfilter(b, a, audio).astype(np.float32)
+
+
+def _soft_limit(audio, ceiling: float = 0.99):
+    """tanh soft-clip peaks that exceed the ceiling, transparent below it.
+
+    A hard clip (np.clip) is audible distortion; tanh rolls the loudest peaks
+    off smoothly. Engaged only when something exceeds the ceiling, so ordinary
+    content is left byte-exact.
+    """
+    import numpy as np
+
+    audio = np.asarray(audio, dtype=np.float32)
+    if audio.size == 0 or float(np.max(np.abs(audio))) <= ceiling:
+        return audio
+    return (ceiling * np.tanh(audio / ceiling)).astype(np.float32)
+
+
+def _process_loudness(
+    audio, sample_rate: int, target_rms: float, presence_db: float, presence_hz: float
+):
+    """Make TTS output clear and loud: presence shelf, then boost toward
+    target_rms, then soft-limit peaks.
+
+    Qwen's clone output tracks the (often quiet, dull) reference sample. Boost
+    is applied before limiting so the sustained body can reach the target while
+    the limiter tames transients - louder than a single gain capped by the peak.
+    target_rms <= 0 disables the loudness stage; never attenuates.
+    """
+    import numpy as np
+
+    audio = _presence_shelf(audio, sample_rate, presence_db, presence_hz)
     if target_rms <= 0:
         return audio
     audio = np.asarray(audio, dtype=np.float32)
     if audio.size == 0:
         return audio
     rms = float(np.sqrt(np.mean(np.square(audio))))
-    if rms <= 0 or rms >= target_rms:
-        return audio
-    peak = float(np.max(np.abs(audio)))
-    gain = min(target_rms / rms, 0.99 / peak)
-    return audio * gain
+    if rms > 0 and rms < target_rms:
+        audio = audio * (target_rms / rms)
+    return _soft_limit(audio)
 
 
 class RobotAudioSink:
@@ -108,6 +162,11 @@ class RobotAudioSink:
     push_audio_sample queues and returns immediately, so this blocks for the
     clip's duration — otherwise speak() returns while the robot is still
     talking and the mic opens on its own voice.
+
+    The gstreamer output appsrc silently drops every pushed buffer (a stderr
+    warning, no exception) until start_playing() runs — the robot makes no
+    sound while the brain logs replies. So start the pipeline once, lazily,
+    before the first push.
     """
 
     def __init__(self, media, sleep=None):
@@ -115,12 +174,16 @@ class RobotAudioSink:
 
         self._media = media
         self._sleep = sleep or time.sleep
+        self._playing = False
 
     def __call__(self, audio, sample_rate: int) -> None:
         import numpy as np
 
         from reachy_vec.audio.resample import to_mono_16k
 
+        if not self._playing:
+            self._media.start_playing()
+            self._playing = True
         out_rate = self._media.get_output_audio_samplerate()
         data = to_mono_16k(np.asarray(audio, dtype=np.float32), sample_rate, out_rate)
         self._media.push_audio_sample(data)
@@ -170,11 +233,15 @@ class QwenTTSSpeaker:
         play=None,
         stop=None,
         target_rms: float = 0.0,
+        presence_db: float = 0.0,
+        presence_hz: float = 3200.0,
     ):
         self._sample_path = sample_path
         self._sample_text = sample_text
         self._model_id = model_id
         self._target_rms = target_rms
+        self._presence_db = presence_db
+        self._presence_hz = presence_hz
         self._generate = generate
         if play is None:
             player = AfplayPlayer()
@@ -206,7 +273,13 @@ class QwenTTSSpeaker:
             return
         try:
             audio, sample_rate = self._ensure_generate()(text)
-            audio = _normalize_loudness(audio, self._target_rms)
+            audio = _process_loudness(
+                audio,
+                sample_rate,
+                self._target_rms,
+                self._presence_db,
+                self._presence_hz,
+            )
             _debug_tap(audio, sample_rate)
             self._play(audio, sample_rate)
         except Exception:
@@ -239,6 +312,8 @@ def make_speaker(media=None) -> Speaker:
             model_id=settings.tts_model,
             play=RobotAudioSink(media) if media is not None else None,
             target_rms=settings.tts_target_rms,
+            presence_db=settings.tts_presence_db,
+            presence_hz=settings.tts_presence_hz,
         )
     raise NotImplementedError(
         f"TTS backend {backend!r} is not wired - use 'say' or 'qwen-tts'"

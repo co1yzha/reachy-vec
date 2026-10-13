@@ -220,6 +220,11 @@ class FakeMedia:
         self._in_rate, self._in_channels, self._out_rate = in_rate, in_channels, out_rate
         self.pushed: list = []
         self.played: list = []
+        self.play_started = 0  # times start_playing() was called
+        self.pushed_after_start: list[bool] = []  # was playback started at push time?
+
+    def start_playing(self):
+        self.play_started += 1
 
     def get_frame(self):
         return next(self._frames, None)
@@ -238,6 +243,7 @@ class FakeMedia:
 
     def push_audio_sample(self, data):
         self.pushed.append(data)
+        self.pushed_after_start.append(self.play_started > 0)
 
     def play_sound(self, path):
         self.played.append(path)
@@ -281,3 +287,16 @@ class FakeFaceMatcher:
 
     def embed(self, frame):
         return self._embedding
+
+
+class FakeOcclusion:
+    """Scripted occlusion detector: consume() pops scripted booleans."""
+
+    def __init__(self, trips: list[bool]):
+        self._trips = list(trips)
+
+    def update(self, frame) -> bool:
+        return False
+
+    def consume(self) -> bool:
+        return self._trips.pop(0) if self._trips else False

@@ -27,6 +27,13 @@ WAKE_LINES = (
     "Back with you!",
 )
 
+# Spoken when someone covers/pokes the camera (see perception/occlusion.py).
+STARTLE_LINES = (
+    "Hey - I can't see!",
+    "Who turned out the lights?",
+    "Oi! That's my eye!",
+)
+
 
 def _is_yes(utterance) -> bool:
     return utterance is not None and "yes" in utterance.text.lower()
@@ -58,6 +65,7 @@ class OracleLoop:
         barge_in_factory=None,
         settle_s: float = 0.0,
         sleep=time.sleep,
+        occlusion=None,
     ):
         self._sight = sight
         self._transcriber = transcriber
@@ -82,6 +90,7 @@ class OracleLoop:
         # Start asleep so a robot physically left in sleep pose (previous
         # session, power cycle) is woken by the first face it sees.
         self._asleep = start_asleep
+        self._occlusion = occlusion  # None = camera-poke reaction disabled
 
     # -- public ---------------------------------------------------------
 
@@ -94,6 +103,8 @@ class OracleLoop:
         unknown_streak = 0
         while True:
             obs = self._sight()
+            if self._occlusion is not None and self._occlusion.consume():
+                self._react_to_occlusion()
             if obs is None:
                 self._maybe_sleep()
                 return "no-face"
@@ -268,6 +279,16 @@ class OracleLoop:
             self._body.perform("wakeup")
             self._speaker.speak(random.choice(WAKE_LINES))
             self._asleep = False
+
+    def _react_to_occlusion(self) -> None:
+        """Someone covered the camera: wake if needed, flinch, protest."""
+        logger.info("camera occluded - startling")
+        if self._asleep:
+            self._body.perform("wake")
+            self._asleep = False
+        self._body.perform("startle")
+        self._speaker.speak(random.choice(STARTLE_LINES))
+        self._last_face_at = self._clock()  # a poke counts as presence: reset idle timer
 
     # -- helpers ----------------------------------------------------------
 

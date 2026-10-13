@@ -54,6 +54,10 @@ class InsightFaceMatcher:
             self._app.prepare(ctx_id=0, det_size=(640, 640))
 
     def embed(self, frame) -> list[float] | None:
+        if frame is None:  # robot WebRTC camera returns None between frames
+            self.last_face_count = 0
+            self.last_bbox = None
+            return None
         self._load()
         faces = self._app.get(frame)
         self.last_face_count = len(faces)

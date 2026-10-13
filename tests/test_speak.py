@@ -159,6 +159,18 @@ def test_robot_sink_resamples_to_output_rate():
     assert abs(len(media.pushed[0]) - 48000) <= 2  # upsampled ~3x
 
 
+def test_robot_sink_starts_playback_before_pushing_once():
+    """The gstreamer output appsrc drops every buffer (silently, only a
+    stderr warning) until start_playing() runs. Without it the robot makes no
+    sound while the brain happily logs replies. Start once, before the push."""
+    media = FakeMedia(out_rate=16000)
+    sink = RobotAudioSink(media, sleep=lambda s: None)
+    sink(np.zeros(1600, dtype=np.float32), sample_rate=16000)
+    sink(np.zeros(1600, dtype=np.float32), sample_rate=16000)
+    assert media.play_started == 1  # started once, not per clip
+    assert media.pushed_after_start == [True, True]  # every push after start
+
+
 def test_robot_sink_blocks_for_the_playback_duration():
     """push_audio_sample returns before the speaker finishes; without the
     wait, speak() returns mid-utterance and the mic hears the robot talk."""
@@ -241,6 +253,113 @@ def test_qwen_speaker_zero_target_rms_disables_boost():
     )
     speaker.speak("hello")
     np.testing.assert_array_equal(played[0], quiet)
+
+
+def _band_energy(audio, sample_rate, lo, hi):
+    spec = np.abs(np.fft.rfft(np.asarray(audio, dtype=np.float64)))
+    freqs = np.fft.rfftfreq(len(audio), 1 / sample_rate)
+    return float(spec[(freqs >= lo) & (freqs < hi)].sum())
+
+
+def test_presence_shelf_lifts_highs_relative_to_lows():
+    """A positive presence gain must boost high-frequency energy (clarity)
+    while leaving low-frequency energy essentially untouched."""
+    from reachy_vec.audio.speak import _presence_shelf
+
+    sr = 24000
+    t = np.arange(sr) / sr
+    audio = (0.3 * np.sin(2 * np.pi * 200 * t) + 0.3 * np.sin(2 * np.pi * 5000 * t)).astype(
+        np.float32
+    )
+    out = _presence_shelf(audio, sr, gain_db=6.0, corner_hz=3000.0)
+
+    low_in = _band_energy(audio, sr, 100, 400)
+    low_out = _band_energy(out, sr, 100, 400)
+    high_in = _band_energy(audio, sr, 4000, 6000)
+    high_out = _band_energy(out, sr, 4000, 6000)
+
+    assert high_out / high_in == pytest.approx(2.0, rel=0.15)  # ~+6 dB
+    assert low_out / low_in == pytest.approx(1.0, rel=0.1)  # lows unchanged
+
+
+def test_presence_shelf_zero_gain_is_a_no_op():
+    from reachy_vec.audio.speak import _presence_shelf
+
+    audio = np.linspace(-0.4, 0.4, 500, dtype=np.float32)
+    out = _presence_shelf(audio, 24000, gain_db=0.0, corner_hz=3000.0)
+    np.testing.assert_array_equal(out, audio)
+
+
+def test_soft_limit_tames_peaks_without_clipping():
+    from reachy_vec.audio.speak import _soft_limit
+
+    audio = np.array([0.2, -0.5, 3.0, -8.0, 0.1], dtype=np.float32)
+    out = _soft_limit(audio, ceiling=0.99)
+    assert float(np.max(np.abs(out))) <= 0.99
+    # a sample already well under the ceiling is left near-transparent
+    assert out[0] == pytest.approx(0.2, abs=0.02)
+
+
+def test_soft_limit_transparent_below_ceiling():
+    from reachy_vec.audio.speak import _soft_limit
+
+    audio = np.array([0.2, -0.5, 0.9, -0.3], dtype=np.float32)
+    out = _soft_limit(audio, ceiling=0.99)
+    np.testing.assert_array_equal(out, audio)  # nothing exceeds the ceiling
+
+
+def test_qwen_speaker_boosts_body_by_reducing_crest_factor():
+    """The loudness stage boosts the sustained body toward the target even when
+    a transient would peak-limit a single-gain approach - the soft limiter
+    tames the transient instead of capping the whole clip by it."""
+    audio = np.full(2000, 0.02, dtype=np.float32)
+    audio[0] = 0.6  # loud transient
+    played = []
+    speaker = QwenTTSSpeaker(
+        sample_path=Path("me.wav"),
+        generate=lambda text: (audio, 24000),
+        play=lambda a, sr: played.append(a),
+        target_rms=0.2,
+    )
+    speaker.speak("hello")
+    body = played[0][1:]  # exclude the transient
+    body_rms = float(np.sqrt(np.mean(np.square(body))))
+    assert float(np.max(np.abs(played[0]))) <= 0.99  # never clips
+    # old single-gain peak-limit would leave the body near 0.02 * (0.99/0.6);
+    # crest reduction gets it far louder than that.
+    assert body_rms > 0.1
+
+
+def test_qwen_speaker_applies_presence_when_configured():
+    sr = 24000
+    t = np.arange(sr) / sr
+    tone = (0.2 * np.sin(2 * np.pi * 200 * t) + 0.2 * np.sin(2 * np.pi * 5000 * t)).astype(
+        np.float32
+    )
+    played = []
+    speaker = QwenTTSSpeaker(
+        sample_path=Path("me.wav"),
+        generate=lambda text: (tone, sr),
+        play=lambda a, sr_: played.append(a),
+        target_rms=0.0,  # isolate the EQ from the loudness stage
+        presence_db=6.0,
+        presence_hz=3000.0,
+    )
+    speaker.speak("hello")
+    high_ratio = _band_energy(played[0], sr, 4000, 6000) / _band_energy(tone, sr, 4000, 6000)
+    assert high_ratio > 1.5
+
+
+def test_make_speaker_qwen_wires_presence_from_settings(monkeypatch, tmp_path):
+    sample = tmp_path / "me.wav"
+    sample.write_bytes(b"RIFF")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "qwen-tts")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.voice_sample", sample)
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_presence_db", 5.0)
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_presence_hz", 3200.0)
+    speaker = make_speaker()
+    assert speaker._presence_db == 5.0
+    assert speaker._presence_hz == 3200.0
 
 
 def test_afplay_player_writes_wav_and_plays_it():

@@ -357,3 +357,65 @@ def test_no_settle_by_default(tmp_path):
     )
     loop.run_once()
     assert naps == []
+
+
+def test_camera_poke_wakes_startles_and_speaks(tmp_path):
+    from reachy_vec.brain.oracle import STARTLE_LINES
+    from tests.conftest import FakeBody, FakeBrain, FakeOcclusion, FakeSpeaker, FakeTranscriber
+
+    speaker, body = FakeSpeaker(), FakeBody()
+    now = {"t": 1000.0}
+    loop = OracleLoop(
+        sight=lambda: None,                      # covered camera: no face
+        transcriber=FakeTranscriber([]),
+        speaker=speaker,
+        body=body,
+        brain=FakeBrain(),
+        enroll_capture=lambda name: None,
+        store=Store(tmp_path / "db"),
+        clock=lambda: now["t"],
+        start_asleep=True,
+        occlusion=FakeOcclusion([True]),
+    )
+    assert loop.run_once() == "no-face"
+    assert body.motions[:2] == ["wake", "startle"]       # woke, then flinched
+    assert speaker.spoken[0] in STARTLE_LINES
+    assert "sleep" not in body.motions                    # reaction reset the idle timer
+
+
+def test_camera_poke_while_awake_startles_without_waking(tmp_path):
+    from tests.conftest import FakeBody, FakeBrain, FakeOcclusion, FakeSpeaker, FakeTranscriber
+
+    speaker, body = FakeSpeaker(), FakeBody()
+    loop = OracleLoop(
+        sight=lambda: None,
+        transcriber=FakeTranscriber([]),
+        speaker=speaker,
+        body=body,
+        brain=FakeBrain(),
+        enroll_capture=lambda name: None,
+        store=Store(tmp_path / "db"),
+        clock=lambda: 1000.0,
+        occlusion=FakeOcclusion([True]),
+    )
+    assert loop.run_once() == "no-face"
+    assert body.motions == ["startle"]                    # no wake motion
+
+
+def test_no_occlusion_no_reaction(tmp_path):
+    from tests.conftest import FakeBody, FakeBrain, FakeOcclusion, FakeSpeaker, FakeTranscriber
+
+    speaker, body = FakeSpeaker(), FakeBody()
+    loop = OracleLoop(
+        sight=lambda: None,
+        transcriber=FakeTranscriber([]),
+        speaker=speaker,
+        body=body,
+        brain=FakeBrain(),
+        enroll_capture=lambda name: None,
+        store=Store(tmp_path / "db"),
+        clock=lambda: 1000.0,
+        occlusion=FakeOcclusion([]),
+    )
+    assert loop.run_once() == "no-face"
+    assert body.motions == [] and speaker.spoken == []
