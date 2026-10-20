@@ -171,3 +171,32 @@ def test_self_voice_checker_compares_against_clone_sample(monkeypatch, tmp_path)
     assert checker(np.ones(16000, dtype=np.float32)) is True    # same voice
     assert checker(-np.ones(16000, dtype=np.float32)) is False  # different voice
     assert checker(None) is False                               # can't tell -> not self
+
+
+def test_make_hermes_none_when_disabled(monkeypatch, tmp_path):
+    from reachy_vec.cli.run import make_hermes
+    from reachy_vec.config import settings
+
+    monkeypatch.setattr(settings, "hermes_enabled", False)
+    assert make_hermes(Store(tmp_path / "db"), which=lambda b: "/x/hermes") is None
+
+
+def test_make_hermes_none_when_binary_missing(monkeypatch, tmp_path):
+    from reachy_vec.cli.run import make_hermes
+    from reachy_vec.config import settings
+
+    monkeypatch.setattr(settings, "hermes_enabled", True)
+    assert make_hermes(Store(tmp_path / "db"), which=lambda b: None) is None
+
+
+def test_make_hermes_builds_jobs_with_settings(monkeypatch, tmp_path):
+    from reachy_vec.brain.hermes import HermesJobs
+    from reachy_vec.cli.run import make_hermes
+    from reachy_vec.config import settings
+
+    monkeypatch.setattr(settings, "hermes_enabled", True)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    jobs = make_hermes(Store(tmp_path / "db"), which=lambda b: "/x/hermes")
+    assert isinstance(jobs, HermesJobs)
+    assert jobs._agent.cwd == tmp_path / "hermes_cwd"
+    assert jobs._agent.profile == "reachy"

@@ -128,6 +128,39 @@ def wrap_reconnect(body, connect_body, announce):
     return body
 
 
+def make_hermes(store, settings=settings, which=None):
+    """HermesJobs for the ask_hermes tool, or None when disabled/unavailable."""
+    import shutil
+
+    if not settings.hermes_enabled:
+        return None
+    which = which or shutil.which
+    if which(settings.hermes_bin) is None:
+        typer.echo(
+            f"Hermes enabled but '{settings.hermes_bin}' not found on PATH - "
+            "ask_hermes is off.",
+            err=True,
+        )
+        return None
+    from reachy_vec.brain.hermes import HermesCli, HermesJobs
+
+    # hermes -z loads AGENTS.md/rules from its CWD, so keep it out of the repo
+    cwd = settings.data_dir / "hermes_cwd"
+    cwd.mkdir(parents=True, exist_ok=True)
+    agent = HermesCli(
+        bin=settings.hermes_bin,
+        profile=settings.hermes_profile,
+        toolsets=settings.hermes_toolsets,
+        cwd=cwd,
+    )
+    return HermesJobs(
+        agent,
+        store,
+        wait_s=settings.hermes_wait_s,
+        task_timeout_s=settings.hermes_task_timeout_s,
+    )
+
+
 def run(
     source: str = typer.Option(
         None,
@@ -209,6 +242,7 @@ def run(
         from reachy_vec.body.sway import SpeakingSway, SwayingSpeaker
 
         speaker = SwayingSpeaker(speaker, SpeakingSway(body))
+    hermes = make_hermes(store)
     brain = ChatBrain(
         store=store,
         embedder=embedder,
@@ -217,6 +251,7 @@ def run(
         reasoning_effort=settings.llm_reasoning_effort,
         web_search=settings.web_search,
         disable_thinking=uses_local_llm() and settings.llm_disable_thinking,
+        hermes=hermes,
     )
     if not brain.warm_up():
         typer.echo(
@@ -250,3 +285,6 @@ def run(
         loop.run_forever()
     except KeyboardInterrupt:
         typer.echo("\nBye.")
+    finally:
+        if hermes is not None:
+            hermes.close()

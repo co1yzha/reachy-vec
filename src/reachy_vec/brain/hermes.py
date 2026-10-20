@@ -95,6 +95,10 @@ class HermesJobs:
     def busy(self) -> bool:
         return self._future is not None and not self._future.done()
 
+    def close(self) -> None:
+        """Stop accepting work without blocking on a running task."""
+        self._pool.shutdown(wait=False, cancel_futures=True)
+
     def _run(self, task: str, requester_name: str | None) -> str:
         start = time.monotonic()
         logger.info("hermes task from %s: %r", requester_name, task)

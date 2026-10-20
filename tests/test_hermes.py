@@ -155,3 +155,11 @@ def test_late_error_writes_no_message(tmp_path):
     assert wait_until(lambda: not jobs.busy)
     time.sleep(0.05)
     assert store.pending_messages_for("p2") == []
+
+
+def test_close_returns_promptly_while_job_running(tmp_path):
+    _, jobs = _jobs(tmp_path, FakeAgent(["x"], delay_s=2.0))
+    jobs.ask("t", requester_id="p2", requester_name="Bob")
+    start = time.monotonic()
+    jobs.close()
+    assert time.monotonic() - start < 0.5
