@@ -41,3 +41,10 @@ def test_score_tool_calls_skips_unregistered_tool():
     )
     assert total == len(cases) == 9
     assert correct == 9
+
+
+def test_leaked_reasoning_tags_only():
+    bench = _load()
+    assert bench.leaked_reasoning(["I think that's right."]) is False
+    assert bench.leaked_reasoning(["<think>plan"]) is True
+    assert bench.leaked_reasoning(["done</think> Hi."]) is True

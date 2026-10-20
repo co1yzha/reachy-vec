@@ -43,6 +43,12 @@ def median(xs: list[float]) -> float:
     return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
 
 
+def leaked_reasoning(sentences: list[str]) -> bool:
+    """True if any spoken sentence contains a think tag (not the word 'think')."""
+    markers = ("<think", "</think", "think>")
+    return any(m in s.lower() for s in sentences for m in markers)
+
+
 def score_tool_calls(
     cases: list[tuple[str, str | None]],
     first_tool_of: Callable[[str], str | None],
@@ -131,7 +137,7 @@ def main() -> int:
     min_correct = total - 1  # one-miss tolerance: 9/10 or 8/9
 
     # 3. reasoning leak
-    leaked = any("think" in s.lower() for s in spoken)
+    leaked = leaked_reasoning(spoken)
     print(f"'think' leaked into speech: {leaked}")
 
     ok = med < MAX_FIRST_SENTENCE_S and correct >= min_correct and not leaked
