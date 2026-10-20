@@ -169,6 +169,9 @@ class OracleLoop:
                 continue  # interrupted: user is already talking, skip the nod
             self._body.perform("nod")
             self._maybe_bank_voice(turn_voice, audio)
+            if turn_voice is not None and turn_voice.person_id:
+                # messages queued mid-conversation reach whoever just spoke
+                self._deliver_messages(turn_voice.person_id)
             if owner is None and not offered and turn_voice is not None \
                     and turn_voice.person_id is None:
                 # a stranger woke us with a bare "Reachy"; now we know

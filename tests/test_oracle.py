@@ -389,3 +389,90 @@ def test_no_settle_by_default(tmp_path):
     loop, *_ = make_loop(tmp_path, utterances=["Reachy", "hi"], sleep=naps.append)
     loop.run_once()
     assert naps == []
+
+
+# -- turn-boundary message delivery ----------------------------------------
+
+
+def _hermes_msg(to_person="p1"):
+    return MessageRow(
+        message_id="hm1",
+        from_person="",
+        from_name="Hermes",
+        to_person=to_person,
+        to_name="Alice",
+        text="the SDK shipped v2",
+        created_at="2026-07-07T00:00:00+00:00",
+        delivered_at="",
+    )
+
+
+class _QueueingBrain(FakeBrain):
+    """Queues a message for p1 during its first respond() (i.e. after the greeting)."""
+
+    def __init__(self, store):
+        super().__init__()
+        self._store = store
+
+    def respond(self, question, identity=None, on_sentence=None):
+        if not self.asked:
+            self._store.add_message(_hermes_msg())
+        return super().respond(question, identity, on_sentence)
+
+
+def test_message_queued_mid_conversation_is_delivered_next_boundary(tmp_path):
+    store = Store(tmp_path / "db")
+    loop, speaker, *_ = make_loop(
+        tmp_path,
+        utterances=[said("Reachy"), said("q1"), said("q2")],
+        voices=[ALICE_VOICE, ALICE_VOICE, ALICE_VOICE],
+        store=store,
+        brain=_QueueingBrain(store),
+    )
+    loop.run_once()
+    needle = "Hermes left you a message: the SDK shipped v2"
+    assert sum(needle in s for s in speaker.spoken) == 1
+    assert store.pending_messages_for("p1") == []
+
+
+def test_no_delivery_after_barge_in(tmp_path):
+    from reachy_vec.brain.chat import SpeechInterrupted
+
+    store = Store(tmp_path / "db")
+    monitor = FakeBargeInMonitor()
+
+    class InterruptingBrain(FakeBrain):
+        def respond(self, question, identity=None, on_sentence=None):
+            store.add_message(_hermes_msg())
+            monitor.trip()
+            try:
+                on_sentence("half a sentence")
+            except SpeechInterrupted:
+                return "half a sentence"
+            return "full reply"
+
+    loop, speaker, *_ = make_loop(
+        tmp_path,
+        utterances=[said("Reachy"), said("a question")],
+        voices=[ALICE_VOICE, ALICE_VOICE],
+        store=store,
+        brain=InterruptingBrain(),
+        barge_in_factory=lambda: monitor,
+    )
+    loop.run_once()
+    assert not any("left you a message" in s for s in speaker.spoken)
+    assert len(store.pending_messages_for("p1")) == 1
+
+
+def test_no_delivery_for_anonymous_turn(tmp_path):
+    store = Store(tmp_path / "db")
+    loop, speaker, *_ = make_loop(
+        tmp_path,
+        utterances=[said("Reachy"), said("q1")],
+        voices=[ALICE_VOICE, None],
+        store=store,
+        brain=_QueueingBrain(store),
+    )
+    loop.run_once()
+    assert not any("left you a message" in s for s in speaker.spoken)
+    assert len(store.pending_messages_for("p1")) == 1
