@@ -114,6 +114,15 @@ def make_self_voice_checker(store, identifier=None, read_sample=None):
     return is_self_voice
 
 
+def prepare_fillers(speaker) -> list[str]:
+    """Acknowledgement fillers for OracleLoop, pre-generated on the speaker
+    (instant playback with the cloned voice); [] when disabled."""
+    if not settings.ack_enabled or not settings.ack_fillers:
+        return []
+    speaker.precache(settings.ack_fillers)
+    return list(settings.ack_fillers)
+
+
 def wrap_reconnect(body, connect_body, announce):
     """Wrap a RobotBody so motions survive a daemon/WiFi drop; pass others through."""
     from reachy_vec.body.robot import ReconnectingBody, RobotBody
@@ -270,6 +279,7 @@ def run(
             "answers will fail until it is.",
             err=True,
         )
+    fillers = prepare_fillers(speaker)
     loop = OracleLoop(
         transcriber=transcriber,
         speaker=speaker,
@@ -290,6 +300,7 @@ def run(
             chosen, media, is_self_voice=make_self_voice_checker(store)
         ),
         settle_s=settings.post_speech_settle_s,
+        ack_fillers=fillers,
     )
     typer.echo('Oracle running - say "Reachy" to start. Ctrl+C to stop.')
     try:

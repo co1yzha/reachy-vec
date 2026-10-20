@@ -19,6 +19,7 @@ QWEN_TTS_DEFAULT_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16"
 class Speaker(Protocol):
     def speak(self, text: str) -> None: ...
     def stop(self) -> None: ...
+    def precache(self, texts: list[str]) -> None: ...
 
 
 class SaySpeaker:
@@ -34,6 +35,9 @@ class SaySpeaker:
             return
         self._proc = self._popen(["say", text])
         self._proc.wait()
+
+    def precache(self, texts: list[str]) -> None:
+        pass  # `say` starts instantly; nothing to pre-generate
 
     def stop(self) -> None:
         proc = self._proc
@@ -248,6 +252,30 @@ class QwenTTSSpeaker:
             play, stop = player, stop or player.stop
         self._play = play
         self._stop = stop
+        self._cache: dict[str, tuple] = {}  # text -> processed (audio, sample_rate)
+
+    def _synthesize(self, text: str):
+        audio, sample_rate = self._ensure_generate()(text)
+        audio = _process_loudness(
+            audio,
+            sample_rate,
+            self._target_rms,
+            self._presence_db,
+            self._presence_hz,
+        )
+        return audio, sample_rate
+
+    def precache(self, texts: list[str]) -> None:
+        """Pre-generate short fixed lines (acknowledgement fillers) so they
+        play instantly; a line that fails to synthesize is skipped."""
+        for text in texts:
+            text = text.strip()
+            if not text or text in self._cache:
+                continue
+            try:
+                self._cache[text] = self._synthesize(text)
+            except Exception:
+                logger.warning("could not pre-generate %r; it will synthesize live", text)
 
     def _ensure_generate(self):
         if self._generate is None:
@@ -272,14 +300,7 @@ class QwenTTSSpeaker:
         if not text:
             return
         try:
-            audio, sample_rate = self._ensure_generate()(text)
-            audio = _process_loudness(
-                audio,
-                sample_rate,
-                self._target_rms,
-                self._presence_db,
-                self._presence_hz,
-            )
+            audio, sample_rate = self._cache.get(text) or self._synthesize(text)
             _debug_tap(audio, sample_rate)
             self._play(audio, sample_rate)
         except Exception:

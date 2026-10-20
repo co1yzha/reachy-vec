@@ -154,12 +154,16 @@ class FakeSpeaker:
     def __init__(self):
         self.spoken: list[str] = []
         self.stopped = 0
+        self.precached: list[list[str]] = []
 
     def speak(self, text: str) -> None:
         self.spoken.append(text)
 
     def stop(self) -> None:
         self.stopped += 1
+
+    def precache(self, texts: list[str]) -> None:
+        self.precached.append(list(texts))
 
 
 class FakeTranscriber:

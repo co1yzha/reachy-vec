@@ -2,8 +2,9 @@ from typer.testing import CliRunner
 
 from reachy_vec.cli import app
 from reachy_vec.cli.run import resolve_media_source, wait_for_frame
+from reachy_vec.config import settings
 from reachy_vec.store.db import Store
-from tests.conftest import FakeEmbedder
+from tests.conftest import FakeEmbedder, FakeSpeaker
 
 runner = CliRunner()
 
@@ -223,3 +224,29 @@ def test_stt_client_is_fresh_cloud_client_when_llm_local():
 
     out = stt_client(llm, settings=Settings(llm_base_url="http://x/v1"), openai_cls=fake_cls)
     assert out == "cloud" and seen == {}
+
+
+def test_prepare_fillers_off_returns_empty_and_skips_precache(monkeypatch):
+    from reachy_vec.cli.run import prepare_fillers
+
+    monkeypatch.setattr(settings, "ack_enabled", False)
+    speaker = FakeSpeaker()
+    assert prepare_fillers(speaker) == []
+    assert speaker.precached == []
+
+
+def test_prepare_fillers_on_pregenerates_them(monkeypatch):
+    from reachy_vec.cli.run import prepare_fillers
+
+    monkeypatch.setattr(settings, "ack_enabled", True)
+    monkeypatch.setattr(settings, "ack_fillers", ["Mm.", "Right."])
+    speaker = FakeSpeaker()
+    assert prepare_fillers(speaker) == ["Mm.", "Right."]
+    assert speaker.precached == [["Mm.", "Right."]]
+
+
+def test_default_fillers():
+    from reachy_vec.config import Settings
+
+    assert Settings.model_fields["ack_fillers"].default == ["Mm.", "Right.", "Okay.", "Let me see."]
+    assert Settings.model_fields["ack_enabled"].default is True

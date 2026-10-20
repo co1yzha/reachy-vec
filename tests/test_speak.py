@@ -439,3 +439,42 @@ def test_make_speaker_qwen_model_falls_back_to_default(
     monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_model", configured)
     speaker = make_speaker()
     assert speaker._model_id == expected
+
+
+# -- pre-generated filler lines ------------------------------------------------
+
+
+def test_qwen_precache_synthesizes_once_then_plays_from_cache():
+    generated, played = [], []
+
+    def generate(text):
+        generated.append(text)
+        return f"AUDIO<{text}>", 24000
+
+    speaker = QwenTTSSpeaker(
+        sample_path=Path("me.wav"), generate=generate,
+        play=lambda audio, sr: played.append(audio),
+    )
+    speaker.precache(["Mm.", "Right."])
+    assert generated == ["Mm.", "Right."]          # synthesized up front
+    speaker.speak("Mm.")
+    speaker.speak("Mm.")
+    assert generated == ["Mm.", "Right."]          # no re-synthesis
+    assert played == ["AUDIO<Mm.>", "AUDIO<Mm.>"]
+    speaker.speak("Something new.")
+    assert generated[-1] == "Something new."       # uncached text still synthesizes
+
+
+def test_qwen_precache_failure_is_non_fatal(caplog):
+    def generate(text):
+        raise RuntimeError("model down")
+
+    speaker = QwenTTSSpeaker(sample_path=Path("me.wav"), generate=generate,
+                             play=lambda a, s: None)
+    with caplog.at_level(logging.WARNING):
+        speaker.precache(["Mm."])                  # must not raise
+    assert "Mm." in caplog.text
+
+
+def test_say_precache_is_a_noop():
+    SaySpeaker(popen=lambda *a, **k: None).precache(["Mm."])

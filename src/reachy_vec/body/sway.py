@@ -59,3 +59,6 @@ class SwayingSpeaker:
     def stop(self) -> None:
         self._speaker.stop()
         self._sway.stop()
+
+    def precache(self, texts: list[str]) -> None:
+        self._speaker.precache(texts)

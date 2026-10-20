@@ -476,3 +476,69 @@ def test_no_delivery_for_anonymous_turn(tmp_path):
     loop.run_once()
     assert not any("left you a message" in s for s in speaker.spoken)
     assert len(store.pending_messages_for("p1")) == 1
+
+
+# -- acknowledgement fillers ---------------------------------------------------
+
+
+class _RecordingSpeaker(FakeSpeaker):
+    """Records speak() order with the thread each line came from."""
+
+    def __init__(self):
+        super().__init__()
+        import threading
+
+        self.lock = threading.Lock()
+
+    def speak(self, text):
+        import time
+
+        if text in ("Mm.", "Right."):
+            time.sleep(0.05)  # a filler takes a moment to play
+        with self.lock:
+            self.spoken.append(text)
+
+
+def test_filler_spoken_before_first_sentence(tmp_path):
+    loop, _, _, _, brain = make_loop(
+        tmp_path, utterances=["Reachy", "when is standup?"], ack_fillers=["Mm."],
+    )
+    speaker = _RecordingSpeaker()
+    loop._speaker = speaker
+    assert loop.run_once() == "conversation"
+    i = speaker.spoken.index("Mm.")
+    assert speaker.spoken[i + 1] == "answer to when is standup?"  # never interleaved
+
+
+def test_no_filler_on_turn_right_after_greeting(tmp_path):
+    loop, speaker, *_ = make_loop(
+        tmp_path, utterances=[said("Reachy, what's the time?")], voices=[ALICE_VOICE],
+        ack_fillers=["Mm."],
+    )
+    loop.run_once()
+    assert "Mm." not in speaker.spoken     # greeted, then answered: no filler
+
+
+def test_filler_on_later_turns_after_greeting(tmp_path):
+    loop, speaker, *_ = make_loop(
+        tmp_path, utterances=[said("Reachy"), said("q1")], voices=[ALICE_VOICE, ALICE_VOICE],
+        ack_fillers=["Mm."],
+    )
+    loop.run_once()
+    # "Hi Alice!..." then the listen turn: filler before the answer
+    assert speaker.spoken.index("Mm.") < speaker.spoken.index("answer to q1")
+
+
+def test_no_filler_by_default(tmp_path):
+    loop, speaker, *_ = make_loop(tmp_path, utterances=["Reachy", "hi"])
+    loop.run_once()
+    assert not {"Mm.", "Right.", "Okay."} & set(speaker.spoken)
+
+
+def test_filler_then_apology_when_brain_fails(tmp_path):
+    loop, speaker, *_ = make_loop(
+        tmp_path, utterances=["Reachy", "hi"], brain=FakeBrain(fail=True), ack_fillers=["Mm."],
+    )
+    assert loop.run_once() == "conversation"
+    assert speaker.spoken.index("Mm.") < next(
+        i for i, s in enumerate(speaker.spoken) if "sorry" in s.lower())

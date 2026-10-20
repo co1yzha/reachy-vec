@@ -9,6 +9,7 @@ conversation; who is talking is decided by voice alone (never guessed).
 import logging
 import random
 import re
+import threading
 import time
 import uuid
 from datetime import UTC, datetime
@@ -74,6 +75,7 @@ class OracleLoop:
         voice_passive_cap: int = 10,
         enroll_phrases: int = 2,
         barge_in_factory=None,
+        ack_fillers=None,
         settle_s: float = 0.0,
         sleep=time.sleep,
     ):
@@ -88,6 +90,8 @@ class OracleLoop:
         self._voice_passive_cap = voice_passive_cap
         self._enroll_phrases = enroll_phrases
         self._barge_in_factory = barge_in_factory  # None = barge-in disabled
+        # short lines ("Mm.") played while the LLM reads the prompt; empty = off
+        self._ack_fillers = list(ack_fillers or [])
         # Pause before opening the mic so the reverb tail of the robot's own
         # speech isn't captured as the next utterance.
         self._settle_s = settle_s
@@ -116,14 +120,15 @@ class OracleLoop:
             self._maybe_sleep()
             return "idle"
         logger.info("wake word heard: %r", heard.text)
-        self._note_wake()
+        woke_speaking = self._note_wake()
         voice_obs = self._identify_voice(heard.audio)
         if voice_obs is not None and voice_obs.person_id is None:
             event, person = self._offer_enroll(first_audio=heard.audio)
             if person is not None:
-                self._converse(person)  # "Ask me anything" - keep listening
+                # "Ask me anything" - keep listening
+                self._converse(person, just_spoke=True)
             return event
-        self._converse(voice_obs, first_question=rest)
+        self._converse(voice_obs, first_question=rest, just_spoke=woke_speaking)
         return "conversation"
 
     def run_forever(self) -> None:
@@ -135,23 +140,27 @@ class OracleLoop:
 
     # -- states ----------------------------------------------------------
 
-    def _converse(self, voice_obs, first_question: str = "") -> None:
+    def _converse(self, voice_obs, first_question: str = "", just_spoke: bool = False) -> None:
         """voice_obs: known speaker, or None (couldn't tell from the wake
-        utterance - e.g. a bare "Reachy" is too short to embed)."""
+        utterance - e.g. a bare "Reachy" is too short to embed).
+        just_spoke: Reachy already said something since the wake word, so a
+        question asked with the wake word needs no filler."""
         owner = voice_obs if voice_obs is not None and voice_obs.person_id else None
         self._brain.begin_conversation(owner.person_id if owner else None,
                                        owner.name if owner else None)
         if owner is not None:
-            self._greet(owner)
+            just_spoke = self._greet(owner) or just_spoke
         elif not first_question:
             self._speaker.speak("Yes? What can I help you with?")
             self._body.perform("acknowledge")
         pending = first_question  # question asked in the same breath as the wake word
         offered = False
         while True:
+            ack = True
             if pending:
                 text, audio, pending = pending, None, ""
                 turn_voice = voice_obs  # same utterance as the wake word
+                ack = not just_spoke  # a greeting already covered the wait
             else:
                 self._body.perform("listen")
                 utterance = self._listen(self._silence_timeout_s)
@@ -164,7 +173,7 @@ class OracleLoop:
                 if owner is None and turn_voice is not None and turn_voice.person_id:
                     owner = turn_voice  # recognized mid-conversation
                     self._deliver_messages(owner.person_id)
-            if self._reply(text, turn_voice):
+            if self._reply(text, turn_voice, ack=ack):
                 self._maybe_bank_voice(turn_voice, audio)
                 continue  # interrupted: user is already talking, skip the nod
             self._body.perform("nod")
@@ -178,38 +187,64 @@ class OracleLoop:
                 offered = True
                 _event, owner = self._offer_enroll(first_audio=audio)
 
-    def _greet(self, person) -> None:
+    def _greet(self, person) -> bool:
+        """Greet (outside the cooldown) and deliver messages; True if spoken."""
+        spoke = False
         if self._cooldown_expired(person.person_id):
             self._speaker.speak(f"Hi {person.name}! What can I help you with?")
             self._body.perform("greet")
             self._record_greeting(person.person_id)
+            spoke = True
         else:
             self._body.perform("acknowledge")
-        self._deliver_messages(person.person_id)
+        return self._deliver_messages(person.person_id) or spoke
 
-    def _reply(self, text: str, voice_obs) -> bool:
-        """Answer one turn; returns True if the reply was barged in on."""
+    def _reply(self, text: str, voice_obs, ack: bool = True) -> bool:
+        """Answer one turn; returns True if the reply was barged in on.
+
+        With ack, a short filler plays on a background thread while the LLM
+        reads the prompt; the first real sentence waits for it to finish.
+        """
         monitor = self._barge_in_factory() if self._barge_in_factory else None
         if monitor is not None:
             monitor.start(on_fire=self._speaker.stop)
+        filler = self._start_filler() if ack else None
+
+        def speak(sentence):
+            if filler is not None:
+                filler.join()  # never talk over our own filler
+            self._speaker.speak(sentence)
+
+        if monitor is not None:
 
             def on_sentence(sentence, _m=monitor):
                 if _m.fired:
                     raise SpeechInterrupted()
-                self._speaker.speak(sentence)
+                speak(sentence)
         else:
-            on_sentence = self._speaker.speak
+            on_sentence = speak
         try:
             # sentences are spoken as they stream in; respond blocks
             # until the reply is complete
             self._brain.respond(text, identity=from_voice(voice_obs), on_sentence=on_sentence)
         except Exception:
             logger.exception("brain.respond failed")
-            self._speaker.speak(APOLOGY)
+            speak(APOLOGY)
         finally:
+            if filler is not None:
+                filler.join()
             if monitor is not None:
                 monitor.stop()
         return monitor is not None and monitor.fired
+
+    def _start_filler(self) -> threading.Thread | None:
+        if not self._ack_fillers:
+            return None
+        thread = threading.Thread(
+            target=self._speaker.speak, args=(random.choice(self._ack_fillers),), daemon=True
+        )
+        thread.start()
+        return thread
 
     def _listen(self, timeout_s: float):
         if self._settle_s > 0:
@@ -308,13 +343,17 @@ class OracleLoop:
         )
         return True
 
-    def _deliver_messages(self, person_id: str) -> None:
+    def _deliver_messages(self, person_id: str) -> bool:
+        """Speak pending messages; True if any were delivered."""
+        delivered = False
         for msg in self._store.pending_messages_for(person_id):
             self._speaker.speak(
                 f"By the way, {msg.from_name} left you a message: {msg.text}"
             )
             self._store.mark_delivered(msg.message_id)
             logger.info("delivered message %s to %s", msg.message_id, msg.to_name)
+            delivered = True
+        return delivered
 
     # -- wake/sleep --------------------------------------------------------
 
@@ -324,7 +363,8 @@ class OracleLoop:
             self._body.perform("sleep")
             self._asleep = True
 
-    def _note_wake(self) -> None:
+    def _note_wake(self) -> bool:
+        """Reset the idle timer; wake with a spoken flourish. True if spoken."""
         self._last_wake_at = self._clock()
         if self._asleep:
             logger.info("wake word while asleep - waking up")
@@ -332,6 +372,8 @@ class OracleLoop:
             self._body.perform("wakeup")
             self._speaker.speak(random.choice(WAKE_LINES))
             self._asleep = False
+            return True
+        return False
 
     # -- helpers ----------------------------------------------------------
 
