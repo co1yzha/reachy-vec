@@ -813,3 +813,60 @@ def test_warm_up_failure_is_non_fatal(tmp_path):
         chat = _Chat()
 
     assert make_brain(tmp_path, Down()).warm_up() is False
+
+
+ALICE, BOB = TurnIdentity("p1", "Alice"), TurnIdentity("p2", "Bob")
+
+
+def _last_user(client):
+    return client.chat.completions.last_kwargs["messages"][-1]["content"]
+
+
+def test_no_change_note_on_first_identified_turn(tmp_path):
+    client = FakeLLMClient()
+    brain = make_brain(tmp_path, client)
+    brain.respond("q1", identity=ALICE)
+    assert "Speaker changed" not in _last_user(client)
+
+
+def test_change_note_when_recognised_speaker_changes(tmp_path):
+    client = FakeLLMClient()
+    brain = make_brain(tmp_path, client)
+    brain.respond("q1", identity=ALICE)
+    brain.respond("q2", identity=BOB)
+    assert _last_user(client).startswith("(Speaker changed: now Bob.)\n")
+
+
+def test_anonymous_turn_is_not_a_change_and_has_no_name(tmp_path):
+    client = FakeLLMClient()
+    brain = make_brain(tmp_path, client)
+    brain.respond("q1", identity=ALICE)
+    brain.respond("q2", identity=None)
+    assert "Speaker changed" not in _last_user(client)
+    assert "Alice" not in _last_user(client)
+    brain.respond("q3", identity=ALICE)
+    assert "Speaker changed" not in _last_user(client)
+
+
+def test_change_across_anonymous_turn(tmp_path):
+    client = FakeLLMClient()
+    brain = make_brain(tmp_path, client)
+    brain.respond("q1", identity=ALICE)
+    brain.respond("q2", identity=None)
+    brain.respond("q3", identity=BOB)
+    assert _last_user(client).startswith("(Speaker changed: now Bob.)\n")
+
+
+def test_reset_forgets_last_speaker(tmp_path):
+    client = FakeLLMClient()
+    brain = make_brain(tmp_path, client)
+    brain.respond("q1", identity=ALICE)
+    brain.reset()
+    brain.respond("q2", identity=BOB)
+    assert "Speaker changed" not in _last_user(client)
+
+
+def test_personality_has_name_rule():
+    from reachy_vec.brain.chat import PERSONALITY
+
+    assert "use their first name occasionally" in PERSONALITY

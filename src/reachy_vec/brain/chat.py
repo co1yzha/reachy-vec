@@ -66,6 +66,9 @@ PERSONALITY = (
     "not in front of you, simply say you don't know rather than making "
     "something up, and offer to find out or point to who might. If you are "
     "unsure, say so plainly.\n\n"
+    "When you know who is speaking, use their first name occasionally: in "
+    "your first reply, when the speaker changes, and when it helps. Never in "
+    "every sentence. If the speaker is unknown, use no name.\n\n"
     "Tools: open_url opens a web page in the browser (take the URL from "
     "context) - use it ONLY when the user explicitly asks you to open, show, or "
     "pull something up; never offer to open things and never open anything "
@@ -354,6 +357,7 @@ class ChatBrain:
         self._person_id: str | None = None
         self._person_name: str | None = None
         self._turn: TurnIdentity = ANONYMOUS
+        self._last_speaker_id: str | None = None
         self._participants: dict[str, str | None] = {}
         self._exchanges = 0
         from reachy_vec.config import settings
@@ -390,6 +394,7 @@ class ChatBrain:
         self._person_id = None
         self._person_name = None
         self._turn = ANONYMOUS
+        self._last_speaker_id = None
         self._participants = {}
         self._exchanges = 0
 
@@ -409,11 +414,16 @@ class ChatBrain:
         self._question = question
         if self._turn.person_id:
             self._participants[self._turn.person_id] = self._turn.name
+        change_note = ""
+        if self._turn.person_id:
+            if self._last_speaker_id and self._last_speaker_id != self._turn.person_id:
+                change_note = f"(Speaker changed: now {self._turn.name}.)\n"
+            self._last_speaker_id = self._turn.person_id
         vector = self._embedder.embed_query(question)
         self._history.append(
             {
                 "role": "user",
-                "content": CONTEXT_TEMPLATE.format(
+                "content": change_note + CONTEXT_TEMPLATE.format(
                     context=self._retrieve_docs(vector, question)
                     or "(nothing relevant found)",
                     memories=self._retrieve_memories(vector),
