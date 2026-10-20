@@ -322,6 +322,7 @@ class ChatBrain:
         selfie_fn: Callable[[], str] | None = None,
         look_around_fn: Callable[[], str] | None = None,
         open_url_triggers: list[str] | None = None,
+        disable_thinking: bool = False,
     ):
         self._store = store
         self._embedder = embedder
@@ -333,6 +334,9 @@ class ChatBrain:
             if reasoning_effort and model.startswith("gpt-5")
             else {}
         )
+        if disable_thinking:
+            # local Qwen via oMLX: skip the reasoning phase (latency); never sent to OpenAI
+            self._llm_kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
         self._opener = opener
         self._k = k
         if web_search_fetch is None and web_search:

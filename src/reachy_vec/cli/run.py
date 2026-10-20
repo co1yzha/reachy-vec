@@ -144,7 +144,7 @@ def run(
     from reachy_vec.audio.vocab import VocabSnappingTranscriber
     from reachy_vec.body.robot import make_robot
     from reachy_vec.brain.chat import ChatBrain
-    from reachy_vec.brain.llm import make_llm_client
+    from reachy_vec.brain.llm import make_llm_client, uses_local_llm
     from reachy_vec.brain.oracle import OracleLoop
     from reachy_vec.perception.voice import EcapaSpeakerIdentifier
     from reachy_vec.store.db import Store
@@ -224,6 +224,7 @@ def run(
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
         web_search=settings.web_search,
+        disable_thinking=uses_local_llm() and settings.llm_disable_thinking,
     )
     loop = OracleLoop(
         transcriber=transcriber,

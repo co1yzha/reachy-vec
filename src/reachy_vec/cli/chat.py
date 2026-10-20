@@ -11,7 +11,7 @@ def chat() -> None:
     """Chat with Reachy in the terminal (history + tools, no robot needed)."""
     from dotenv import load_dotenv
 
-    from reachy_vec.brain.llm import make_llm_client
+    from reachy_vec.brain.llm import make_llm_client, uses_local_llm
 
     load_dotenv()  # expose OPENAI_API_KEY from .env to the openai SDK
 
@@ -28,5 +28,6 @@ def chat() -> None:
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
         web_search=settings.web_search,
+        disable_thinking=uses_local_llm() and settings.llm_disable_thinking,
     )
     chat_loop(brain=brain)

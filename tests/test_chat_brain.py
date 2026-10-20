@@ -35,7 +35,7 @@ def seeded_store(tmp_path) -> Store:
 
 
 def make_brain(tmp_path, client, opener=None, web_search_fetch=None,
-               look_around_fn=None):
+               look_around_fn=None, disable_thinking=False):
     return ChatBrain(
         store=seeded_store(tmp_path),
         embedder=FakeEmbedder(),
@@ -44,6 +44,7 @@ def make_brain(tmp_path, client, opener=None, web_search_fetch=None,
         opener=opener or (lambda url: None),
         web_search_fetch=web_search_fetch,
         look_around_fn=look_around_fn,
+        disable_thinking=disable_thinking,
     )
 
 
@@ -718,3 +719,31 @@ def test_system_prompt_does_not_push_demos():
     assert "inside out" not in PERSONALITY
     open_url = next(t for t in TOOLS if t["function"]["name"] == "open_url")
     assert "explicitly" in open_url["function"]["description"]
+
+
+def test_disable_thinking_reaches_every_create_call(tmp_path):
+    tool_call = FakeToolCall(
+        "open_url", json.dumps({"url": "https://example.org/food", "title": "Food"})
+    )
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("Opening it."),
+            FakeChoiceMessage("[]"),
+        ]
+    )
+    brain = make_brain(tmp_path, client, disable_thinking=True)
+    brain.begin_conversation(YANG.person_id, YANG.name)
+    brain.respond("open the food demo", identity=YANG, on_sentence=lambda s: None)
+    brain.end_conversation()
+    calls = client.chat.completions.calls
+    assert len(calls) == 3  # tool-call turn, follow-up, summary
+    for call in calls:
+        assert call["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_no_extra_body_by_default(tmp_path):
+    client = FakeLLMClient(reply="hi")
+    brain = make_brain(tmp_path, client)
+    brain.respond("hello")
+    assert "extra_body" not in client.chat.completions.last_kwargs
