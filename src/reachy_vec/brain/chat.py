@@ -16,6 +16,7 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from reachy_vec.brain.hermes import HermesJobs
 from reachy_vec.perception.fusion import ANONYMOUS, TurnIdentity
 from reachy_vec.store.db import Store
 from reachy_vec.store.embeddings import Embedder
@@ -174,6 +175,31 @@ WEB_SEARCH_HINT = (
     "own knowledge (it costs a limited search budget, so don't use it for chit-chat)."
 )
 
+ASK_HERMES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "ask_hermes",
+        "description": (
+            "Delegate a multi-step task needing research, web browsing, scheduling a "
+            "reminder, or a task-board entry. Not for questions you can answer from "
+            "the provided context."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"task": {"type": "string", "description": "the task to delegate"}},
+            "required": ["task"],
+        },
+    },
+}
+
+ASK_HERMES_HINT = (
+    " ask_hermes hands a task to your agent colleague Hermes; reminders and "
+    "task-board entries need a recognised speaker - if the speaker is unknown, "
+    "say you can only schedule things for people you know."
+)
+
+HERMES_HOLDING_LINE = "Let me look into that."
+
 LOOK_TOOL = {
     "type": "function",
     "function": {
@@ -326,6 +352,7 @@ class ChatBrain:
         look_around_fn: Callable[[], str] | None = None,
         open_url_triggers: list[str] | None = None,
         disable_thinking: bool = False,
+        hermes: HermesJobs | None = None,
     ):
         self._store = store
         self._embedder = embedder
@@ -349,6 +376,8 @@ class ChatBrain:
             else:
                 logger.warning("web_search enabled but TAVILY_API_KEY missing; disabling")
         self._web_search_fetch = web_search_fetch
+        self._hermes = hermes
+        self._on_sentence: Callable[[str], None] | None = None
         self._look_fn = look_fn
         self._selfie_fn = selfie_fn
         self._look_around_fn = look_around_fn
@@ -394,6 +423,7 @@ class ChatBrain:
         self._person_id = None
         self._person_name = None
         self._turn = ANONYMOUS
+        self._on_sentence = None
         self._last_speaker_id = None
         self._participants = {}
         self._exchanges = 0
@@ -412,6 +442,7 @@ class ChatBrain:
         after the first sentence instead of the full reply)."""
         self._turn = identity or ANONYMOUS
         self._question = question
+        self._on_sentence = on_sentence
         if self._turn.person_id:
             self._participants[self._turn.person_id] = self._turn.name
         change_note = ""
@@ -448,6 +479,7 @@ class ChatBrain:
             }
         )
         self._exchanges += 1
+        self._on_sentence = None
         self._trim()
         logger.info(
             "reply to %s: %r%s",
@@ -481,6 +513,8 @@ class ChatBrain:
         tools = list(TOOLS)
         if self._web_search_fetch:
             tools.append(WEB_SEARCH_TOOL)
+        if self._hermes:
+            tools.append(ASK_HERMES_TOOL)
         if self._look_fn:
             tools.append(LOOK_TOOL)
         if self._selfie_fn:
@@ -493,6 +527,8 @@ class ChatBrain:
         prompt = PERSONALITY
         if self._web_search_fetch:
             prompt += WEB_SEARCH_HINT
+        if self._hermes:
+            prompt += ASK_HERMES_HINT
         if self._look_fn:
             prompt += LOOK_HINT
         if self._selfie_fn:
@@ -588,6 +624,7 @@ class ChatBrain:
             "get_weather": self._tool_get_weather,
             "get_time": self._tool_get_time,
             "web_search": self._tool_web_search,
+            "ask_hermes": self._tool_ask_hermes,
             "look": self._tool_look,
             "selfie": self._tool_selfie,
             "look_around": self._tool_look_around,
@@ -595,6 +632,19 @@ class ChatBrain:
         handler = handlers.get(call.function.name)
         result = handler(args) if handler else "unknown tool"
         return {"role": "tool", "tool_call_id": call.id, "content": result}
+
+    def _tool_ask_hermes(self, args: dict) -> str:
+        task = (args.get("task") or "").strip()
+        if not task or self._hermes is None:
+            return "can't ask: empty task"
+        if self._on_sentence:
+            try:
+                self._on_sentence(HERMES_HOLDING_LINE)
+            except SpeechInterrupted:
+                pass  # barge-in on the holding line: still wait for the answer
+        return self._hermes.ask(
+            task, requester_id=self._turn.person_id, requester_name=self._turn.name
+        )
 
     def _tool_open_url(self, args: dict) -> str:
         if not self._open_url_pattern.search(self._question):

@@ -35,7 +35,7 @@ def seeded_store(tmp_path) -> Store:
 
 
 def make_brain(tmp_path, client, opener=None, web_search_fetch=None,
-               look_around_fn=None, disable_thinking=False):
+               look_around_fn=None, disable_thinking=False, hermes=None):
     return ChatBrain(
         store=seeded_store(tmp_path),
         embedder=FakeEmbedder(),
@@ -45,6 +45,7 @@ def make_brain(tmp_path, client, opener=None, web_search_fetch=None,
         web_search_fetch=web_search_fetch,
         look_around_fn=look_around_fn,
         disable_thinking=disable_thinking,
+        hermes=hermes,
     )
 
 
@@ -870,3 +871,79 @@ def test_personality_has_name_rule():
     from reachy_vec.brain.chat import PERSONALITY
 
     assert "use their first name occasionally" in PERSONALITY
+
+
+def _hermes_brain(tmp_path, agent, tool_args=None):
+    from reachy_vec.brain.hermes import HermesJobs
+
+    store = seeded_store(tmp_path)
+    jobs = HermesJobs(agent, store, wait_s=1.0, task_timeout_s=5)
+    call = FakeToolCall("ask_hermes", json.dumps(tool_args or {"task": "research X"}))
+    client = FakeLLMClient(
+        messages=[FakeChoiceMessage(None, tool_calls=[call]), FakeChoiceMessage("Done: X shipped.")]
+    )
+    brain = ChatBrain(
+        store=store, embedder=FakeEmbedder(), client=client, model="gpt-4o", hermes=jobs
+    )
+    return brain, client
+
+
+def test_ask_hermes_absent_by_default(tmp_path):
+    brain = make_brain(tmp_path, FakeLLMClient())
+    assert not any(t["function"]["name"] == "ask_hermes" for t in brain._active_tools())
+    assert "ask_hermes" not in brain._system_prompt()
+
+
+def test_ask_hermes_offered_when_configured(tmp_path):
+    from tests.conftest import FakeAgent
+
+    brain, _ = _hermes_brain(tmp_path, FakeAgent(["ok"]))
+    assert any(t["function"]["name"] == "ask_hermes" for t in brain._active_tools())
+    assert "ask_hermes" in brain._system_prompt()
+
+
+def test_ask_hermes_passes_identity_and_speaks_holding_line(tmp_path):
+    from tests.conftest import FakeAgent
+
+    agent = FakeAgent(["X shipped."])
+    brain, _ = _hermes_brain(tmp_path, agent)
+    sentences = []
+    brain.respond("research X", identity=YANG, on_sentence=sentences.append)
+    assert sentences[0] == "Let me look into that."
+    assert agent.calls == [("research X", "Yang")]
+
+
+def test_ask_hermes_anonymous_passes_none(tmp_path):
+    from tests.conftest import FakeAgent
+
+    agent = FakeAgent(["X shipped."])
+    brain, _ = _hermes_brain(tmp_path, agent)
+    brain.respond("research X", on_sentence=lambda s: None)
+    assert agent.calls[0][1] is None
+
+
+def test_ask_hermes_empty_task(tmp_path):
+    from tests.conftest import FakeAgent
+
+    agent = FakeAgent([])
+    brain, _ = _hermes_brain(tmp_path, agent, tool_args={"task": "  "})
+    brain.respond("hmm", identity=YANG, on_sentence=lambda s: None)
+    assert agent.calls == []
+    tool_msgs = [m for m in brain._history if m.get("role") == "tool"]
+    assert tool_msgs[0]["content"] == "can't ask: empty task"
+
+
+def test_barge_in_on_holding_line_still_waits(tmp_path):
+    from tests.conftest import FakeAgent
+
+    agent = FakeAgent(["X shipped."])
+    brain, _ = _hermes_brain(tmp_path, agent)
+
+    def interrupt(sentence):
+        if sentence == "Let me look into that.":
+            raise SpeechInterrupted
+
+    brain.respond("research X", identity=YANG, on_sentence=interrupt)
+    assert agent.calls == [("research X", "Yang")]
+    tool_msgs = [m for m in brain._history if m.get("role") == "tool"]
+    assert tool_msgs[0]["content"] == "X shipped."
