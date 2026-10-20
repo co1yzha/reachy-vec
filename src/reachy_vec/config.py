@@ -105,7 +105,12 @@ class Settings(BaseSettings):
     greet_cooldown_s: float = 7200.0  # full spoken greeting at most every 2h
     silence_timeout_s: float = 30.0   # end conversation after this much quiet
     idle_sleep_s: float = 300.0       # not called for this long -> robot sleeps
-    wake_words: list[str] = ["reachy", "reachie", "reechy", "reachi", "richie", "ritchie"]
+    wake_words: list[str] = [
+        "reachy", "reachie", "reechy", "reachi", "reache", "reachee", "reechie", "reechi",
+        "rechy", "rachie", "richie", "ritchie", "ritchy",
+    ]
+    # mishearings of "Reachy" that are not everyday words - "reach", "reaching",
+    # "ready", "rich" are deliberately absent (they'd wake the robot constantly)
     # transcript words that start a conversation (incl. common STT mishearings);
     # env form: REACHY_VEC_WAKE_WORDS='["reachy","richie"]'
     wake_listen_s: float = 5.0  # idle listen window; loops forever between windows

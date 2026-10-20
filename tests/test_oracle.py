@@ -542,3 +542,36 @@ def test_filler_then_apology_when_brain_fails(tmp_path):
     assert loop.run_once() == "conversation"
     assert speaker.spoken.index("Mm.") < next(
         i for i, s in enumerate(speaker.spoken) if "sorry" in s.lower())
+
+
+WAKE_VARIANTS = ["reachy", "reachie", "reechy", "reachi", "reache", "reachee", "reechie",
+                 "reechi", "rechy", "rachie", "richie", "ritchie", "ritchy"]
+
+
+@pytest.mark.parametrize("word", WAKE_VARIANTS)
+def test_default_wake_words_cover_mishearings(word):
+    from reachy_vec.config import Settings
+
+    words = Settings.model_fields["wake_words"].default
+    assert split_wake(f"hey {word.title()}, what's up", words) == "what's up"
+
+
+def test_possessive_still_wakes():
+    from reachy_vec.config import Settings
+
+    assert split_wake("Reachy's here", Settings.model_fields["wake_words"].default) is not None
+
+
+@pytest.mark.parametrize("text", ["I'm reaching.", "can you reach it", "we're ready",
+                                  "they reached out", "that's rich", "peachy keen"])
+def test_everyday_words_do_not_wake(text):
+    from reachy_vec.config import Settings
+
+    assert split_wake(text, Settings.model_fields["wake_words"].default) is None
+
+
+def test_oracle_default_matches_config_default():
+    from reachy_vec.brain.oracle import DEFAULT_WAKE_WORDS
+    from reachy_vec.config import Settings
+
+    assert list(DEFAULT_WAKE_WORDS) == Settings.model_fields["wake_words"].default

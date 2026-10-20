@@ -66,7 +66,9 @@ keys are ignored.
 |---|---|---|
 | `GREET_COOLDOWN_S` | `7200` | spoken "Hi <name>!" at most every 2 h per person; within cooldown = silent acknowledge |
 | `SILENCE_TIMEOUT_S` | `30` | quiet time that ends a conversation (triggers memory distillation) |
-| `WAKE_WORDS` | `["reachy", "reachie", "reechy", "reachi", "richie", "ritchie"]` | transcript words that start a conversation (incl. STT mishearings); words after it are the first question. Env form: JSON list |
+| `WAKE_WORDS` | 13 spellings: `reachy`, `reachie`, `reechy`, `reachi`, `reache`, `reachee`, `reechie`, `reechi`, `rechy`, `rachie`, `richie`, `ritchie`, `ritchy` | whole words that start a conversation; words after it are the first question. Mishearings only — everyday words like "reach", "reaching", "ready", "rich" are left out on purpose (they'd wake the robot constantly; spelling-similarity matching was measured and rejected for the same reason). Add misses you see in `data/reachy.log`. Env form: JSON list |
+| `STT_HOTWORDS` | `Reachy` | biases local whisper toward spelling the wake word correctly; empty = off (clear it if noise causes false wakes) |
+| `RAG_K` / `RAG_MIN_SCORE` | `3` / `0.62` | at most this many retrieved chunks per turn, each scoring ≥ the floor (bge-small: small talk 0.45–0.61, demo questions 0.66–0.78), so chit-chat sends no demo text |
 | `WAKE_LISTEN_S` | `5` | idle listen window; loops forever between windows |
 | `IDLE_SLEEP_S` | `300` | not woken for this long → sleep motion; wakes on the next "Reachy" |
 | `BARGE_IN` | `true` | let someone talk over a reply to interrupt it; the current sentence stops and their utterance becomes the next turn. `false` = reply always plays to the end |
