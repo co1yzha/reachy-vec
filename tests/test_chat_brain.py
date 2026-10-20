@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from reachy_vec.brain.chat import ChatBrain, SpeechInterrupted
 from reachy_vec.perception.fusion import TurnIdentity
 from reachy_vec.store.db import Store
@@ -295,16 +297,17 @@ def test_end_conversation_skips_summary_when_no_exchange(tmp_path):
 
 
 def enroll_bob(store):
-    from reachy_vec.store.schemas import FaceRow
+    from reachy_vec.store.schemas import VOICE_EMBEDDING_DIM, VoiceRow
 
-    store.add_face_rows(
+    store.add_voice_rows(
         [
-            FaceRow(
-                embedding_id="p2:0",
+            VoiceRow(
+                voice_id="p2:0",
                 person_id="p2",
                 name="Bob",
-                vector=[0.5] * 512,
+                vector=[0.5] * VOICE_EMBEDDING_DIM,
                 created_at="2026-07-07T00:00:00+00:00",
+                source="enrolled",
             )
         ]
     )
@@ -663,3 +666,55 @@ def test_selfie_tool_failure_is_friendly(tmp_path):
         selfie_fn=boom,
     )
     assert "couldn't take" in brain._tool_selfie({}).lower()
+
+
+# -- open_url only on an explicit request ---------------------------------------
+
+
+def _open_url_brain(tmp_path, opened):
+    tool_call = FakeToolCall("open_url", json.dumps({"url": "https://example.org/food"}))
+    client = FakeLLMClient(
+        messages=[
+            FakeChoiceMessage(None, tool_calls=[tool_call]),
+            FakeChoiceMessage("Food Mapping maps food deserts."),
+        ]
+    )
+    return make_brain(tmp_path, client, opener=opened.append), client
+
+
+def test_open_url_not_executed_without_explicit_request(tmp_path):
+    opened: list[str] = []
+    brain, client = _open_url_brain(tmp_path, opened)
+    reply = brain.respond("any demos about food?", identity=YANG)
+    assert opened == []                                # model tried; guard refused
+    assert reply == "Food Mapping maps food deserts."  # still answers
+    tool_results = [m for m in client.chat.completions.calls[1]["messages"]
+                    if m.get("role") == "tool"]
+    assert "didn't ask" in tool_results[0]["content"]
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["can you show me the food demo", "pull up food mapping", "Open it please",
+     "bring up the food one", "launch the food mapping demo"],
+)
+def test_open_url_executed_on_explicit_request(tmp_path, question):
+    opened: list[str] = []
+    brain, _ = _open_url_brain(tmp_path, opened)
+    brain.respond(question, identity=YANG)
+    assert opened == ["https://example.org/food"]
+
+
+def test_open_url_trigger_needs_whole_word(tmp_path):
+    opened: list[str] = []
+    brain, _ = _open_url_brain(tmp_path, opened)
+    brain.respond("is the lab openness policy on the wiki?", identity=YANG)
+    assert opened == []
+
+
+def test_system_prompt_does_not_push_demos():
+    from reachy_vec.brain.chat import PERSONALITY, TOOLS
+
+    assert "inside out" not in PERSONALITY
+    open_url = next(t for t in TOOLS if t["function"]["name"] == "open_url")
+    assert "explicitly" in open_url["function"]["description"]

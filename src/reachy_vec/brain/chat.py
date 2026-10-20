@@ -10,6 +10,7 @@ three memories about the person into the store.
 import json
 import logging
 import os
+import re
 import subprocess
 import uuid
 from collections.abc import Callable
@@ -29,8 +30,9 @@ class SpeechInterrupted(Exception):
 
 PERSONALITY = (
     "You are Reachy, the team's desk robot - a small, expressive robot that "
-    "works as the lab's resident data scientist and knows the team's demo "
-    "library inside out. Your personality is that of a seasoned professional: "
+    "works as the lab's resident data scientist; you can talk about the team's "
+    "demos when someone asks, but they are not your default topic. Your "
+    "personality is that of a seasoned professional: "
     "calm, measured, and precise. You are courteous and approachable, but you "
     "lead with clarity - plain, well-chosen words, no hype and no filler. You "
     "care about rigour: a clean pipeline, a well-constructed chart, and a "
@@ -64,7 +66,10 @@ PERSONALITY = (
     "not in front of you, simply say you don't know rather than making "
     "something up, and offer to find out or point to who might. If you are "
     "unsure, say so plainly.\n\n"
-    "Tools: open_url opens a demo in the browser (take the URL from context); "
+    "Tools: open_url opens a web page in the browser (take the URL from "
+    "context) - use it ONLY when the user explicitly asks you to open, show, or "
+    "pull something up; never offer to open things and never open anything "
+    "unprompted; "
     "save_note stores something worth remembering about this person when they "
     "ask you to remember, or share a clear preference; send_message relays a "
     "spoken message to an enrolled teammate next time you see them; "
@@ -77,7 +82,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "open_url",
-            "description": "Open a web page (e.g. a team demo) in the browser on the lab PC.",
+            "description": (
+                "Open a web page in the browser on the lab PC - only when the user "
+                "explicitly asks to open or show it."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -127,7 +135,7 @@ TOOLS = [
             "name": "send_message",
             "description": (
                 "Relay a message to an enrolled teammate; it is spoken to them "
-                "the next time the robot sees their face."
+                "the next time they talk to the robot."
             ),
             "parameters": {
                 "type": "object",
@@ -313,6 +321,7 @@ class ChatBrain:
         look_fn: Callable[[str], str] | None = None,
         selfie_fn: Callable[[], str] | None = None,
         look_around_fn: Callable[[], str] | None = None,
+        open_url_triggers: list[str] | None = None,
     ):
         self._store = store
         self._embedder = embedder
@@ -336,6 +345,7 @@ class ChatBrain:
         self._look_fn = look_fn
         self._selfie_fn = selfie_fn
         self._look_around_fn = look_around_fn
+        self._question = ""  # this turn's user words, for the open_url guard
         self._history: list[dict] = []
         self._person_id: str | None = None
         self._person_name: str | None = None
@@ -344,6 +354,10 @@ class ChatBrain:
         self._exchanges = 0
         from reachy_vec.config import settings
 
+        triggers = open_url_triggers or settings.open_url_trigger_words
+        self._open_url_pattern = re.compile(
+            r"\b(?:" + "|".join(re.escape(t) for t in triggers) + r")\b", re.IGNORECASE
+        )
         self._weather_fetch = lambda: fetch_open_meteo(
             settings.weather_lat, settings.weather_lon
         )
@@ -388,6 +402,7 @@ class ChatBrain:
         and each completed sentence is emitted as it arrives (speech starts
         after the first sentence instead of the full reply)."""
         self._turn = identity or ANONYMOUS
+        self._question = question
         if self._turn.person_id:
             self._participants[self._turn.person_id] = self._turn.name
         vector = self._embedder.embed_query(question)
@@ -540,6 +555,10 @@ class ChatBrain:
         return {"role": "tool", "tool_call_id": call.id, "content": result}
 
     def _tool_open_url(self, args: dict) -> str:
+        if not self._open_url_pattern.search(self._question):
+            # local models over-eagerly open demos; only an explicit ask counts
+            logger.info("open_url suppressed - not requested: %r", self._question)
+            return "not opened: the user didn't ask to open anything - just answer them"
         url = args.get("url", "")
         if not url.startswith(("http://", "https://")):
             return f"refused: {url!r} is not an http(s) URL"
@@ -553,7 +572,7 @@ class ChatBrain:
 
     def _tool_save_note(self, args: dict) -> str:
         if not self._turn.person_id:
-            return "can't save: I don't know who's speaking (not a recognized voice/face)"
+            return "can't save: I don't know who's speaking (not a recognized voice)"
         note = args.get("note", "").strip()
         if not note:
             return "can't save an empty note"
@@ -637,7 +656,7 @@ class ChatBrain:
 
     def _tool_send_message(self, args: dict) -> str:
         if not self._turn.person_id:
-            return "can't send: I don't know who's asking (not a recognized voice/face)"
+            return "can't send: I don't know who's asking (not a recognized voice)"
         to_name = args.get("to_name", "").strip()
         text = args.get("message", "").strip()
         if not to_name or not text:
