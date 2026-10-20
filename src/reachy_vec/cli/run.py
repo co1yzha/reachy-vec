@@ -137,7 +137,6 @@ def run(
 ) -> None:
     """Run the Oracle: say "Reachy" to start a voice Q&A; people are known by voice."""
     from dotenv import load_dotenv
-    from openai import OpenAI
 
     from reachy_vec.audio.listen import MicTranscriber, make_transcriber
     from reachy_vec.audio.sources import RobotAudioSource
@@ -145,6 +144,7 @@ def run(
     from reachy_vec.audio.vocab import VocabSnappingTranscriber
     from reachy_vec.body.robot import make_robot
     from reachy_vec.brain.chat import ChatBrain
+    from reachy_vec.brain.llm import make_llm_client
     from reachy_vec.brain.oracle import OracleLoop
     from reachy_vec.perception.voice import EcapaSpeakerIdentifier
     from reachy_vec.store.db import Store
@@ -181,7 +181,7 @@ def run(
     embedder = BgeEmbedder(
         settings.embedding_model, query_prefix=settings.embedding_query_prefix
     )
-    client = OpenAI()
+    client = make_llm_client()
 
     # Demo titles are matched *after* transcription (audio/vocab.py) — feeding
     # them to STT as a prompt made it hallucinate titles verbatim on echo/noise.

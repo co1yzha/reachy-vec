@@ -10,7 +10,8 @@ from reachy_vec.store.embeddings import BgeEmbedder
 def chat() -> None:
     """Chat with Reachy in the terminal (history + tools, no robot needed)."""
     from dotenv import load_dotenv
-    from openai import OpenAI
+
+    from reachy_vec.brain.llm import make_llm_client
 
     load_dotenv()  # expose OPENAI_API_KEY from .env to the openai SDK
 
@@ -23,7 +24,7 @@ def chat() -> None:
         embedder=BgeEmbedder(
             settings.embedding_model, query_prefix=settings.embedding_query_prefix
         ),
-        client=OpenAI(),
+        client=make_llm_client(),
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
         web_search=settings.web_search,

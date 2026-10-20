@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Models
     llm_model: str = "gpt-5-mini"
     llm_reasoning_effort: str = "minimal"  # gpt-5* only; keeps time-to-first-sentence low
+    llm_base_url: str | None = None  # local OpenAI-compatible server (oMLX); None = OpenAI cloud
+    llm_api_key: str | None = None  # key for that server; never logged
+    llm_disable_thinking: bool = True  # local only: send enable_thinking=False
+    llm_timeout_s: float = 30.0  # local client request timeout
     stt_model: str = "base.en"  # faster-whisper size; english-only = fastest + most accurate for EN
     stt_backend: str = "local"  # local (faster-whisper) | openai (gpt-4o-transcribe)
     embedding_model: str = "BAAI/bge-small-en-v1.5"
