@@ -947,3 +947,18 @@ def test_barge_in_on_holding_line_still_waits(tmp_path):
     assert agent.calls == [("research X", "Yang")]
     tool_msgs = [m for m in brain._history if m.get("role") == "tool"]
     assert tool_msgs[0]["content"] == "X shipped."
+
+
+def test_ask_hermes_busy_skips_holding_line(tmp_path):
+    from reachy_vec.brain.hermes import BUSY
+    from tests.conftest import FakeAgent
+
+    agent = FakeAgent([])
+    brain, _ = _hermes_brain(tmp_path, agent)
+    brain._hermes._future = type("F", (), {"done": lambda self: False})()
+    sentences = []
+    brain.respond("research X", identity=YANG, on_sentence=sentences.append)
+    assert "Let me look into that." not in sentences
+    assert agent.calls == []
+    tool_msgs = [m for m in brain._history if m.get("role") == "tool"]
+    assert tool_msgs[0]["content"] == BUSY

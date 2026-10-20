@@ -27,3 +27,11 @@ def test_local_without_key_sends_placeholder():  # openai SDK requires a non-emp
 def test_uses_local_llm():
     assert uses_local_llm(Settings(llm_base_url="http://x/v1"))
     assert not uses_local_llm(Settings(llm_base_url=None))
+
+
+def test_empty_base_url_is_cloud():
+    s = Settings(llm_base_url="")
+    assert not uses_local_llm(s)
+    seen = {}
+    make_llm_client(s, openai_cls=lambda **kw: seen.update(kw))
+    assert seen == {}

@@ -1,5 +1,6 @@
 """LanceDB connection and vector-search helpers."""
 
+import threading
 from datetime import UTC
 from pathlib import Path
 
@@ -33,11 +34,13 @@ class Store:
 
     def __init__(self, db_path: Path):
         self._db = lancedb.connect(db_path)
+        self._lock = threading.RLock()  # Hermes worker thread writes messages
 
     def _table(self, name: str, schema) -> lancedb.table.Table:
-        if name not in self._db.list_tables().tables:
-            self._db.create_table(name, schema=schema)
-        return self._db.open_table(name)
+        with self._lock:
+            if name not in self._db.list_tables().tables:
+                self._db.create_table(name, schema=schema)
+            return self._db.open_table(name)
 
     # -- docs (Phase 0) ---------------------------------------------------
 
@@ -182,14 +185,15 @@ class Store:
     # -- messages (Phase 3) --------------------------------------------------
 
     def add_message(self, row: MessageRow) -> None:
-        self._table(MESSAGES_TABLE, MessageRow).add([row])
+        with self._lock:
+            self._table(MESSAGES_TABLE, MessageRow).add([row])
 
     def pending_messages_for(self, person_id: str) -> list[MessageRow]:
-        table = self._table(MESSAGES_TABLE, MessageRow)
+        with self._lock:
+            table = self._table(MESSAGES_TABLE, MessageRow)
+            all_rows = table.to_arrow().to_pylist()
         rows = [
-            r
-            for r in table.to_arrow().to_pylist()
-            if r["to_person"] == person_id and not r["delivered_at"]
+            r for r in all_rows if r["to_person"] == person_id and not r["delivered_at"]
         ]
         rows.sort(key=lambda r: r["created_at"])
         return [MessageRow(**{k: r[k] for k in MessageRow.model_fields}) for r in rows]
@@ -198,10 +202,11 @@ class Store:
         from datetime import datetime
 
         escaped = message_id.replace("'", "''")
-        self._table(MESSAGES_TABLE, MessageRow).update(
-            where=f"message_id = '{escaped}'",
-            values={"delivered_at": datetime.now(UTC).isoformat()},
-        )
+        with self._lock:
+            self._table(MESSAGES_TABLE, MessageRow).update(
+                where=f"message_id = '{escaped}'",
+                values={"delivered_at": datetime.now(UTC).isoformat()},
+            )
 
     def find_person_by_name(self, name: str) -> tuple[str, str] | None:
         """Case-insensitive lookup among people with a voice profile."""

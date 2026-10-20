@@ -128,6 +128,17 @@ def wrap_reconnect(body, connect_body, announce):
     return body
 
 
+def stt_client(llm_client, settings=settings, openai_cls=None):
+    """Transcription always uses the cloud API, never the local LLM server."""
+    from reachy_vec.brain.llm import uses_local_llm
+
+    if not uses_local_llm(settings):
+        return llm_client
+    if openai_cls is None:
+        from openai import OpenAI as openai_cls
+    return openai_cls()
+
+
 def make_hermes(store, settings=settings, which=None):
     """HermesJobs for the ask_hermes tool, or None when disabled/unavailable."""
     import shutil
@@ -221,7 +232,7 @@ def run(
     titles = store.demo_titles()
 
     typer.echo("Warming up models (STT, voices, embeddings)...")
-    transcriber = make_transcriber(client=client, source=audio_source)
+    transcriber = make_transcriber(client=stt_client(client), source=audio_source)
     if isinstance(transcriber, MicTranscriber):
         transcriber.warm_up()
     if titles:

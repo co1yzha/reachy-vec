@@ -513,7 +513,7 @@ class ChatBrain:
         tools = list(TOOLS)
         if self._web_search_fetch:
             tools.append(WEB_SEARCH_TOOL)
-        if self._hermes:
+        if self._hermes is not None:
             tools.append(ASK_HERMES_TOOL)
         if self._look_fn:
             tools.append(LOOK_TOOL)
@@ -527,7 +527,7 @@ class ChatBrain:
         prompt = PERSONALITY
         if self._web_search_fetch:
             prompt += WEB_SEARCH_HINT
-        if self._hermes:
+        if self._hermes is not None:
             prompt += ASK_HERMES_HINT
         if self._look_fn:
             prompt += LOOK_HINT
@@ -637,6 +637,10 @@ class ChatBrain:
         task = (args.get("task") or "").strip()
         if not task or self._hermes is None:
             return "can't ask: empty task"
+        if self._hermes.busy:  # no "let me look into that" if we're refusing
+            return self._hermes.ask(
+                task, requester_id=self._turn.person_id, requester_name=self._turn.name
+            )
         if self._on_sentence:
             try:
                 self._on_sentence(HERMES_HOLDING_LINE)

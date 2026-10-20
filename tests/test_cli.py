@@ -200,3 +200,26 @@ def test_make_hermes_builds_jobs_with_settings(monkeypatch, tmp_path):
     assert isinstance(jobs, HermesJobs)
     assert jobs._agent.cwd == tmp_path / "hermes_cwd"
     assert jobs._agent.profile == "reachy"
+
+
+def test_stt_client_reuses_cloud_client():
+    from reachy_vec.cli.run import stt_client
+    from reachy_vec.config import Settings
+
+    llm = object()
+    assert stt_client(llm, settings=Settings(llm_base_url=None)) is llm
+
+
+def test_stt_client_is_fresh_cloud_client_when_llm_local():
+    from reachy_vec.cli.run import stt_client
+    from reachy_vec.config import Settings
+
+    llm = object()
+    seen = {}
+
+    def fake_cls(**kw):
+        seen.update(kw)
+        return "cloud"
+
+    out = stt_client(llm, settings=Settings(llm_base_url="http://x/v1"), openai_cls=fake_cls)
+    assert out == "cloud" and seen == {}

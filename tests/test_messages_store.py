@@ -51,3 +51,25 @@ def test_find_person_by_name_case_insensitive(tmp_path):
 
 def test_pending_empty_table(tmp_path):
     assert Store(tmp_path / "db").pending_messages_for("p2") == []
+
+
+def test_concurrent_add_message_is_thread_safe(tmp_path):
+    import threading
+
+    store = Store(tmp_path / "db")
+    errors = []
+
+    def writer(prefix):
+        try:
+            for i in range(20):
+                store.add_message(message(f"{prefix}{i}", "p2"))
+        except Exception as exc:  # pragma: no cover
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer, args=(p,)) for p in "ab"]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert len(store.pending_messages_for("p2")) == 40

@@ -5,7 +5,7 @@ from reachy_vec.config import settings as _settings
 
 
 def uses_local_llm(settings: Settings = _settings) -> bool:
-    return settings.llm_base_url is not None
+    return bool(settings.llm_base_url)
 
 
 def make_llm_client(settings: Settings = _settings, openai_cls=None):
