@@ -138,9 +138,13 @@ def wrap_reconnect(body, connect_body, announce):
 
 
 def stt_client(llm_client, settings=settings, openai_cls=None):
-    """Transcription always uses the cloud API, never the local LLM server."""
+    """Client for make_transcriber: None for local STT (faster-whisper needs
+    none, and building OpenAI() without OPENAI_API_KEY raises); for the
+    openai backend, the cloud API - never the local LLM server."""
     from reachy_vec.brain.llm import uses_local_llm
 
+    if settings.stt_backend != "openai":
+        return None
     if not uses_local_llm(settings):
         return llm_client
     if openai_cls is None:

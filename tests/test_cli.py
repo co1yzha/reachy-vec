@@ -208,7 +208,7 @@ def test_stt_client_reuses_cloud_client():
     from reachy_vec.config import Settings
 
     llm = object()
-    assert stt_client(llm, settings=Settings(llm_base_url=None)) is llm
+    assert stt_client(llm, settings=Settings(llm_base_url=None, stt_backend="openai")) is llm
 
 
 def test_stt_client_is_fresh_cloud_client_when_llm_local():
@@ -222,8 +222,23 @@ def test_stt_client_is_fresh_cloud_client_when_llm_local():
         seen.update(kw)
         return "cloud"
 
-    out = stt_client(llm, settings=Settings(llm_base_url="http://x/v1"), openai_cls=fake_cls)
+    out = stt_client(llm, settings=Settings(llm_base_url="http://x/v1", stt_backend="openai"),
+                     openai_cls=fake_cls)
     assert out == "cloud" and seen == {}
+
+
+def test_stt_client_none_for_local_stt_without_building_a_cloud_client():
+    """Local faster-whisper needs no client; building OpenAI() with no
+    OPENAI_API_KEY raises, which crashed `run` on a fully local setup."""
+    from reachy_vec.cli.run import stt_client
+    from reachy_vec.config import Settings
+
+    def boom(**kw):
+        raise AssertionError("must not build a cloud client for local STT")
+
+    for base_url in (None, "http://x/v1"):
+        s = Settings(llm_base_url=base_url, stt_backend="local")
+        assert stt_client(object(), settings=s, openai_cls=boom) is None
 
 
 def test_prepare_fillers_off_returns_empty_and_skips_precache(monkeypatch):
