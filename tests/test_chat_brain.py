@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from reachy_vec.brain.chat import ChatBrain, SpeechInterrupted
+from reachy_vec.brain.chat import ChatBrain, SpeechInterrupted, ThinkFilter
 from reachy_vec.perception.fusion import TurnIdentity
 from reachy_vec.store.db import Store
 from reachy_vec.store.schemas import DocChunk
@@ -747,3 +747,46 @@ def test_no_extra_body_by_default(tmp_path):
     brain = make_brain(tmp_path, client)
     brain.respond("hello")
     assert "extra_body" not in client.chat.completions.last_kwargs
+
+
+def test_think_filter_drops_reasoning():
+    f = ThinkFilter()
+    assert f.feed("<think>plan</think>Hello.") + f.flush() == "Hello."
+
+
+def test_think_filter_tag_split_across_chunks():
+    f = ThinkFilter()
+    out = "".join(f.feed(c) for c in ["<thi", "nk>secret</th", "ink>Hi there."]) + f.flush()
+    assert out == "Hi there."
+
+
+def test_think_filter_unclosed_think_emits_nothing():
+    f = ThinkFilter()
+    assert f.feed("<think>still reasoning") + f.flush() == ""
+
+
+def test_think_filter_passes_plain_text_and_lone_angle():
+    f = ThinkFilter()
+    assert f.feed("a < b, ok.") + f.flush() == "a < b, ok."
+
+
+def test_streamed_reasoning_is_never_spoken(tmp_path):
+    client = FakeLLMClient(reply="<think>I should greet.</think>Hello Yang. How can I help?")
+    sentences = []
+    reply = make_brain(tmp_path, client).respond("hi", identity=YANG, on_sentence=sentences.append)
+    assert sentences == ["Hello Yang.", "How can I help?"]
+    assert "think" not in reply
+
+
+def test_reasoning_only_reply_speaks_nothing(tmp_path):
+    sentences = []
+    reply = make_brain(tmp_path, FakeLLMClient(reply="<think>hmm</think>")).respond(
+        "hi", on_sentence=sentences.append
+    )
+    assert sentences == [] and reply == ""
+
+
+def test_non_streaming_reasoning_is_stripped(tmp_path):
+    client = FakeLLMClient(reply="<think>plan</think>Hello Yang.")
+    reply = make_brain(tmp_path, client).respond("hi", identity=YANG)
+    assert reply == "Hello Yang."

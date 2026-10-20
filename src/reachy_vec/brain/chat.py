@@ -499,7 +499,10 @@ class ChatBrain:
                 tools=self._active_tools(),
                 **self._llm_kwargs,
             )
-            return response.choices[0].message
+            message = response.choices[0].message
+            if message.content:
+                message.content = _strip_think(message.content) or None
+            return message
         return self._complete_streaming(on_sentence)
 
     def _complete_streaming(self, on_sentence: Callable[[str], None]):
@@ -511,6 +514,7 @@ class ChatBrain:
             **self._llm_kwargs,
         )
         content, buffer = "", ""
+        think = ThinkFilter()
         tool_calls: dict[int, dict] = {}
         try:
             for chunk in stream:
@@ -525,11 +529,16 @@ class ChatBrain:
                         entry["name"] = tc.function.name
                     if getattr(tc.function, "arguments", None):
                         entry["arguments"] += tc.function.arguments
-                if getattr(delta, "content", None):
-                    content += delta.content
+                visible = think.feed(delta.content) if getattr(delta, "content", None) else ""
+                if visible:
+                    content += visible
                     if not tool_calls:  # don't speak alongside pending tool calls
-                        buffer += delta.content
+                        buffer += visible
                         buffer = _flush_sentences(buffer, on_sentence)
+            tail = think.flush()
+            if tail:
+                content += tail
+                buffer += tail
             if not tool_calls and buffer.strip():
                 on_sentence(buffer.strip())
         except SpeechInterrupted:
@@ -704,7 +713,7 @@ class ChatBrain:
                 ],
                 **self._llm_kwargs,
             )
-            text = (response.choices[0].message.content or "").strip()
+            text = _strip_think(response.choices[0].message.content).strip()
             if text.upper() == "NONE":
                 continue
             notes = [line.lstrip("- ").strip() for line in text.splitlines() if line.strip()]
@@ -751,6 +760,52 @@ class ChatBrain:
 
 
 SENTENCE_END = (". ", "! ", "? ")
+
+
+class ThinkFilter:
+    """Drop <think>...</think> reasoning from streamed text (case-sensitive).
+
+    Holds back a chunk-final suffix that could be the start of the next tag.
+    """
+
+    OPEN, CLOSE = "<think>", "</think>"
+
+    def __init__(self) -> None:
+        self._pending = ""
+        self._inside = False
+
+    def feed(self, text: str) -> str:
+        self._pending += text
+        out = ""
+        while True:
+            tag = self.CLOSE if self._inside else self.OPEN
+            found = self._pending.find(tag)
+            if found != -1:
+                if not self._inside:
+                    out += self._pending[:found]
+                self._pending = self._pending[found + len(tag) :]
+                self._inside = not self._inside
+                continue
+            # keep the longest suffix that is a prefix of the expected tag
+            keep = 0
+            for n in range(min(len(tag) - 1, len(self._pending)), 0, -1):
+                if tag.startswith(self._pending[-n:]):
+                    keep = n
+                    break
+            emit = self._pending[: len(self._pending) - keep]
+            if not self._inside:
+                out += emit
+            self._pending = self._pending[len(self._pending) - keep :]
+            return out
+
+    def flush(self) -> str:
+        rest, self._pending = self._pending, ""
+        return "" if self._inside else rest
+
+
+def _strip_think(text: str | None) -> str:
+    f = ThinkFilter()
+    return f.feed(text or "") + f.flush()
 
 
 def _flush_sentences(buffer: str, on_sentence: Callable[[str], None]) -> str:
