@@ -129,16 +129,13 @@ def wrap_reconnect(body, connect_body, announce):
 
 
 def run(
-    preview: bool = typer.Option(
-        False, "--preview", help="Show a window with the webcam feed and face matches."
-    ),
     source: str = typer.Option(
         None,
         "--source",
         help="Media source: auto | robot | mac (default: REACHY_VEC_MEDIA_SOURCE).",
     ),
 ) -> None:
-    """Run the Oracle: face-triggered voice Q&A on the robot's or Mac's devices."""
+    """Run the Oracle: say "Reachy" to start a voice Q&A; people are known by voice."""
     from dotenv import load_dotenv
     from openai import OpenAI
 
@@ -147,15 +144,8 @@ def run(
     from reachy_vec.audio.speak import make_speaker
     from reachy_vec.audio.vocab import VocabSnappingTranscriber
     from reachy_vec.body.robot import make_robot
-    from reachy_vec.brain.chat import ChatBrain, default_opener
+    from reachy_vec.brain.chat import ChatBrain
     from reachy_vec.brain.oracle import OracleLoop
-    from reachy_vec.perception.camera import RobotCamera, WebcamCamera
-    from reachy_vec.perception.face import InsightFaceMatcher, enroll_person
-    from reachy_vec.perception.vision import (
-        make_look_around_fn,
-        make_look_fn,
-        make_selfie_fn,
-    )
     from reachy_vec.perception.voice import EcapaSpeakerIdentifier
     from reachy_vec.store.db import Store
     from reachy_vec.store.embeddings import BgeEmbedder
@@ -168,7 +158,8 @@ def run(
         raise typer.Exit(code=1)
 
     # Connect the robot first (it decides whether robot media is available),
-    # then build camera / mic source / speaker for the chosen world.
+    # then build mic source / speaker for the chosen world. Vision (camera,
+    # look/selfie/look_around tools, camera-poke startle) is disabled for now.
     requested = source or settings.media_source
     body, media = make_robot(with_media=requested in ("auto", "robot"))
     chosen = resolve_media_source(requested, media_available=media is not None)
@@ -181,17 +172,10 @@ def run(
         raise typer.Exit(code=1)
 
     if chosen == "robot":
-        camera = RobotCamera(media)
         audio_source = RobotAudioSource(media, target_rate=settings.audio_input_rate)
     else:
-        camera = WebcamCamera(settings.camera_index)
         audio_source = None  # MicSource default
-    warm_frame = wait_for_frame(camera)
-    if warm_frame is None:
-        typer.echo(f"No camera frame from '{chosen}' source - check the device.", err=True)
-        raise typer.Exit(code=1)
 
-    matcher = InsightFaceMatcher(store)
     speaker_id = EcapaSpeakerIdentifier(store)
     speaker = make_speaker(media=media if chosen == "robot" else None)
     embedder = BgeEmbedder(
@@ -203,14 +187,12 @@ def run(
     # them to STT as a prompt made it hallucinate titles verbatim on echo/noise.
     titles = store.demo_titles()
 
-    typer.echo("Warming up models (STT, faces, voices, embeddings)...")
+    typer.echo("Warming up models (STT, voices, embeddings)...")
     transcriber = make_transcriber(client=client, source=audio_source)
     if isinstance(transcriber, MicTranscriber):
         transcriber.warm_up()
     if titles:
         transcriber = VocabSnappingTranscriber(transcriber, titles)
-    matcher.observe(warm_frame)      # reuse wait_for_frame's frame; a fresh
-    #                                  camera.read() can be None between WebRTC frames
     embedder.embed(["warm up"])      # loads the BGE model
     import numpy as np
 
@@ -224,13 +206,6 @@ def run(
     except Exception:
         pass  # no network now != no network later; the loop will surface it
 
-    if preview:
-        from reachy_vec.perception.preview import PreviewSight
-
-        sight = PreviewSight(camera, matcher)
-    else:
-        sight = lambda: matcher.observe(camera.read())  # noqa: E731
-
     body = wrap_reconnect(
         body,
         connect_body=lambda: make_robot(with_media=False)[0],
@@ -242,28 +217,6 @@ def run(
         from reachy_vec.body.sway import SpeakingSway, SwayingSpeaker
 
         speaker = SwayingSpeaker(speaker, SpeakingSway(body))
-    look_fn = make_look_fn(
-        camera,
-        client,
-        model=settings.vision_model or settings.llm_model,
-        max_px=settings.vision_image_max_px,
-        body=body,
-    )
-    selfie_fn = make_selfie_fn(
-        camera,
-        settings.photos_dir,
-        body=body,
-        speak=speaker.speak,
-        opener=default_opener,
-    )
-    look_around_fn = make_look_around_fn(
-        camera,
-        client,
-        model=settings.vision_model or settings.llm_model,
-        max_px=settings.vision_image_max_px,
-        body=body,
-        settle_s=settings.look_around_settle_s,
-    )
     brain = ChatBrain(
         store=store,
         embedder=embedder,
@@ -271,32 +224,29 @@ def run(
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
         web_search=settings.web_search,
-        look_fn=look_fn,
-        selfie_fn=selfie_fn,
-        look_around_fn=look_around_fn,
     )
     loop = OracleLoop(
-        sight=sight,
         transcriber=transcriber,
         speaker=speaker,
         body=body,
         brain=brain,
-        enroll_capture=lambda name: enroll_person(
-            name, camera, matcher, store, speaker.speak, faces_dir=settings.faces_dir
-        ),
         store=store,
+        speaker_id=speaker_id,
+        wake_words=settings.wake_words,
         greet_cooldown_s=settings.greet_cooldown_s,
         silence_timeout_s=settings.silence_timeout_s,
+        wake_listen_s=settings.wake_listen_s,
         idle_sleep_s=settings.idle_sleep_s,
         start_asleep=True,
-        speaker_id=speaker_id,
+        voice_threshold=settings.voice_threshold,
         voice_passive_cap=settings.voice_passive_cap,
+        enroll_phrases=settings.enroll_voice_phrases,
         barge_in_factory=make_barge_in_factory(
             chosen, media, is_self_voice=make_self_voice_checker(store)
         ),
         settle_s=settings.post_speech_settle_s,
     )
-    typer.echo("Oracle running - walk into frame. Ctrl+C to stop.")
+    typer.echo('Oracle running - say "Reachy" to start. Ctrl+C to stop.')
     try:
         loop.run_forever()
     except KeyboardInterrupt:

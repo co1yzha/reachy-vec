@@ -275,20 +275,6 @@ class FakeSpeakerIdentifier:
         return self._embedding
 
 
-class FakeFaceMatcher:
-    """Scripted observations + constant embeddings."""
-
-    def __init__(self, observations: list, embedding: list[float] | None = None):
-        self._it = iter(observations)
-        self._embedding = embedding
-
-    def observe(self, frame):
-        return next(self._it, None)
-
-    def embed(self, frame):
-        return self._embedding
-
-
 class FakeOcclusion:
     """Scripted occlusion detector: consume() pops scripted booleans."""
 

@@ -420,3 +420,22 @@ def test_qwen_speaker_default_stop_stops_the_afplay_player(monkeypatch, tmp_path
     proc._done = False
     speaker.stop()
     assert proc.terminated is True
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        ("", "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16"),
+        ("some/other-model", "some/other-model"),
+    ],
+)
+def test_make_speaker_qwen_model_falls_back_to_default(
+    monkeypatch, tmp_path, configured, expected
+):
+    sample = tmp_path / "me.wav"
+    sample.write_bytes(b"")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "qwen-tts")
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.voice_sample", sample)
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_model", configured)
+    speaker = make_speaker()
+    assert speaker._model_id == expected

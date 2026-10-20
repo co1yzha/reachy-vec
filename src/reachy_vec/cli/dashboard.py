@@ -16,11 +16,10 @@ from reachy_vec.config import settings
 
 TABLE_META = {
     "docs": ("knowledge base for RAG answers", "384-dim BGE"),
-    "people": ("face embeddings, one row per enrolled frame", "512-dim insightface"),
     "voices": ("speaker embeddings, enrolled + passively banked", "192-dim ECAPA"),
     "memories": ("per-person notes (save_note + distillation)", "384-dim BGE"),
     "greetings": ("per-person greeting cooldown", "no vector"),
-    "messages": ("queued relays, spoken on next sighting", "no vector"),
+    "messages": ("queued relays, spoken when the recipient next talks to Reachy", "no vector"),
 }
 
 PAGE = """<!doctype html>
@@ -207,11 +206,6 @@ PAGE = """<!doctype html>
       r.source.replace(/^demo: /, ""), r.chunk_id, r.ingested_at, r.text, r.vector)).join(""),
     memories: (rows) => rows.map((r) => card(
       r.person_id, r.memory_id, r.created_at, r.text, r.vector)).join(""),
-    people: (rows) => table(
-      ["embedding_id", "name", "person_id", "vector", "created"],
-      rows.map((r) => [
-        td(esc(r.embedding_id)), td(esc(r.name), "name"), td(esc(r.person_id)),
-        td(esc(vec(r.vector))), td(esc(when(r.created_at)))])),
     voices: (rows) => table(
       ["voice_id", "name", "source", "vector", "created"],
       rows.map((r) => [
@@ -343,7 +337,7 @@ def dashboard(
         True, "--open/--no-open", help="Open the dashboard in the browser."
     ),
 ) -> None:
-    """Browse the LanceDB store (docs, people, voices, memories...) in the browser."""
+    """Browse the LanceDB store (docs, voices, memories...) in the browser."""
     from reachy_vec.store.db import Store
 
     store = Store(settings.lancedb_dir)

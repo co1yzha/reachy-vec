@@ -8,7 +8,6 @@ from lancedb.index import FTS
 
 from reachy_vec.store.schemas import (
     DocChunk,
-    FaceRow,
     GreetingRow,
     MemoryRow,
     MessageRow,
@@ -16,7 +15,6 @@ from reachy_vec.store.schemas import (
 )
 
 DOCS_TABLE = "docs"
-PEOPLE_TABLE = "people"
 GREETINGS_TABLE = "greetings"
 MEMORIES_TABLE = "memories"
 MESSAGES_TABLE = "messages"
@@ -113,34 +111,6 @@ class Store:
         }
         return sorted(s.removeprefix("demo: ") for s in sources)[:limit]
 
-    # -- people + greetings (Phase 1) --------------------------------------
-
-    def add_face_rows(self, rows: list[FaceRow]) -> None:
-        if rows:
-            self._table(PEOPLE_TABLE, FaceRow).add(rows)
-
-    def match_face(self, vector: list[float], k: int = 5) -> tuple[str, str, float] | None:
-        """k-NN majority vote over people rows.
-
-        Returns (person_id, name, best cosine similarity of the winning
-        person) or None if nobody is enrolled.
-        """
-        table = self._table(PEOPLE_TABLE, FaceRow)
-        if table.count_rows() == 0:
-            return None
-        hits = table.search(vector).metric("cosine").limit(k).to_list()
-        counts: dict[str, int] = {}
-        for row in hits:
-            counts[row["person_id"]] = counts.get(row["person_id"], 0) + 1
-        winner = max(counts, key=counts.get)
-        best_distance = min(r["_distance"] for r in hits if r["person_id"] == winner)
-        name = next(r["name"] for r in hits if r["person_id"] == winner)
-        return winner, name, 1.0 - best_distance
-
-    def people_count(self) -> int:
-        table = self._table(PEOPLE_TABLE, FaceRow)
-        return len({r["person_id"] for r in table.to_arrow().to_pylist()})
-
     # -- memories (Phase 2a) ------------------------------------------------
 
     def add_memories(self, rows: list[MemoryRow]) -> None:
@@ -169,7 +139,7 @@ class Store:
             self._table(VOICES_TABLE, VoiceRow).add(rows)
 
     def match_voice(self, vector: list[float], k: int = 5) -> tuple[str, str, float] | None:
-        """k-NN majority vote over voice rows, like match_face.
+        """k-NN majority vote over voice rows.
 
         Returns (person_id, name, best cosine similarity of the winning
         person) or None if nobody has a voice profile yet.
@@ -234,9 +204,9 @@ class Store:
         )
 
     def find_person_by_name(self, name: str) -> tuple[str, str] | None:
-        """Case-insensitive lookup among enrolled people."""
+        """Case-insensitive lookup among people with a voice profile."""
         wanted = name.strip().lower()
-        for r in self._table(PEOPLE_TABLE, FaceRow).to_arrow().to_pylist():
+        for r in self._table(VOICES_TABLE, VoiceRow).to_arrow().to_pylist():
             if r["name"].lower() == wanted:
                 return r["person_id"], r["name"]
         return None
@@ -262,7 +232,6 @@ class Store:
         replaced with {dim, head} so the payload stays small."""
         schemas = {
             DOCS_TABLE: DocChunk,
-            PEOPLE_TABLE: FaceRow,
             VOICES_TABLE: VoiceRow,
             MEMORIES_TABLE: MemoryRow,
             GREETINGS_TABLE: GreetingRow,

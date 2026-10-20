@@ -1,6 +1,6 @@
 """LanceDB table schemas.
 
-Implemented: docs (Phase 0), people + greetings (Phase 1), memories (Phase 2a),
+Implemented: docs (Phase 0), greetings (Phase 1), memories (Phase 2a),
 voices (Phase 2b), messages (Phase 3).
 """
 
@@ -15,17 +15,6 @@ class DocChunk(LanceModel):
     vector: Vector(EMBEDDING_DIM)
     source: str
     ingested_at: str  # ISO-8601 UTC timestamp
-
-
-FACE_EMBEDDING_DIM = 512
-
-
-class FaceRow(LanceModel):
-    embedding_id: str
-    person_id: str
-    name: str
-    vector: Vector(FACE_EMBEDDING_DIM)
-    created_at: str  # ISO-8601 UTC
 
 
 class GreetingRow(LanceModel):

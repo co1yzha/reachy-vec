@@ -1,4 +1,11 @@
-"""Settings for the brain, loaded from environment / .env.
+"""Settings for the brain, loaded from environment / .env (layered).
+
+Priority, highest first:
+1. Real environment variables (exported by the shell/CI)
+2. ``.env`` at the repo root (per-machine overrides)
+3. The Reachy profile's ``.env`` — ``~/.hermes/profiles/reachy/.env`` —
+   the deployment's shared home for secrets and defaults (loaded only if
+   it exists)
 
 Environment variables use the REACHY_VEC_ prefix, e.g. REACHY_VEC_ROBOT_HOST.
 OPENAI_API_KEY is read by the openai SDK directly.
@@ -8,10 +15,23 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Deployment-level config home: shared secrets/defaults for this robot brain
+# (e.g. OPENAI_API_KEY, REACHY_VEC_ROBOT_HOST). The repo .env overrides it.
+REACHY_PROFILE_ENV = Path.home() / ".hermes" / "profiles" / "reachy" / ".env"
+
+
+def _env_files() -> tuple[str, ...]:
+    """Layered env files; the LAST entry wins (see tests/test_config.py)."""
+    files: list[str] = []
+    if REACHY_PROFILE_ENV.exists():
+        files.append(str(REACHY_PROFILE_ENV))
+    files.append(".env")
+    return tuple(files)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="REACHY_VEC_", env_file=".env", extra="ignore"
+        env_prefix="REACHY_VEC_", env_file=_env_files(), extra="ignore"
     )
 
     # Robot (wireless Reachy Mini on the local network); None = simulator/headless
@@ -30,10 +50,10 @@ class Settings(BaseSettings):
         "Represent this sentence for searching relevant passages: "
     )  # BGE query instruction; set empty to disable for non-BGE models
     tts_backend: str = "say"  # say (macOS built-in) | qwen-tts (voice clone, local MLX)
-    tts_model: str = ""  # mlx-audio model id
+    tts_model: str = ""  # mlx-audio model id; empty -> QWEN_TTS_DEFAULT_MODEL (0.6B)
     # tts_model: str = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"  # mlx-audio model id
 
-    # Vision (look() tool); None => reuse llm_model
+    # Vision (look/selfie/look_around tools; currently not wired into run); None => llm_model
     vision_model: str | None = None
     vision_image_max_px: int = 1024  # downscale long edge before encoding, to cut vision tokens
     look_around_settle_s: float = 0.8  # pause after a base turn before capturing,
@@ -49,7 +69,6 @@ class Settings(BaseSettings):
     tts_presence_hz: float = 3200.0  # presence shelf corner frequency
 
     # Perception
-    face_threshold: float = 0.45  # cosine similarity; below = unknown
     camera_index: int = 0
     media_source: str = "auto"  # auto | robot | mac — where camera/mic/speaker live
     audio_input_rate: int = 16000  # target rate fed to VAD/STT/ECAPA
@@ -68,7 +87,7 @@ class Settings(BaseSettings):
     stt_target_rms: float = 0.05  # boost quiet captures to this level before STT
     # (far-field mic runs quiet; low level hurts accuracy); 0 = off
 
-    # Voice ID (Phase 2b) - ECAPA cosine scores run lower than face scores
+    # Voice ID - the only identity signal (face recognition was removed)
     voice_threshold: float = 0.30  # below = unknown; within 0.05 under = "can't tell"
     voice_min_utterance_s: float = 1.0  # shorter audio -> can't tell
     voice_passive_cap: int = 10  # max passively-banked embeddings per person
@@ -76,7 +95,12 @@ class Settings(BaseSettings):
     # Interaction
     greet_cooldown_s: float = 7200.0  # full spoken greeting at most every 2h
     silence_timeout_s: float = 30.0   # end conversation after this much quiet
-    idle_sleep_s: float = 300.0       # no faces for this long -> robot sleeps
+    idle_sleep_s: float = 300.0       # not called for this long -> robot sleeps
+    wake_words: list[str] = ["reachy", "reachie", "reechy", "reachi", "richie", "ritchie"]
+    # transcript words that start a conversation (incl. common STT mishearings);
+    # env form: REACHY_VEC_WAKE_WORDS='["reachy","richie"]'
+    wake_listen_s: float = 5.0  # idle listen window; loops forever between windows
+    enroll_voice_phrases: int = 2  # sentences recorded when enrolling a new voice
     post_speech_settle_s: float = 0.3  # mic opens this long after the robot stops
     # talking, so the echo tail of its own voice isn't heard as an utterance
     barge_in: bool = True  # allow talking over a reply to interrupt it
@@ -88,6 +112,9 @@ class Settings(BaseSettings):
     weather_lon: float = -2.9916
 
     # Tools
+    open_url_trigger_words: list[str] = [
+        "open", "show", "pull up", "bring up", "launch", "display", "load up",
+    ]  # open_url runs only if the user's turn contains one of these (whole words)
     web_search: bool = False  # enable the Tavily web_search tool (needs TAVILY_API_KEY)
 
     # Storage
@@ -96,10 +123,6 @@ class Settings(BaseSettings):
     @property
     def lancedb_dir(self) -> Path:
         return self.data_dir / "lancedb"
-
-    @property
-    def faces_dir(self) -> Path:
-        return self.data_dir / "faces"
 
     @property
     def photos_dir(self) -> Path:

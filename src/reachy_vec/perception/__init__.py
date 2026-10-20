@@ -1,7 +1,7 @@
-"""Identity layer: face recognition + speaker identification, fused.
+"""Identity layer: who is talking, from their voice alone.
 
 Modules:
-- face:   insightface embeddings matched against the people table
-- voice:  speechbrain ECAPA speaker embeddings
-- fusion: combine face + voice; agreement -> identified, otherwise ask, never guess
+- voice:  speechbrain ECAPA speaker embeddings matched against the voices table
+- fusion: per-turn identity from the voice observation; never guess
+- camera, vision, occlusion: camera tools, currently not wired into `run`
 """

@@ -1,16 +1,17 @@
 from reachy_vec.store.db import Store
-from reachy_vec.store.schemas import FaceRow, MessageRow
+from reachy_vec.store.schemas import VOICE_EMBEDDING_DIM, MessageRow, VoiceRow
 
 
 def enroll(store: Store, person_id: str, name: str) -> None:
-    store.add_face_rows(
+    store.add_voice_rows(
         [
-            FaceRow(
-                embedding_id=f"{person_id}:0",
+            VoiceRow(
+                voice_id=f"{person_id}:0",
                 person_id=person_id,
                 name=name,
-                vector=[0.5] * 512,
+                vector=[0.5] * VOICE_EMBEDDING_DIM,
                 created_at="2026-07-07T00:00:00+00:00",
+                source="enrolled",
             )
         ]
     )

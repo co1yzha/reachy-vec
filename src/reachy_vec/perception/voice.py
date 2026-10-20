@@ -1,21 +1,29 @@
 """Speaker identification: ECAPA voice embeddings matched against the voices
-table. Mirrors face.py: never guesses - below-threshold = unknown speaker,
-borderline (within the shared margin under threshold) or too-short audio =
-None ("can't tell", fusion falls back to face).
+table. Voice is the only identity signal. Never guesses: below-threshold =
+unknown speaker, borderline (within BORDERLINE_MARGIN under threshold) or
+too-short audio = None ("can't tell" - answered anonymously).
 """
 
 import logging
+from dataclasses import dataclass
 from typing import Protocol
 
 import numpy as np
 
 from reachy_vec.config import settings
-from reachy_vec.perception.face import BORDERLINE_MARGIN, Observation
 from reachy_vec.store.db import Store
 
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
+BORDERLINE_MARGIN = 0.05
+
+
+@dataclass(frozen=True)
+class Observation:
+    person_id: str | None  # None = a voice was heard but it's nobody enrolled
+    name: str | None
+    score: float
 
 
 class SpeakerIdentifier(Protocol):
@@ -27,7 +35,7 @@ class EcapaSpeakerIdentifier:
     """speechbrain ECAPA-TDNN (spkrec-ecapa-voxceleb), 192-dim, lazy-loaded.
 
     A model-load failure degrades to "can't tell" permanently (logged once) -
-    the robot keeps working face-only.
+    the robot keeps working, treating everyone as anonymous.
     """
 
     def __init__(

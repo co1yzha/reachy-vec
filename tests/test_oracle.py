@@ -1,8 +1,12 @@
-from reachy_vec.brain.oracle import OracleLoop
-from reachy_vec.perception.face import Observation
+import numpy as np
+import pytest
+
+from reachy_vec.audio.listen import Utterance
+from reachy_vec.brain.oracle import WAKE_LINES, OracleLoop, split_wake
 from reachy_vec.perception.fusion import TurnIdentity
+from reachy_vec.perception.voice import Observation
 from reachy_vec.store.db import Store
-from reachy_vec.store.schemas import VOICE_EMBEDDING_DIM, VoiceRow
+from reachy_vec.store.schemas import VOICE_EMBEDDING_DIM, MessageRow, VoiceRow
 from tests.conftest import (
     FakeBargeInMonitor,
     FakeBody,
@@ -12,146 +16,124 @@ from tests.conftest import (
     FakeTranscriber,
 )
 
-ALICE = Observation(person_id="p1", name="Alice", score=0.9)
-UNKNOWN = Observation(person_id=None, name=None, score=0.1)
+ALICE_VOICE = Observation(person_id="p1", name="Alice", score=0.9)
 BOB_VOICE = Observation(person_id="p2", name="Bob", score=0.5)
+BORDERLINE_ALICE = Observation(person_id="p1", name="Alice", score=0.32)  # just over 0.30
 UNKNOWN_VOICE = Observation(person_id=None, name=None, score=0.05)
 VOICE_VEC = [0.5] * VOICE_EMBEDDING_DIM
+AUDIO = np.zeros(32000, dtype=np.float32)
+
+
+def said(text: str) -> Utterance:
+    return Utterance(text=text, audio=AUDIO)
 
 
 def make_loop(
     tmp_path,
     *,
-    sights,
     utterances,
-    enroll_result="p9",
+    voices=None,
+    embedding=VOICE_VEC,
     store=None,
     brain=None,
-    speaker_id=None,
     barge_in_factory=None,
     settle_s=0.0,
     sleep=None,
+    **kwargs,
 ):
-    sights_iter = iter(sights)
+    """voices: scripted identify() results in call order (None = can't tell);
+    voices=None disables voice ID entirely."""
     speaker, body = FakeSpeaker(), FakeBody()
     store = store or Store(tmp_path / "db")
     brain = brain or FakeBrain()
     loop = OracleLoop(
-        sight=lambda: next(sights_iter, None),
         transcriber=FakeTranscriber(utterances),
         speaker=speaker,
         body=body,
         brain=brain,
-        enroll_capture=lambda name: enroll_result,
         store=store,
-        clock=lambda: 1000.0,
-        unknown_stable_polls=2,
-        speaker_id=speaker_id,
+        speaker_id=FakeSpeakerIdentifier(voices, embedding=embedding)
+        if voices is not None
+        else None,
+        clock=kwargs.pop("clock", lambda: 1000.0),
         barge_in_factory=barge_in_factory,
         settle_s=settle_s,
         sleep=sleep,
+        **kwargs,
     )
     return loop, speaker, body, store, brain
 
 
-def test_known_person_greet_question_answer_goodbye(tmp_path):
+# -- wake word -------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Reachy", ""),
+        ("Hey Reachy, what's the weather?", "what's the weather?"),
+        ("richie when is standup", "when is standup"),   # common STT mishearing
+        ("REACHY!", ""),
+        ("I was reaching for the cup", None),              # not a whole-word match
+        ("when is standup?", None),
+    ],
+)
+def test_split_wake(text, expected):
+    assert split_wake(text) == expected
+
+
+def test_speech_without_wake_word_is_ignored(tmp_path):
+    loop, speaker, body, _, brain = make_loop(
+        tmp_path, utterances=["so anyway the meeting is at three"]
+    )
+    assert loop.run_once() == "idle"
+    assert speaker.spoken == [] and brain.asked == [] and brain.begun == []
+
+
+def test_silence_is_idle(tmp_path):
+    loop, *_ = make_loop(tmp_path, utterances=[])
+    assert loop.run_once() == "idle"
+
+
+# -- known voice -----------------------------------------------------------
+
+
+def test_known_voice_greet_question_answer_goodbye(tmp_path):
     loop, speaker, body, store, brain = make_loop(
-        tmp_path, sights=[ALICE], utterances=["when is standup?"]
-    )
-    assert loop.run_once() == "conversation"
-    assert any("Alice" in s for s in speaker.spoken)          # spoken greeting
-    assert any("answer to when is standup?" in s for s in speaker.spoken)
-    assert "greet" in body.motions and "goodbye" in body.motions
-    assert store.get_last_greeted("p1") is not None           # cooldown recorded
-    assert brain.begun == [("p1", "Alice")]                   # conversation opened
-    assert brain.ended == 1                                   # memories distilled
-    assert brain.asked == [("when is standup?", TurnIdentity("p1", "Alice"))]  # attributed
-
-
-def test_barge_in_stops_speaker_and_skips_nod(tmp_path):
-    from reachy_vec.brain.chat import SpeechInterrupted
-
-    monitor = FakeBargeInMonitor()
-
-    class InterruptingBrain:
-        def begin_conversation(self, *a):
-            pass
-
-        def end_conversation(self):
-            pass
-
-        def respond(self, question, identity=None, on_sentence=None):
-            monitor.trip()  # user starts talking mid-reply
-            try:
-                on_sentence("half a sentence")  # guarded -> raises
-            except SpeechInterrupted:
-                return "half a sentence"  # ChatBrain swallows it internally
-            return "full reply"
-
-    loop, speaker, body, _store, _brain = make_loop(
         tmp_path,
-        sights=[ALICE],
-        utterances=["a question", None],
-        brain=InterruptingBrain(),
-        barge_in_factory=lambda: monitor,
+        utterances=[said("Hey Reachy"), said("when is standup?")],
+        voices=[ALICE_VOICE, ALICE_VOICE],
     )
     assert loop.run_once() == "conversation"
-    assert monitor.started == 1
-    assert monitor.stopped == 1
-    assert speaker.stopped == 1          # on_fire -> speaker.stop
-    assert "half a sentence" not in speaker.spoken  # guarded sentence never spoken
-    assert "nod" not in body.motions     # nod skipped on interrupt
+    assert any("Hi Alice" in s for s in speaker.spoken)       # greeted by voice
+    assert any("answer to when is standup?" in s for s in speaker.spoken)
+    assert "greet" in body.motions and body.motions[-1] == "goodbye"
+    assert store.get_last_greeted("p1") is not None           # cooldown recorded
+    assert brain.begun == [("p1", "Alice")]
+    assert brain.ended == 1                                   # memories distilled
+    assert brain.asked == [("when is standup?", TurnIdentity("p1", "Alice"))]
+
+
+def test_question_in_same_breath_as_wake_word(tmp_path):
+    loop, speaker, _, _, brain = make_loop(
+        tmp_path, utterances=[said("Reachy, what's the time?")], voices=[ALICE_VOICE]
+    )
+    assert loop.run_once() == "conversation"
+    assert brain.asked == [("what's the time?", TurnIdentity("p1", "Alice"))]
 
 
 def test_cooldown_suppresses_spoken_greeting(tmp_path):
     store = Store(tmp_path / "db")
-    first, _, _, _, _ = make_loop(tmp_path, sights=[], utterances=[], store=store)
-    first._record_greeting("p1")  # greeted "now" per the fake clock
-    loop, speaker, body, _, _ = make_loop(tmp_path, sights=[ALICE], utterances=[], store=store)
+    store.set_last_greeted("p1", "1970-01-01T00:16:40+00:00")  # = clock 1000.0
+    loop, speaker, body, _, _ = make_loop(
+        tmp_path, utterances=[said("Reachy")], voices=[ALICE_VOICE], store=store
+    )
     assert loop.run_once() == "conversation"
-    assert not any("Alice" in s for s in speaker.spoken)      # silent acknowledgment
+    assert not any("Alice" in s for s in speaker.spoken)
     assert "acknowledge" in body.motions
 
 
-def test_unknown_face_enrolls_on_yes_and_confirm(tmp_path):
-    loop, speaker, body, _, _ = make_loop(
-        tmp_path,
-        sights=[UNKNOWN, UNKNOWN],                 # stable unknown (2 polls)
-        utterances=["yes please", "Bob", "yes"],   # offer-yes, name, confirm
-    )
-    assert loop.run_once() == "enrolled"
-    assert any("Bob" in s for s in speaker.spoken)            # confirmation used name
-
-
-def test_unknown_face_declines_enrollment(tmp_path):
-    loop, speaker, _, _, _ = make_loop(
-        tmp_path, sights=[UNKNOWN, UNKNOWN], utterances=["no thanks"]
-    )
-    assert loop.run_once() == "enroll-declined"
-
-
-def test_silence_ends_conversation_with_goodbye(tmp_path):
-    loop, _, body, _, _ = make_loop(tmp_path, sights=[ALICE], utterances=[])
-    assert loop.run_once() == "conversation"
-    assert body.motions[-1] == "goodbye"
-
-
-def test_brain_failure_apologizes_and_continues(tmp_path):
-    loop, speaker, _, _, _ = make_loop(
-        tmp_path, sights=[ALICE], utterances=["hello?"], brain=FakeBrain(fail=True)
-    )
-    assert loop.run_once() == "conversation"
-    assert any("sorry" in s.lower() for s in speaker.spoken)
-
-
-def test_no_face_at_all(tmp_path):
-    loop, _, _, _, _ = make_loop(tmp_path, sights=[None, None, None], utterances=[])
-    assert loop.run_once() == "no-face"
-
-
 def test_pending_messages_delivered_on_greet(tmp_path):
-    from reachy_vec.store.schemas import MessageRow
-
     store = Store(tmp_path / "db")
     store.add_message(
         MessageRow(
@@ -165,120 +147,163 @@ def test_pending_messages_delivered_on_greet(tmp_path):
             delivered_at="",
         )
     )
-    loop, speaker, _, _, _ = make_loop(tmp_path, sights=[ALICE], utterances=[], store=store)
+    loop, speaker, _, _, _ = make_loop(
+        tmp_path, utterances=[said("Reachy")], voices=[ALICE_VOICE], store=store
+    )
     assert loop.run_once() == "conversation"
     assert any("Bob left you a message: the meeting moved to 3" in s for s in speaker.spoken)
-    assert store.pending_messages_for("p1") == []  # marked delivered
+    assert store.pending_messages_for("p1") == []
 
 
-def test_sleeps_after_idle_and_wakes_on_face(tmp_path):
-    now = {"t": 1000.0}
-    sights: list = []
-    speaker, body = FakeSpeaker(), FakeBody()
-    loop = OracleLoop(
-        sight=lambda: sights.pop(0) if sights else None,
-        transcriber=FakeTranscriber([]),
-        speaker=speaker,
-        body=body,
-        brain=FakeBrain(),
-        enroll_capture=lambda name: None,
-        store=Store(tmp_path / "db"),
-        clock=lambda: now["t"],
-        idle_sleep_s=300.0,
+# -- can't tell / anonymous ------------------------------------------------
+
+
+def test_cant_tell_on_wake_then_recognized_mid_conversation(tmp_path):
+    """A bare "Reachy" is too short to embed; the next turn identifies them."""
+    loop, speaker, _, _, brain = make_loop(
+        tmp_path,
+        utterances=[said("Reachy"), said("what's on today?")],
+        voices=[None, ALICE_VOICE],
     )
-    assert loop.run_once() == "no-face"          # t=1000: recent face-time, stays awake
-    assert "sleep" not in body.motions
-    now["t"] = 1400.0                            # 400s idle > 300s threshold
-    assert loop.run_once() == "no-face"
-    assert body.motions == ["sleep"]
-    assert loop.run_once() == "no-face"          # still asleep: no second sleep motion
-    assert body.motions == ["sleep"]
-    sights.append(ALICE)                         # someone walks up
     assert loop.run_once() == "conversation"
-    from reachy_vec.brain.oracle import WAKE_LINES
-
-    assert body.motions[1:3] == ["wake", "wakeup"]   # woke with a flourish, before greeting
-    assert speaker.spoken[0] in WAKE_LINES           # announced it's awake, before the greeting
-    assert len(speaker.spoken) >= 2                  # normal greeting still follows
+    assert speaker.spoken[0].startswith("Yes?")
+    assert brain.begun == [(None, None)]
+    assert brain.asked == [("what's on today?", TurnIdentity("p1", "Alice"))]
 
 
-def test_start_asleep_wakes_with_flourish_on_first_face(tmp_path):
-    """A robot physically in sleep pose at launch (previous session, power cycle)
-    must be woken by the first face; without start_asleep it would stay slumped."""
-    sights: list = [ALICE]
-    speaker, body = FakeSpeaker(), FakeBody()
-    loop = OracleLoop(
-        sight=lambda: sights.pop(0) if sights else None,
-        transcriber=FakeTranscriber([]),
-        speaker=speaker,
-        body=body,
-        brain=FakeBrain(),
-        enroll_capture=lambda name: None,
-        store=Store(tmp_path / "db"),
-        start_asleep=True,
-    )
-    from reachy_vec.brain.oracle import WAKE_LINES
-
-    assert loop.run_once() == "conversation"
-    assert body.motions[0:2] == ["wake", "wakeup"]   # first face of the day wakes it
-    assert speaker.spoken[0] in WAKE_LINES
-
-
-# -- Phase 2b: voice fusion, passive backfill, voice enrollment ---------------
-
-
-def test_turn_identity_follows_voice(tmp_path):
+def test_voice_identity_per_turn(tmp_path):
     loop, _, _, _, brain = make_loop(
         tmp_path,
-        sights=[ALICE],
-        utterances=["a question"],
-        speaker_id=FakeSpeakerIdentifier([BOB_VOICE]),
+        utterances=[said("Reachy"), said("one"), said("two")],
+        voices=[ALICE_VOICE, ALICE_VOICE, BOB_VOICE],
     )
     loop.run_once()
-    assert brain.asked == [("a question", TurnIdentity("p2", "Bob"))]
+    assert [identity for _, identity in brain.asked] == [
+        TurnIdentity("p1", "Alice"),
+        TurnIdentity("p2", "Bob"),       # Bob chimed in
+    ]
 
 
-def test_unknown_voice_is_anonymous_despite_face(tmp_path):
-    loop, _, _, _, brain = make_loop(
+def test_no_speaker_id_everyone_is_anonymous(tmp_path):
+    loop, _, _, _, brain = make_loop(tmp_path, utterances=["Reachy", "hi"])
+    assert loop.run_once() == "conversation"
+    assert brain.asked == [("hi", TurnIdentity(None, None))]
+
+
+def test_brain_failure_apologizes_and_continues(tmp_path):
+    loop, speaker, _, _, _ = make_loop(
+        tmp_path, utterances=["Reachy", "hello?"], brain=FakeBrain(fail=True)
+    )
+    assert loop.run_once() == "conversation"
+    assert any("sorry" in s.lower() for s in speaker.spoken)
+
+
+def test_barge_in_stops_speaker_and_skips_nod(tmp_path):
+    from reachy_vec.brain.chat import SpeechInterrupted
+
+    monitor = FakeBargeInMonitor()
+
+    class InterruptingBrain(FakeBrain):
+        def respond(self, question, identity=None, on_sentence=None):
+            monitor.trip()  # user starts talking mid-reply
+            try:
+                on_sentence("half a sentence")  # guarded -> raises
+            except SpeechInterrupted:
+                return "half a sentence"  # ChatBrain swallows it internally
+            return "full reply"
+
+    loop, speaker, body, _, _ = make_loop(
         tmp_path,
-        sights=[ALICE],
-        utterances=["save this"],
-        speaker_id=FakeSpeakerIdentifier([UNKNOWN_VOICE]),
+        utterances=["Reachy", "a question"],
+        brain=InterruptingBrain(),
+        barge_in_factory=lambda: monitor,
     )
-    loop.run_once()
-    assert brain.asked[0][1] == TurnIdentity(None, None)
+    assert loop.run_once() == "conversation"
+    assert monitor.started == 1 and monitor.stopped == 1
+    assert speaker.stopped == 1
+    assert "half a sentence" not in speaker.spoken
+    assert "nod" not in body.motions
 
 
-def test_no_speaker_id_falls_back_to_face(tmp_path):
-    loop, _, _, _, brain = make_loop(tmp_path, sights=[ALICE], utterances=["hi"])
-    loop.run_once()
-    assert brain.asked == [("hi", TurnIdentity("p1", "Alice"))]
+# -- voice enrollment ------------------------------------------------------
 
 
-def test_passive_backfill_banks_solo_confident_face(tmp_path):
-    ident = FakeSpeakerIdentifier([None], embedding=VOICE_VEC)
+def test_unknown_voice_enrolls_on_yes_and_confirm(tmp_path):
+    loop, speaker, body, store, brain = make_loop(
+        tmp_path,
+        utterances=[
+            said("Hi Reachy, I'm new here"),   # wake: stranger's voice
+            said("yes please"), said("Bob"), said("yes"),
+            said("I work on the data platform"), said("and I like coffee"),
+        ],
+        voices=[UNKNOWN_VOICE],
+    )
+    assert loop.run_once() == "enrolled"
+    assert any("Nice to meet you, Bob" in s for s in speaker.spoken)
+    person_id, name, _ = store.match_voice(VOICE_VEC)
+    assert name == "Bob"
+    voices = store.dump_tables()["voices"]
+    # wake utterance + two enrollment sentences, all "enrolled"
+    assert len(voices) == 3 and {v["source"] for v in voices} == {"enrolled"}
+    assert store.get_last_greeted(person_id) is not None
+    assert brain.begun == [(person_id, "Bob")]   # conversation continues after enrolling
+
+
+def test_unknown_voice_declines_enrollment(tmp_path):
     loop, _, _, store, _ = make_loop(
-        tmp_path, sights=[ALICE], utterances=["a question"], speaker_id=ident
+        tmp_path, utterances=[said("Reachy"), said("no thanks")], voices=[UNKNOWN_VOICE]
+    )
+    assert loop.run_once() == "enroll-declined"
+    assert store.match_voice(VOICE_VEC) is None
+
+
+def test_enrollment_fails_without_any_usable_voice(tmp_path):
+    loop, speaker, _, store, _ = make_loop(
+        tmp_path,
+        utterances=[said("Reachy"), said("yes"), said("Bob"), said("yes")],  # then silence
+        voices=[UNKNOWN_VOICE],
+        embedding=None,  # too short / model broken
+    )
+    assert loop.run_once() == "enroll-declined"
+    assert any("couldn't catch your voice" in s for s in speaker.spoken)
+    assert store.match_voice(VOICE_VEC) is None
+
+
+def test_stranger_after_bare_wake_is_offered_enrollment_once(tmp_path):
+    loop, speaker, _, store, _ = make_loop(
+        tmp_path,
+        utterances=[said("Reachy"), said("what's the weather?"), said("no"), said("thanks")],
+        voices=[None, UNKNOWN_VOICE, UNKNOWN_VOICE],
+    )
+    assert loop.run_once() == "conversation"
+    assert sum("remember your voice" in s for s in speaker.spoken) == 1
+    assert store.match_voice(VOICE_VEC) is None
+
+
+# -- passive banking ---------------------------------------------------------
+
+
+def test_passive_backfill_banks_clear_match(tmp_path):
+    loop, _, _, store, _ = make_loop(
+        tmp_path, utterances=[said("Reachy"), said("a question")],
+        voices=[ALICE_VOICE, ALICE_VOICE], voice_threshold=0.30,
     )
     loop.run_once()
     assert store.passive_voice_count("p1") == 1
 
 
-def test_no_backfill_when_voice_is_someone_else(tmp_path):
-    ident = FakeSpeakerIdentifier([BOB_VOICE], embedding=VOICE_VEC)
+def test_no_backfill_for_borderline_match(tmp_path):
     loop, _, _, store, _ = make_loop(
-        tmp_path, sights=[ALICE], utterances=["a question"], speaker_id=ident
+        tmp_path, utterances=[said("Reachy"), said("a question")],
+        voices=[ALICE_VOICE, BORDERLINE_ALICE], voice_threshold=0.30,
     )
     loop.run_once()
     assert store.passive_voice_count("p1") == 0
-    assert store.passive_voice_count("p2") == 0
 
 
-def test_no_backfill_with_two_faces_in_frame(tmp_path):
-    crowded = Observation(person_id="p1", name="Alice", score=0.9, face_count=2)
-    ident = FakeSpeakerIdentifier([None], embedding=VOICE_VEC)
+def test_no_backfill_when_cant_tell(tmp_path):
     loop, _, _, store, _ = make_loop(
-        tmp_path, sights=[crowded], utterances=["a question"], speaker_id=ident
+        tmp_path, utterances=[said("Reachy"), said("a question")], voices=[ALICE_VOICE, None],
     )
     loop.run_once()
     assert store.passive_voice_count("p1") == 0
@@ -299,123 +324,68 @@ def test_backfill_respects_cap(tmp_path):
             for i in range(10)
         ]
     )
-    ident = FakeSpeakerIdentifier([None], embedding=VOICE_VEC)
-    loop, _, _, _, _ = make_loop(
-        tmp_path, sights=[ALICE], utterances=["a question"], speaker_id=ident, store=store
+    loop, *_ = make_loop(
+        tmp_path, utterances=[said("Reachy"), said("a question")],
+        voices=[ALICE_VOICE, ALICE_VOICE], store=store,
     )
     loop.run_once()
     assert store.passive_voice_count("p1") == 10  # capped, not 11
 
 
-def test_enrollment_captures_voice_phrase(tmp_path):
-    ident = FakeSpeakerIdentifier(embedding=VOICE_VEC)
-    loop, speaker, _, store, _ = make_loop(
-        tmp_path,
-        sights=[UNKNOWN, UNKNOWN],
-        utterances=["yes please", "Bob", "yes", "the quick brown fox"],
-        enroll_result="p9",
-        speaker_id=ident,
+# -- sleep/wake, settle --------------------------------------------------------
+
+
+def test_sleeps_after_idle_and_wakes_on_wake_word(tmp_path):
+    now = {"t": 1000.0}
+    loop, speaker, body, _, _ = make_loop(
+        tmp_path, utterances=[], voices=[ALICE_VOICE],
+        clock=lambda: now["t"], idle_sleep_s=300.0,
     )
-    assert loop.run_once() == "enrolled"
-    assert any("voice" in s.lower() for s in speaker.spoken)
-    assert store.match_voice(VOICE_VEC)[0] == "p9"
+    assert loop.run_once() == "idle"              # t=1000: recently awake
+    assert "sleep" not in body.motions
+    now["t"] = 1400.0                             # 400s idle > 300s threshold
+    assert loop.run_once() == "idle"
+    assert body.motions == ["sleep"]
+    assert loop.run_once() == "idle"              # still asleep: no second sleep motion
+    assert body.motions == ["sleep"]
+    loop._transcriber = FakeTranscriber([said("Reachy")])  # someone calls it
+    assert loop.run_once() == "conversation"
+    assert body.motions[1:3] == ["wake", "wakeup"]
+    assert speaker.spoken[0] in WAKE_LINES
+    assert any("Hi Alice" in s for s in speaker.spoken)
 
 
-def test_enrollment_survives_missing_voice(tmp_path):
-    ident = FakeSpeakerIdentifier(embedding=None)  # too short / model broken
-    loop, _, _, store, _ = make_loop(
-        tmp_path,
-        sights=[UNKNOWN, UNKNOWN],
-        utterances=["yes please", "Bob", "yes"],  # then silence for the phrase
-        enroll_result="p9",
-        speaker_id=ident,
+def test_start_asleep_wakes_with_flourish_on_first_wake_word(tmp_path):
+    loop, speaker, body, _, _ = make_loop(
+        tmp_path, utterances=["Reachy"], start_asleep=True
     )
-    assert loop.run_once() == "enrolled"  # face-only enrollment still succeeds
-    assert store.match_voice(VOICE_VEC) is None
+    assert loop.run_once() == "conversation"
+    assert body.motions[0:2] == ["wake", "wakeup"]
+    assert speaker.spoken[0] in WAKE_LINES
 
 
-def test_settles_before_each_listen_so_echo_tail_is_not_captured(tmp_path):
+def test_ignored_speech_does_not_wake_a_sleeping_robot(tmp_path):
+    loop, speaker, body, _, _ = make_loop(
+        tmp_path, utterances=["chatting nearby"], start_asleep=True
+    )
+    assert loop.run_once() == "idle"
+    assert body.motions == [] and speaker.spoken == []
+
+
+def test_settles_before_each_conversation_listen(tmp_path):
     """The mic opens a beat after the robot stops talking; without the pause
     the reverb tail of its own speech becomes the next 'utterance'."""
     naps = []
-    loop, speaker, body, store, brain = make_loop(
-        tmp_path,
-        sights=[ALICE],
-        utterances=["when is standup?"],
-        settle_s=0.4,
-        sleep=naps.append,
+    loop, *_ = make_loop(
+        tmp_path, utterances=["Reachy", "when is standup?"], settle_s=0.4, sleep=naps.append
     )
     assert loop.run_once() == "conversation"
-    # two listens (the question, then the silence that ends the conversation)
+    # two in-conversation listens (the question, then the silence that ends it)
     assert naps == [0.4, 0.4]
 
 
 def test_no_settle_by_default(tmp_path):
     naps = []
-    loop, *_ = make_loop(
-        tmp_path, sights=[ALICE], utterances=["hi"], sleep=naps.append
-    )
+    loop, *_ = make_loop(tmp_path, utterances=["Reachy", "hi"], sleep=naps.append)
     loop.run_once()
     assert naps == []
-
-
-def test_camera_poke_wakes_startles_and_speaks(tmp_path):
-    from reachy_vec.brain.oracle import STARTLE_LINES
-    from tests.conftest import FakeBody, FakeBrain, FakeOcclusion, FakeSpeaker, FakeTranscriber
-
-    speaker, body = FakeSpeaker(), FakeBody()
-    now = {"t": 1000.0}
-    loop = OracleLoop(
-        sight=lambda: None,                      # covered camera: no face
-        transcriber=FakeTranscriber([]),
-        speaker=speaker,
-        body=body,
-        brain=FakeBrain(),
-        enroll_capture=lambda name: None,
-        store=Store(tmp_path / "db"),
-        clock=lambda: now["t"],
-        start_asleep=True,
-        occlusion=FakeOcclusion([True]),
-    )
-    assert loop.run_once() == "no-face"
-    assert body.motions[:2] == ["wake", "startle"]       # woke, then flinched
-    assert speaker.spoken[0] in STARTLE_LINES
-    assert "sleep" not in body.motions                    # reaction reset the idle timer
-
-
-def test_camera_poke_while_awake_startles_without_waking(tmp_path):
-    from tests.conftest import FakeBody, FakeBrain, FakeOcclusion, FakeSpeaker, FakeTranscriber
-
-    speaker, body = FakeSpeaker(), FakeBody()
-    loop = OracleLoop(
-        sight=lambda: None,
-        transcriber=FakeTranscriber([]),
-        speaker=speaker,
-        body=body,
-        brain=FakeBrain(),
-        enroll_capture=lambda name: None,
-        store=Store(tmp_path / "db"),
-        clock=lambda: 1000.0,
-        occlusion=FakeOcclusion([True]),
-    )
-    assert loop.run_once() == "no-face"
-    assert body.motions == ["startle"]                    # no wake motion
-
-
-def test_no_occlusion_no_reaction(tmp_path):
-    from tests.conftest import FakeBody, FakeBrain, FakeOcclusion, FakeSpeaker, FakeTranscriber
-
-    speaker, body = FakeSpeaker(), FakeBody()
-    loop = OracleLoop(
-        sight=lambda: None,
-        transcriber=FakeTranscriber([]),
-        speaker=speaker,
-        body=body,
-        brain=FakeBrain(),
-        enroll_capture=lambda name: None,
-        store=Store(tmp_path / "db"),
-        clock=lambda: 1000.0,
-        occlusion=FakeOcclusion([]),
-    )
-    assert loop.run_once() == "no-face"
-    assert body.motions == [] and speaker.spoken == []

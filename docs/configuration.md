@@ -1,9 +1,20 @@
 # Configuration reference
 
 All settings live in `src/reachy_vec/config.py` (`pydantic-settings`).
-Set them as environment variables with the `REACHY_VEC_` prefix or in
-`.env` at the repo root (e.g. `REACHY_VEC_LLM_MODEL=gpt-4o`).
-Unknown keys in `.env` are ignored.
+Set them as environment variables with the `REACHY_VEC_` prefix. Unknown
+keys are ignored.
+
+## Where values come from (highest priority first)
+
+1. **Real environment variables** exported by the shell/CI
+2. **`.env` at the repo root** — per-machine overrides (gitignored)
+3. **The Reachy profile's `.env`** — `~/.hermes/profiles/reachy/.env` —
+   the deployment's shared home for secrets and defaults (loaded only if it
+   exists). Put `OPENAI_API_KEY`, `MONGODB_URI`, `REACHY_VEC_ROBOT_HOST` etc.
+   there once and both the agent and the robot read them; keep the repo
+   `.env` for machine-specific overrides only.
+
+`env_file` layering is verified by `tests/test_config.py::test_env_file_layering`.
 
 ## Secrets (no prefix)
 

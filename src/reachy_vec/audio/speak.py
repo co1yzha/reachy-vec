@@ -309,7 +309,7 @@ def make_speaker(media=None) -> Speaker:
         return QwenTTSSpeaker(
             sample_path=Path(sample),
             sample_text=settings.voice_sample_text,
-            model_id=settings.tts_model,
+            model_id=settings.tts_model or QWEN_TTS_DEFAULT_MODEL,
             play=RobotAudioSink(media) if media is not None else None,
             target_rms=settings.tts_target_rms,
             presence_db=settings.tts_presence_db,

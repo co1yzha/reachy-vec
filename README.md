@@ -1,13 +1,12 @@
 # reachy-vec — Team Familiar
 
-An embodied team assistant on a Reachy Mini (wireless). The robot recognizes
-teammates by face and voice, answers questions from a shared knowledge base,
+An embodied team assistant on a Reachy Mini (wireless). Say "Reachy" to start a
+conversation; the robot recognizes teammates by voice, answers questions from a shared knowledge base,
 remembers who said what, and relays messages — all vectors (docs, memories,
-faces, voices) in one embedded LanceDB store.
+voices) in one embedded LanceDB store.
 
 **Architecture:** the robot (Raspberry Pi 5) is a thin body streaming
-audio/video over WiFi; the brain runs on a Mac (Apple silicon) — face ID
-(insightface), speaker ID (ECAPA), STT (faster-whisper), RAG via the OpenAI
+audio/video over WiFi; the brain runs on a Mac (Apple silicon) — speaker ID (ECAPA), STT (faster-whisper), RAG via the OpenAI
 API, and voice-cloned TTS (Qwen3-TTS via mlx-audio) back out through the
 robot's speaker.
 
@@ -48,8 +47,11 @@ uv-managed virtualenvs don't ship `libpython3.12.dylib` where MuJoCo's
 `mjpython` and GStreamer expect it. After (re)creating `.venv`, run:
 
 ```bash
-ln -sf ~/.local/share/uv/python/cpython-3.12.9-macos-aarch64-none/lib/libpython3.12.dylib .venv/lib/
+ln -sf "$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')/libpython3.12.dylib" .venv/lib/
 ```
+
+This resolves the library from the venv's own interpreter, so it works whatever
+3.12.x patch release uv installed.
 
 ### Running the simulator (no robot needed)
 
@@ -82,11 +84,11 @@ with the Mac on the same network.
 REACHY_VEC_ROBOT_HOST=reachy-mini.local   # or the robot's IP
 
 # robot moves, Mac supplies camera/mic/speaker (desk workflow):
-uv run reachy-vec run --preview --source mac
+uv run reachy-vec run --source mac
 
 # everything on the robot: its camera, mics, and speaker
 # (set REACHY_VEC_TTS_BACKEND=qwen-tts so replies play on the robot):
-uv run reachy-vec run --preview --source robot
+uv run reachy-vec run --source robot
 ```
 
 Troubleshooting:
@@ -114,7 +116,7 @@ voice (fully local, Qwen3-TTS on MLX):
    `REACHY_VEC_VOICE_SAMPLE=data/voice_sample.wav`, and
    `REACHY_VEC_VOICE_SAMPLE_TEXT` (the sentence you read, so no
    auto-transcription is needed).
-3. `uv run reachy-vec run --preview` — the first run downloads the model
+3. `uv run reachy-vec run` — the first run downloads the model
    (~1.5 GB); expect 1–3 s of synthesis per sentence.
 
 ## Usage
@@ -123,9 +125,8 @@ voice (fully local, Qwen3-TTS on MLX):
 uv run reachy-vec chat               # text-only brain check (needs OPENAI_API_KEY)
 uv run reachy-vec sync-mongo         # pull aixlab.demos into LanceDB (needs MONGODB_URI)
 uv run reachy-vec ingest <path>      # add .md/.txt docs to the knowledge base
-uv run reachy-vec enroll "Name"      # webcam face enrollment
 uv run reachy-vec record-voice       # record a voice sample for the cloned TTS
-uv run reachy-vec run --preview      # full Oracle loop (webcam + mic + robot/sim)
+uv run reachy-vec run                # full Oracle loop: say "Reachy" to start (mic + robot/sim)
 #   --source auto|robot|mac: whose camera/mic/speaker (see "Running on the real robot")
 uv run reachy-vec dashboard          # browse the LanceDB store in the browser
 ```
@@ -150,11 +151,11 @@ src/reachy_vec/
     oracle.py, chat.py, intents.py, loop.py
   body/            # robot I/O: connection/streaming + motion primitives
     robot.py, motions.py
-  perception/      # identity: face ID + speaker ID + fusion
-    face.py, voice.py, fusion.py, camera.py, preview.py
+  perception/      # identity: speaker ID (voice only)
+    voice.py, fusion.py; camera.py, vision.py, occlusion.py (disabled for now)
   audio/           # audio front-end and output (say / qwen-tts voice clone)
     listen.py, speak.py
   cli/             # entry points, one file per command
-    chat.py, ingest.py, enroll.py, run.py, sync.py, dashboard.py, record_voice.py
+    chat.py, ingest.py, run.py, sync.py, dashboard.py, record_voice.py
 tests/
 ```

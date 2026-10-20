@@ -50,7 +50,7 @@ def seeded_store(tmp_path) -> Store:
 
 def test_dump_tables_covers_all_tables_and_truncates_vectors(tmp_path):
     dump = seeded_store(tmp_path).dump_tables()
-    assert set(dump) == {"docs", "people", "voices", "memories", "greetings", "messages"}
+    assert set(dump) == {"docs", "voices", "memories", "greetings", "messages"}
     assert dump["messages"] == []
     doc = dump["docs"][0]
     assert doc["text"] == "the nightly pipeline runs at 02:00"
