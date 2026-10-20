@@ -44,7 +44,7 @@ class HermesCli:
         bin: str,
         profile: str,
         toolsets: str,
-        runner=subprocess.run,
+        popen=subprocess.Popen,
         cwd: Path | None = None,
     ):
         if not profile or not profile.strip():
@@ -53,31 +53,61 @@ class HermesCli:
         self.bin = bin
         self.profile = profile
         self.toolsets = toolsets
-        self.runner = runner
+        self.popen = popen
         self.cwd = cwd
+        self._proc = None
 
     def run(self, task: str, *, requester: str | None, timeout_s: float) -> str:
         args = [
             self.bin, "-p", self.profile, "-z", build_prompt(task, requester),
             "-t", self.toolsets,
         ]
-        kwargs: dict = {"capture_output": True, "text": True, "timeout": timeout_s}
+        kwargs: dict = {
+            "stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True,
+        }
+        proc = None
         try:
             if self.cwd is not None:
                 self.cwd.mkdir(parents=True, exist_ok=True)
                 kwargs["cwd"] = str(self.cwd)
-            proc = self.runner(args, **kwargs)
+            proc = self._proc = self.popen(args, **kwargs)
+            stdout, stderr = proc.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired as e:
+            self._kill(proc)
             raise HermesError(f"hermes timed out after {timeout_s}s") from e
         except OSError as e:
             raise HermesError(f"hermes could not run: {e}") from e
+        finally:
+            self._proc = None
         if proc.returncode != 0:
-            err = (proc.stderr or "").strip()[:200]
+            err = (stderr or "").strip()[:200]
             raise HermesError(f"hermes exited {proc.returncode}: {err}")
-        out = (proc.stdout or "").strip()
+        out = (stdout or "").strip()
         if not out:
             raise HermesError("hermes returned no output")
         return out
+
+    @staticmethod
+    def _kill(proc) -> None:
+        try:
+            proc.kill()
+            proc.communicate(timeout=2)
+        except Exception:
+            pass
+
+    def terminate(self) -> None:
+        """Stop the in-flight Hermes process, if any. Never raises."""
+        proc = self._proc
+        if proc is None:
+            return
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        except Exception:
+            logger.warning("hermes terminate failed", exc_info=True)
 
 
 class HermesJobs:
@@ -96,7 +126,13 @@ class HermesJobs:
         return self._future is not None and not self._future.done()
 
     def close(self) -> None:
-        """Stop accepting work without blocking on a running task."""
+        """Kill the in-flight Hermes process and stop accepting work.
+
+        Does not block; without the kill the non-daemon worker would hold
+        interpreter exit until the task finished or timed out."""
+        terminate = getattr(self._agent, "terminate", None)
+        if terminate is not None:
+            terminate()
         self._pool.shutdown(wait=False, cancel_futures=True)
 
     def _run(self, task: str, requester_name: str | None) -> str:

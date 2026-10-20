@@ -125,7 +125,7 @@ mid-sentence.
 
 Needs oMLX serving `Qwen3.6-35B-A3B-oQ6e-mtp` at `http://127.0.0.1:8001/v1`
 (`REACHY_VEC_LLM_BASE_URL`, `REACHY_VEC_LLM_MODEL`, `REACHY_VEC_LLM_API_KEY`
-in `.env`) and, for steps 6-7, `REACHY_VEC_HERMES_ENABLED=true` with the
+in `.env`) and, for smoke steps 6-7 of this section, `REACHY_VEC_HERMES_ENABLED=true` with the
 `hermes` CLI on PATH and its `reachy` profile configured. Run on the robot:
 
 1. With Wi-Fi off and only oMLX running, Reachy starts and answers.
@@ -138,8 +138,7 @@ in `.env`) and, for steps 6-7, `REACHY_VEC_HERMES_ENABLED=true` with the
    next "Reachy".
 8. Stopping oMLX gives the spoken apology, not a crash.
 
-Ctrl+C with a Hermes task running should still exit (a running Hermes
-subprocess may delay interpreter exit until it finishes).
+Ctrl+C during a Hermes task stops the Hermes process and exits promptly.
 
 ### Still deferred
 

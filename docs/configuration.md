@@ -21,7 +21,6 @@ keys are ignored.
 | Variable | Used by | Needed for |
 |---|---|---|
 | `OPENAI_API_KEY` | openai SDK directly | `chat`, `run` (LLM when `LLM_BASE_URL` is unset), `STT_BACKEND=openai` |
-| `LLM_API_KEY` (`REACHY_VEC_` prefix) | `brain/llm.py` | the local oMLX server's key; set it in `.env`, never commit it or log it |
 | `MONGODB_URI` | `cli/sync.py` | `sync-mongo` only |
 | `TAVILY_API_KEY` | `brain/chat.py` (`web_search` tool) | only when `WEB_SEARCH=true`; free tier is limited — the tool tells the user when credits run out (Tavily 432/433) |
 
@@ -31,7 +30,7 @@ keys are ignored.
 |---|---|---|
 | `LLM_MODEL` | `gpt-5-mini` | chat model for answers, tools, and memory distillation; for the local server use `Qwen3.6-35B-A3B-oQ6e-mtp` |
 | `LLM_BASE_URL` | unset | OpenAI-compatible server; `http://127.0.0.1:8001/v1` = local oMLX. Unset = OpenAI cloud |
-| `LLM_API_KEY` | unset | key for that server (see Secrets) |
+| `LLM_API_KEY` | unset | key for that server (`REACHY_VEC_LLM_API_KEY`, prefixed); set it in `.env`, never commit or log it |
 | `LLM_DISABLE_THINKING` | `true` | local only: sends `enable_thinking=False` so replies start fast |
 | `LLM_TIMEOUT_S` | `30` | request timeout for the local client |
 | `LLM_REASONING_EFFORT` | `minimal` | Reasoning effort for gpt-5* models (`minimal`/`low`/`medium`/`high`); ignored for others |
@@ -56,7 +55,7 @@ keys are ignored.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `VOICE_THRESHOLD` | `0.30` | cosine gate for speaker recognition (within 0.05 below = "can't tell" (answered anonymously, not greeted); voice is the only identity signal |
+| `VOICE_THRESHOLD` | `0.30` | cosine gate for speaker recognition (within 0.05 below = "can't tell", answered anonymously and not greeted); voice is the only identity signal |
 | `VOICE_MIN_UTTERANCE_S` | `1.0` | utterances shorter than this aren't voice-identified |
 | `VOICE_PASSIVE_CAP` | `10` | max passively-banked voice embeddings kept per person (oldest evicted; explicit enrollment rows never pruned) |
 | `ENROLL_VOICE_PHRASES` | `2` | spoken sentences recorded when a stranger enrolls their voice |

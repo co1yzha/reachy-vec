@@ -99,7 +99,7 @@ audio = can't tell, answered anonymously and never written to the store.
 ## Configuration
 
 Env vars / `.env` with the `REACHY_VEC_` prefix; secrets (`OPENAI_API_KEY`,
-`MONGODB_URI`, `LLM_API_KEY`) have no prefix. Full reference with defaults and tuning
+`MONGODB_URI`) have no prefix (the LLM server key is `REACHY_VEC_LLM_API_KEY`). Full reference with defaults and tuning
 notes: **[configuration.md](configuration.md)**. Per-pipeline detail (which
 model runs at each step): **[pipelines.md](pipelines.md)**.
 

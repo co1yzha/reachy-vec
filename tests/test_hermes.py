@@ -1,7 +1,7 @@
 import subprocess
+import threading
 import time
 from pathlib import Path
-from subprocess import CompletedProcess
 
 import pytest
 
@@ -10,24 +10,44 @@ from reachy_vec.store.db import Store
 from tests.conftest import FakeAgent
 
 
-def _cli(runner, **kw):
-    return HermesCli(bin="hermes", profile="reachy", toolsets="web,todo", runner=runner, **kw)
+class FakePopen:
+    """Popen stand-in; communicate() returns canned output or raises."""
+
+    def __init__(self, args, returncode=0, out="", err="", raises=None, **kw):
+        self.args, self.kw = args, kw
+        self.returncode, self._out, self._err, self._raises = returncode, out, err, raises
+        self.timeout = None
+        self.killed = False
+
+    def communicate(self, timeout=None):
+        self.timeout = timeout
+        if self._raises is not None:
+            raise self._raises
+        return self._out, self._err
+
+    def kill(self):
+        self.killed = True
+
+
+def _cli(popen, **kw):
+    return HermesCli(bin="hermes", profile="reachy", toolsets="web,todo", popen=popen, **kw)
 
 
 def test_args_exact_and_no_shell():
-    seen = {}
+    made = []
 
-    def runner(args, **kw):
-        seen.update(args=args, **kw)
-        return CompletedProcess(args, 0, "Done.\n", "")
+    def popen(args, **kw):
+        made.append(FakePopen(args, out="Done.\n", **kw))
+        return made[0]
 
-    out = _cli(runner).run("check X; rm -rf ~ $(whoami)", requester="Bob", timeout_s=5)
+    out = _cli(popen).run("check X; rm -rf ~ $(whoami)", requester="Bob", timeout_s=5)
+    p = made[0]
     assert out == "Done."
-    assert seen["args"][:4] == ["hermes", "-p", "reachy", "-z"]
-    assert seen["args"][5:] == ["-t", "web,todo"]
-    assert "check X; rm -rf ~ $(whoami)" in seen["args"][4] and "shell" not in seen
-    assert seen["timeout"] == 5
-    assert "cwd" not in seen
+    assert p.args[:4] == ["hermes", "-p", "reachy", "-z"]
+    assert p.args[5:] == ["-t", "web,todo"]
+    assert "check X; rm -rf ~ $(whoami)" in p.args[4] and "shell" not in p.kw
+    assert p.timeout == 5
+    assert "cwd" not in p.kw
 
 
 def test_prompt_copy_anonymous():
@@ -46,36 +66,52 @@ def test_prompt_copy_exact_named():
 def test_cwd_passed_and_created(tmp_path):
     seen = {}
 
-    def runner(args, **kw):
+    def popen(args, **kw):
         seen.update(kw)
-        return CompletedProcess(args, 0, "ok", "")
+        return FakePopen(args, out="ok")
 
     cwd = tmp_path / "a" / "hermes_cwd"
-    _cli(runner, cwd=cwd).run("x", requester=None, timeout_s=1)
+    _cli(popen, cwd=cwd).run("x", requester=None, timeout_s=1)
     assert seen["cwd"] == str(cwd)
     assert Path(cwd).is_dir()
 
 
 def _nonzero(args, **kw):
-    return CompletedProcess(args, 1, "out", "boom")
+    return FakePopen(args, returncode=1, out="out", err="boom")
 
 
 def _empty(args, **kw):
-    return CompletedProcess(args, 0, "  \n", "")
+    return FakePopen(args, out="  \n")
 
 
 def _timeout(args, **kw):
-    raise subprocess.TimeoutExpired(args, 1)
+    return FakePopen(args, raises=subprocess.TimeoutExpired(args, 1))
 
 
 def _notfound(args, **kw):
     raise FileNotFoundError("hermes")
 
 
-@pytest.mark.parametrize("runner", [_nonzero, _empty, _timeout, _notfound])
-def test_failures_raise_hermes_error(runner):
+@pytest.mark.parametrize("popen", [_nonzero, _empty, _timeout, _notfound])
+def test_failures_raise_hermes_error(popen):
     with pytest.raises(HermesError):
-        _cli(runner).run("x", requester="Bob", timeout_s=1)
+        _cli(popen).run("x", requester="Bob", timeout_s=1)
+
+
+def test_timeout_kills_process():
+    made = []
+
+    def popen(args, **kw):
+        made.append(_timeout(args))
+        return made[0]
+
+    with pytest.raises(HermesError):
+        _cli(popen).run("x", requester="Bob", timeout_s=1)
+    assert made[0].killed
+
+
+def test_terminate_without_process_is_noop():
+    _cli(_nonzero).terminate()
 
 
 @pytest.mark.parametrize("profile", ["", "  "])
@@ -163,3 +199,38 @@ def test_close_returns_promptly_while_job_running(tmp_path):
     start = time.monotonic()
     jobs.close()
     assert time.monotonic() - start < 0.5
+
+
+class BlockingPopen(FakePopen):
+    def __init__(self, args, **kw):
+        super().__init__(args, **kw)
+        self.stopped = threading.Event()
+        self.terminated = False
+
+    def communicate(self, timeout=None):
+        self.stopped.wait(10)
+        return "", ""
+
+    def terminate(self):
+        self.terminated = True
+        self.returncode = -15
+        self.stopped.set()
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+
+def test_close_terminates_in_flight_hermes_process(tmp_path):
+    made = []
+
+    def popen(args, **kw):
+        made.append(BlockingPopen(args, **kw))
+        return made[0]
+
+    store = Store(tmp_path / "db")
+    jobs = HermesJobs(_cli(popen), store, wait_s=0.05, task_timeout_s=30)
+    assert jobs.ask("slow", requester_id="p2", requester_name="Bob").startswith("still working")
+    assert jobs.busy
+    jobs.close()
+    assert made[0].terminated
+    assert wait_until(lambda: not jobs.busy, 1.0)
