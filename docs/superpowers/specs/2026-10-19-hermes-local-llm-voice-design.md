@@ -12,7 +12,7 @@ Agreed decisions:
 
 | # | Decision | Choice |
 |---|---|---|
-| 1 | LLM | Local oMLX server, model `Qwen3.8-27B-oQ4e-mtp`, shared by Reachy and Hermes |
+| 1 | LLM | Local oMLX server, model `Qwen3.6-35B-A3B-oQ6e-mtp`, shared by Reachy and Hermes |
 | 2 | Memory | LanceDB stays Reachy's memory; option 2: Reachy in front, Hermes builds its own picture of people from what Reachy sends it (version 2) |
 | 3 | Identity | Voice only, no face recognition; Reachy uses people's names naturally |
 | 4 | Wake word | "Reachy" |
@@ -52,7 +52,7 @@ run shell commands, write files or control the Mac; replacing LanceDB.
 - **Hermes:**
   - Installed at `~/.local/bin/hermes`, with a dedicated profile `reachy`
     (`hermes -p reachy …`).
-  - That profile uses `Qwen3.8-27B-oQ4e-mtp` on oMLX at
+  - That profile uses `Qwen3.6-35B-A3B-oQ6e-mtp` on oMLX at
     `http://127.0.0.1:8001/v1`. oMLX requires an API key.
   - Cron output goes to `~/.hermes/profiles/reachy/cron/output`.
 - **Speech-to-text (faster-whisper) and text-to-speech (`say` / Qwen3-TTS)
@@ -67,7 +67,7 @@ run shell commands, write files or control the Mac; replacing LanceDB.
                        every turn         │   └── LanceDB (docs, memories,
                                           │        voices, messages)
                                           ▼
-                     oMLX :: Qwen3.8-27B-oQ4e-mtp  (127.0.0.1:8001/v1)
+                     oMLX :: Qwen3.6-35B-A3B-oQ6e-mtp  (127.0.0.1:8001/v1)
                                           ▲
                        ask_hermes         │
                        (background) ──▶ `hermes -p reachy -z …`
@@ -95,7 +95,7 @@ New settings, all with the `REACHY_VEC_` prefix:
 |---|---|---|
 | `llm_base_url` | `None` | e.g. `http://127.0.0.1:8001/v1`. `None` = OpenAI cloud (unchanged behaviour). |
 | `llm_api_key` | `None` | oMLX key. Lives in the profile `.env` or the repo `.env`, never in code. |
-| `llm_model` | existing | Set to `Qwen3.8-27B-oQ4e-mtp`. |
+| `llm_model` | existing | Set to `Qwen3.6-35B-A3B-oQ6e-mtp`. |
 | `llm_disable_thinking` | `True` | Turn off Qwen's thinking mode on every request. |
 | `llm_timeout_s` | `30.0` | A hung server fails one turn, not the loop. |
 
@@ -209,14 +209,17 @@ Run against the live oMLX endpoint, with Qwen3-TTS loaded, before
 | Reasoning text in the spoken output | **0** |
 | Time to first sentence while a Hermes job is running | Reported, no target (contention baseline) |
 
-**Model choice:** Qwen3.8-27B was picked over Qwen3.6-35B-A3B because it
-needs less RAM. Unified memory is shared with Qwen3-TTS, Whisper, ECAPA and
-BGE, and memory is the binding constraint on this Mac.
+**Model choice (updated 2026-10-20):** `Qwen3.6-35B-A3B-oQ6e-mtp`, a
+mixture-of-experts model with about 3B active parameters per token, at oQ6e
+quantisation. It replaced `Qwen3.8-27B-oQ4e-mtp` (dense), which had been
+chosen for lower RAM use. Active-parameter count drives speed, so the
+mixture-of-experts model should reach the first sentence sooner. Its total
+weights, at the higher-precision quantisation, need more of the unified
+memory that is shared with Qwen3-TTS, Whisper, ECAPA and BGE.
 
-**Risk:** a dense 27B generates fewer tokens per second than a
-mixture-of-experts model. Multi-token prediction ("mtp") and the prompt
-cache offset part of that. If the 1.5 s target fails, try in this order.
-None of these needs more RAM.
+**Risks and what to try if the 1.5 s target fails:** check memory pressure
+first (Activity Monitor or `memory_pressure`, with TTS loaded). Swapping
+would erase the speed advantage. Then try in this order:
 1. Shorter system prompt and tool descriptions, which means less prompt to
    process when the cache misses.
 2. Make sure the prompt cache hits: keep the system prompt and tools
@@ -224,7 +227,8 @@ None of these needs more RAM.
    message.
 3. Speak a short acknowledgement while the first sentence is being
    generated.
-4. Only then, a smaller quantisation, accepting some loss in quality.
+4. A lower quantisation (e.g. oQ4e) if memory is tight, or the 27B if RAM
+   is the binding constraint again.
 
 The spec doesn't change; only config does.
 
