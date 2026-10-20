@@ -1,6 +1,6 @@
 # Architecture — how the robot works
 
-Current as of Phase 3. The design specs live in
+Current as of Phase 4 (wake word, voice-only identity, local LLM, Hermes). The design specs live in
 [`docs/superpowers/specs/`](superpowers/specs/); this page is the operational
 summary.
 
@@ -10,57 +10,54 @@ summary.
 ┌─────────────────────┐   WiFi    ┌──────────────────────────────────────┐
 │  Reachy Mini        │◄─────────►│  Brain (Mac, Apple silicon)          │
 │  (wireless / sim)   │  SDK      │                                      │
-│  motions only for   │           │  eye:   Mac webcam → insightface     │
+│  motions only for   │           │  eye:   (vision disabled for now)    │
 │  now; camera/mic    │           │  ears:  Mac mic → silero-VAD →       │
 │  move on-robot when │           │         faster-whisper (base.en)     │
-│  hardware arrives   │           │  voice: ECAPA speaker ID + fusion    │
+│  hardware arrives   │           │  voice: ECAPA speaker ID (voice-only)│
 └─────────────────────┘           │  mouth: macOS `say` / Qwen3-TTS      │
                                   │         voice clone (mlx-audio)      │
-                                  │  brain: OpenAI (gpt-5-mini) + RAG    │
+                                  │  brain: local oMLX LLM + RAG         │
        MongoDB Atlas              │  store: LanceDB (data/lancedb)       │
        aixlab.demos ──sync-mongo──►                                      │
        (source of truth)          └──────────────────────────────────────┘
 ```
 
 - **Package layout:** `store/` (LanceDB + ingestion + mongo sync), `brain/`
-  (RAG, oracle state machine), `perception/` (camera, face ID, speaker ID,
-  fusion), `audio/` (listen/speak), `body/` (motions), `cli/` (one file per
+  (RAG, oracle state machine, Hermes agent), `perception/` (speaker ID,
+  identity), `audio/` (listen/speak), `body/` (motions), `cli/` (one file per
   command).
-- **One LanceDB database, six active tables:** `docs` (text chunks +
-  384-dim BGE vectors), `people` (512-dim insightface vectors, one row per
-  captured frame), `voices` (192-dim ECAPA vectors, enrolled + passively
+- **One LanceDB database, five tables:** `docs` (text chunks +
+  384-dim BGE vectors), `voices` (192-dim ECAPA vectors, enrolled + passively
   banked), `greetings` (per-person last-greeted timestamps),
   `memories` (per-person notes: saved via the save_note tool or distilled
   automatically when a conversation ends, recalled by vector search each
   turn), `messages` (queued relays, delivered by voice on the recipient's
-  next recognized sighting).
+  next time that person speaks).
 - **Everything heavy is behind a protocol with a test fake** (`Embedder`,
-  `Body`, `Transcriber`, `Speaker`, `FaceMatcher`, `SpeakerIdentifier`,
-  `Camera`) — the whole state machine runs in pytest without devices,
+  `Body`, `Transcriber`, `Speaker`, `SpeakerIdentifier`,
+  `Camera`, `Agent`) — the whole state machine runs in pytest without devices,
   models, or network.
-- **Per-turn identity (Phase 2b):** every utterance is voice-identified
-  (ECAPA vs the `voices` table) and fused with the face observation —
-  voice is the authority, face the tie-breaker, never guess. Notes,
+- **Per-turn identity:** every utterance is voice-identified (ECAPA vs the
+  `voices` table) — voice is the only identity signal; never guess. Notes,
   memories, and messages follow whoever actually spoke; an unknown voice
   is answered but never written to the store.
 
 ## The run loop (`reachy-vec run`)
 
 ```
-STARTUP: load .env → KB non-empty? → webcam OK? → warm up STT/faces/embeddings
-         (whisper primed with demo titles as vocabulary)
+STARTUP: load .env → KB non-empty? → warm up STT/voices/embeddings/LLM
+         (demo titles snapped into transcripts after STT)
               ▼
-  ┌───────── IDLE ◄──────────────────────────────────────────────┐
-  │  poll webcam → face embedding → cosine match vs people table │
-  │                                                              │
-known face (≥ face_threshold)          unknown face (3 stable polls)
-  ▼                                             ▼               │
-GREET: cooldown expired → spoken       OFFER ENROLL: spoken yes │
-"Hi <name>!" + greet motion;           → name → confirm → 5     │
-else silent acknowledge                face captures → GREET;   │
-  ▼                                    decline → polite exit ───┤
+  ┌───────── ASLEEP / IDLE ◄─────────────────────────────────────┐
+  │  mic always open; listen in short windows for a WAKE_WORDS    │
+  │  entry ("Reachy" + common mishearings)                        │
+  ▼                                                               │
+WAKE: words after "Reachy" are the first question. Voice ID →     │
+known voice: greet (cooldown) + deliver queued messages;          │
+stranger: offered voice enrollment (name + spoken sentences)      │
+  ▼                                                               │
 LISTENING: VAD-segmented utterance → whisper                    │
-  │        30 s silence → goodbye nod ──────────────────────────┘
+  │        30 s silence → goodbye nod ─────────────────────────────┘
   ▼
 THINKING (ChatBrain): embed question (BGE query prefix) → hybrid LanceDB
   search (vector + BM25, cosine scores) → context +
@@ -70,18 +67,24 @@ THINKING (ChatBrain): embed question (BGE query prefix) → hybrid LanceDB
   │   knowledge answer with a casual not-from-our-docs signal (none for
   │   chit-chat). Follow-ups work via history. Replies STREAM: each
   │   sentence is spoken as it generates (~1s to first sentence).
+  │   LLM: local oMLX (`Qwen3.6-35B-A3B-oQ6e-mtp`, thinking off) at LLM_BASE_URL.
   │   Tools (second LLM round-trip, actions only): open_url (browser,
-  │   http(s) only), save_note (remember about this person), send_message
-  │   (relay to an enrolled teammate on next sighting), get_weather
-  │   (Open-Meteo, no key, lab location from settings).
-  │   OpenAI error → spoken apology, keep listening
+  │   http(s) only; runs only when the user's turn has an explicit
+  │   open/show/... word), save_note (remember about this person),
+  │   send_message (relay to an enrolled teammate, delivered at a turn
+  │   boundary when they next speak), get_weather (Open-Meteo, no key),
+  │   get_time, ask_hermes (multi-step tasks → Hermes CLI, `reachy`
+  │   profile, read-only + scheduling toolsets; holding line "Let me look
+  │   into that.", waits 20 s, else the answer arrives later as a message
+  │   from Hermes; one task at a time).
+  │   LLM error → spoken apology, keep listening
   ▼
 SPEAKING: `say` + nod → back to LISTENING
 ```
 
-Identity rule (from the parent spec): **never guess.** Below-threshold =
-unknown; borderline (within 0.05 under threshold) = treated as no face at
-all, so a bad angle of a known person is neither greeted nor re-enrolled.
+Identity rule (from the parent spec): **never guess.** Voice below
+threshold = stranger; borderline (within 0.05 under threshold) or too-short
+audio = can't tell, answered anonymously and never written to the store.
 
 ## Data flow for knowledge
 
@@ -96,7 +99,7 @@ all, so a bad angle of a known person is neither greeted nor re-enrolled.
 ## Configuration
 
 Env vars / `.env` with the `REACHY_VEC_` prefix; secrets (`OPENAI_API_KEY`,
-`MONGODB_URI`) have no prefix. Full reference with defaults and tuning
+`MONGODB_URI`, `LLM_API_KEY`) have no prefix. Full reference with defaults and tuning
 notes: **[configuration.md](configuration.md)**. Per-pipeline detail (which
 model runs at each step): **[pipelines.md](pipelines.md)**.
 
@@ -128,12 +131,14 @@ to means, roughly in priority order (sequenced into shippable sub-phases in the
    `BargeInMonitor` watching the mic and `SpeechInterrupted` in `ChatBrain`.
    Gated by `BARGE_IN`. Caveat: on-robot audio-out `stop()` is best-effort
    (per-sentence buffer); the `say`/local backends cut mid-sentence.
-4. **Cloud dependency / no offline fallback.** Answers require the OpenAI
-   API; a WiFi or API outage yields a spoken apology, not a degraded local
-   answer. The Mac↔robot link is also assumed reliable.
-5. **Attention is face-only.** No wake word and no sound localization —
-   someone off-camera can't get the robot's attention or make it turn toward
-   the speaker; multi-party turn-taking beyond voice attribution is untested.
+4. **LLM server dependency.** Answers need the local oMLX server
+   (`LLM_BASE_URL`), or OpenAI if that is unset; there is no automatic
+   fallback between them, so an outage yields a spoken apology. Hermes
+   tasks additionally need the `hermes` CLI and its `reachy` profile.
+   The Mac↔robot link is also assumed reliable.
+5. **Attention is wake-word only.** "Reachy" wakes it, but there is no
+   sound localization — it can't turn toward the speaker; multi-party
+   turn-taking beyond voice attribution is untested.
 6. **Operational polish.** No autostart/service, no metrics beyond
    `data/reachy.log`, and identity management (delete/rename/merge a person,
    consent + retention controls) is not exposed anywhere but the raw store.

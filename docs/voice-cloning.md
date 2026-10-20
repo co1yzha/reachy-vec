@@ -69,7 +69,7 @@ When you're happy, run the full experience — the robot greets you and answers
 aloud in your voice:
 
 ```bash
-uv run reachy-vec run --preview
+uv run reachy-vec run
 ```
 
 ## Getting a good clone
