@@ -491,6 +491,25 @@ class ChatBrain:
             prompt += LOOK_AROUND_HINT
         return prompt
 
+    def warm_up(self) -> bool:
+        """Prime the LLM (connection + prompt cache) with the real system prompt
+        and tools. Never raises; returns False if the LLM is unreachable."""
+        try:
+            self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": self._system_prompt()},
+                    {"role": "user", "content": "hi"},
+                ],
+                tools=self._active_tools(),
+                max_completion_tokens=1,  # max_tokens is rejected by gpt-5* models
+                **self._llm_kwargs,
+            )
+            return True
+        except Exception as exc:
+            logger.warning("LLM warm-up failed: %s", exc)
+            return False
+
     def _complete(self, on_sentence: Callable[[str], None] | None = None):
         if on_sentence is None:
             response = self._client.chat.completions.create(

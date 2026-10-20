@@ -790,3 +790,26 @@ def test_non_streaming_reasoning_is_stripped(tmp_path):
     client = FakeLLMClient(reply="<think>plan</think>Hello Yang.")
     reply = make_brain(tmp_path, client).respond("hi", identity=YANG)
     assert reply == "Hello Yang."
+
+
+def test_warm_up_sends_real_system_prompt_and_tools(tmp_path):
+    client = FakeLLMClient(reply="x")
+    brain = make_brain(tmp_path, client)
+    assert brain.warm_up() is True
+    kw = client.chat.completions.last_kwargs
+    assert kw["messages"][0]["content"] == brain._system_prompt()
+    assert kw["tools"] == brain._active_tools() and kw["max_completion_tokens"] == 1
+
+
+def test_warm_up_failure_is_non_fatal(tmp_path):
+    class _Completions:
+        def create(self, **kwargs):
+            raise ConnectionError("down")
+
+    class _Chat:
+        completions = _Completions()
+
+    class Down:
+        chat = _Chat()
+
+    assert make_brain(tmp_path, Down()).warm_up() is False

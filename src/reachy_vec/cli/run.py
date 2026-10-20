@@ -197,14 +197,6 @@ def run(
     import numpy as np
 
     speaker_id.embed(np.zeros(32000, dtype=np.float32))  # loads ECAPA (2s of silence)
-    try:                             # open the TLS connection to OpenAI
-        client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[{"role": "user", "content": "hi"}],
-            max_completion_tokens=1,  # max_tokens is rejected by gpt-5* models
-        )
-    except Exception:
-        pass  # no network now != no network later; the loop will surface it
 
     body = wrap_reconnect(
         body,
@@ -226,6 +218,12 @@ def run(
         web_search=settings.web_search,
         disable_thinking=uses_local_llm() and settings.llm_disable_thinking,
     )
+    if not brain.warm_up():
+        typer.echo(
+            f"LLM not reachable at {settings.llm_base_url or 'OpenAI'} - "
+            "answers will fail until it is.",
+            err=True,
+        )
     loop = OracleLoop(
         transcriber=transcriber,
         speaker=speaker,
