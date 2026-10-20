@@ -20,6 +20,8 @@ def chat() -> None:
         typer.echo("Knowledge base is empty - run 'reachy-vec ingest <path>' first.")
         raise typer.Exit(code=1)
     brain = ChatBrain(
+        k=settings.rag_k,
+        rag_min_score=settings.rag_min_score,
         store=store,
         embedder=BgeEmbedder(
             settings.embedding_model, query_prefix=settings.embedding_query_prefix

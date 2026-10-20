@@ -273,3 +273,41 @@ def test_mic_transcriber_normalizes_stt_audio_but_keeps_raw_capture(monkeypatch)
     assert utt.audio is quiet  # raw capture preserved
     got_rms = float(np.sqrt(np.mean(np.square(received["audio"]))))
     assert abs(got_rms - 0.05) < 1e-4
+
+
+def _whisper_recording(seen):
+    class FakeSeg:
+        text = " Reachy "
+
+    def transcribe(self, a, **kw):
+        seen.update(kw)
+        return [FakeSeg()], None
+
+    return type("W", (), {"transcribe": transcribe})()
+
+
+def test_mic_transcriber_passes_wake_hotwords(monkeypatch):
+    """'Reachy' was heard as "I'm reaching." - hotwords bias whisper to it."""
+    seen = {}
+    t = MicTranscriber(hotwords="Reachy")
+    monkeypatch.setattr(t, "_capture", lambda timeout_s: np.zeros(16000, dtype=np.float32))
+    monkeypatch.setattr(t, "_load", lambda: None)
+    t._whisper = _whisper_recording(seen)
+    t.listen_once(5)
+    assert seen["hotwords"] == "Reachy"
+
+
+def test_mic_transcriber_no_hotwords_when_blank(monkeypatch):
+    seen = {}
+    t = MicTranscriber(hotwords="")
+    monkeypatch.setattr(t, "_capture", lambda timeout_s: np.zeros(16000, dtype=np.float32))
+    monkeypatch.setattr(t, "_load", lambda: None)
+    t._whisper = _whisper_recording(seen)
+    t.listen_once(5)
+    assert seen.get("hotwords") is None
+
+
+def test_default_hotwords_setting_is_reachy():
+    from reachy_vec.config import Settings
+
+    assert Settings.model_fields["stt_hotwords"].default == "Reachy"

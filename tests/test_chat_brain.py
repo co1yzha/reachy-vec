@@ -35,7 +35,7 @@ def seeded_store(tmp_path) -> Store:
 
 
 def make_brain(tmp_path, client, opener=None, web_search_fetch=None,
-               look_around_fn=None, disable_thinking=False, hermes=None):
+               look_around_fn=None, disable_thinking=False, hermes=None, **kw):
     return ChatBrain(
         store=seeded_store(tmp_path),
         embedder=FakeEmbedder(),
@@ -46,6 +46,7 @@ def make_brain(tmp_path, client, opener=None, web_search_fetch=None,
         look_around_fn=look_around_fn,
         disable_thinking=disable_thinking,
         hermes=hermes,
+        **kw,
     )
 
 
@@ -962,3 +963,44 @@ def test_ask_hermes_busy_skips_holding_line(tmp_path):
     assert agent.calls == []
     tool_msgs = [m for m in brain._history if m.get("role") == "tool"]
     assert tool_msgs[0]["content"] == BUSY
+
+
+# -- retrieval relevance gate ---------------------------------------------------
+
+
+def _scored_brain(tmp_path, client, scores, **kw):
+    from reachy_vec.store.schemas import DocChunk
+
+    brain = make_brain(tmp_path, client, **kw)
+    hits = [
+        (DocChunk(chunk_id=f"c{i}", text=f"snippet {i}", vector=[0.0] * 384,
+                  source=f"demo: D{i}", ingested_at="2026-10-20T00:00:00+00:00"), s)
+        for i, s in enumerate(scores)
+    ]
+    brain._store.search_docs_scored = lambda v, k, query_text=None: hits[:k]
+    return brain
+
+
+def test_low_scoring_docs_are_not_sent(tmp_path):
+    client = FakeLLMClient(reply="I'm well.")
+    brain = _scored_brain(tmp_path, client, [0.61, 0.55, 0.50], rag_min_score=0.62)
+    brain.respond("how are you today", identity=YANG)
+    user = client.chat.completions.last_kwargs["messages"][-1]["content"]
+    assert "snippet" not in user and "(nothing relevant found)" in user
+
+
+def test_relevant_docs_are_sent_and_capped(tmp_path):
+    client = FakeLLMClient(reply="Food Mapping.")
+    brain = _scored_brain(tmp_path, client, [0.78, 0.66, 0.64, 0.63, 0.40],
+                          rag_min_score=0.62, k=3)
+    brain.respond("tell me about the food mapping demo", identity=YANG)
+    user = client.chat.completions.last_kwargs["messages"][-1]["content"]
+    assert "snippet 0" in user and "snippet 2" in user
+    assert "snippet 3" not in user and "snippet 4" not in user   # k=3 cap + gate
+
+
+def test_rag_settings_defaults():
+    from reachy_vec.config import Settings
+
+    assert Settings.model_fields["rag_min_score"].default == 0.62
+    assert Settings.model_fields["rag_k"].default == 3

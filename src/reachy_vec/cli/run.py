@@ -268,6 +268,8 @@ def run(
         speaker = SwayingSpeaker(speaker, SpeakingSway(body))
     hermes = make_hermes(store)
     brain = ChatBrain(
+        k=settings.rag_k,
+        rag_min_score=settings.rag_min_score,
         store=store,
         embedder=embedder,
         client=client,

@@ -49,10 +49,15 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 30.0  # local client request timeout
     stt_model: str = "base.en"  # faster-whisper size; english-only = fastest + most accurate for EN
     stt_backend: str = "local"  # local (faster-whisper) | openai (gpt-4o-transcribe)
+    stt_hotwords: str = "Reachy"  # bias local whisper toward the wake word ("Reachy"
+    # was heard as "I'm reaching."); empty = off. Clear it if noise causes false wakes
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_query_prefix: str = (
         "Represent this sentence for searching relevant passages: "
     )  # BGE query instruction; set empty to disable for non-BGE models
+    rag_k: int = 3  # max retrieved doc chunks per turn
+    rag_min_score: float = 0.62  # cosine floor for retrieved chunks; small talk scores
+    # ~0.45-0.61 and demo questions ~0.66-0.78 on bge-small, so chit-chat gets none
     tts_backend: str = "say"  # say (macOS built-in) | qwen-tts (voice clone, local MLX)
     tts_model: str = ""  # mlx-audio model id; empty -> QWEN_TTS_DEFAULT_MODEL (0.6B)
     # tts_model: str = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"  # mlx-audio model id

@@ -345,6 +345,7 @@ class ChatBrain:
         reasoning_effort: str | None = None,
         opener: Callable[[str], None] = default_opener,
         k: int = 5,
+        rag_min_score: float = 0.0,
         web_search: bool = False,
         web_search_fetch=None,
         look_fn: Callable[[str], str] | None = None,
@@ -369,6 +370,7 @@ class ChatBrain:
             self._llm_kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
         self._opener = opener
         self._k = k
+        self._rag_min_score = rag_min_score  # drop weakly related chunks (small talk)
         if web_search_fetch is None and web_search:
             key = os.getenv("TAVILY_API_KEY")
             if key:
@@ -496,6 +498,7 @@ class ChatBrain:
         return "\n\n".join(
             f"[{chunk.source} | score {score:.2f}]\n{chunk.text}"
             for chunk, score in scored
+            if score >= self._rag_min_score
         )
 
     def _retrieve_memories(self, vector: list[float]) -> str:

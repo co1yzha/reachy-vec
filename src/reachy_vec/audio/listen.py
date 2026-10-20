@@ -279,10 +279,12 @@ class MicTranscriber(_AudioCapture):
         sample_rate: int = SAMPLE_RATE,
         initial_prompt: str | None = None,
         source: "AudioSource | None" = None,
+        hotwords: str | None = None,
     ):
         super().__init__(source=source, sample_rate=sample_rate)
         self._model_size = model_size or settings.stt_model
         self._initial_prompt = initial_prompt
+        self._hotwords = hotwords if hotwords is not None else settings.stt_hotwords
         self._whisper = None
 
     def _load(self):
@@ -308,6 +310,7 @@ class MicTranscriber(_AudioCapture):
             normalize_rms(audio, settings.stt_target_rms),
             language="en",
             initial_prompt=self._initial_prompt,
+            hotwords=self._hotwords or None,
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()
         logger.info("heard: %r", text)

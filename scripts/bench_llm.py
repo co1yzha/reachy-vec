@@ -78,6 +78,8 @@ def main() -> int:
     load_dotenv()
     client = make_llm_client()
     brain = ChatBrain(
+        k=settings.rag_k,
+        rag_min_score=settings.rag_min_score,
         store=Store(settings.lancedb_dir),
         embedder=BgeEmbedder(
             settings.embedding_model, query_prefix=settings.embedding_query_prefix
