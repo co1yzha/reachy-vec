@@ -121,6 +121,14 @@ class Settings(BaseSettings):
     ]  # open_url runs only if the user's turn contains one of these (whole words)
     web_search: bool = False  # enable the Tavily web_search tool (needs TAVILY_API_KEY)
 
+    # Hermes agent (ask_hermes tool: delegates spoken tasks to the local Hermes CLI)
+    hermes_enabled: bool = False
+    hermes_bin: str = "hermes"
+    hermes_profile: str = "reachy"
+    hermes_toolsets: str = "web,browser,memory,skills,session_search,todo,cronjob,kanban"
+    hermes_wait_s: float = 20.0  # how long to wait before handing off to background
+    hermes_task_timeout_s: float = 600.0
+
     # Storage
     data_dir: Path = Path("data")
 

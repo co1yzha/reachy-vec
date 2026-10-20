@@ -286,3 +286,23 @@ class FakeOcclusion:
 
     def consume(self) -> bool:
         return self._trips.pop(0) if self._trips else False
+
+
+class FakeAgent:
+    """Agent fake: pops canned results (str returned, Exception raised)."""
+
+    def __init__(self, results: list, delay_s: float = 0.0):
+        self.results = list(results)
+        self.delay_s = delay_s
+        self.calls: list[tuple[str, str | None]] = []
+
+    def run(self, task: str, *, requester: str | None, timeout_s: float) -> str:
+        import time
+
+        self.calls.append((task, requester))
+        if self.delay_s:
+            time.sleep(self.delay_s)
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
