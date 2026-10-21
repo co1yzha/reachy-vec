@@ -317,6 +317,60 @@ class MicTranscriber(_AudioCapture):
         return Utterance(text=text, audio=audio) if text else None
 
 
+class ParakeetTranscriber(_AudioCapture):
+    """Local STT: NVIDIA Parakeet TDT via parakeet-mlx (Apple GPU), lazily loaded.
+
+    More accurate than whisper base.en and far less prone to inventing text
+    from noise; it has no hotwords option, so the wake-word list carries the
+    "Reachy" mishearings. `transcribe` (16 kHz float32 -> text) is injectable.
+    """
+
+    def __init__(
+        self,
+        model_id: str | None = None,
+        sample_rate: int = SAMPLE_RATE,
+        source: "AudioSource | None" = None,
+        transcribe=None,
+    ):
+        super().__init__(source=source, sample_rate=sample_rate)
+        self._model_id = model_id or settings.parakeet_model
+        self._transcribe = transcribe
+
+    def _load(self):
+        self._load_vad()
+        if self._transcribe is None:
+            import mlx.core as mx
+            from parakeet_mlx import from_pretrained
+            from parakeet_mlx.audio import get_logmel
+
+            model = from_pretrained(self._model_id)
+            config = model.preprocessor_config
+            if config.sample_rate != self._sample_rate:
+                raise ValueError(
+                    f"parakeet expects {config.sample_rate} Hz audio, capture is "
+                    f"{self._sample_rate} Hz"
+                )
+
+            def transcribe(audio: np.ndarray) -> str:
+                mel = get_logmel(mx.array(audio, dtype=mx.float32), config)  # as load_audio
+                return model.generate(mel)[0].text
+
+            self._transcribe = transcribe
+
+    def warm_up(self) -> None:
+        self._load()
+        self._transcribe(np.zeros(self._sample_rate, dtype=np.float32))
+
+    def listen_once(self, timeout_s: float) -> Utterance | None:
+        self._load()
+        audio = self._capture(timeout_s)
+        if audio is None:
+            return None
+        text = self._transcribe(normalize_rms(audio, settings.stt_target_rms)).strip()
+        logger.info("heard (parakeet): %r", text)
+        return Utterance(text=text, audio=audio) if text else None
+
+
 class OpenAITranscriber(_AudioCapture):
     """Cloud STT: gpt-4o-transcribe. Best accuracy; ~1s network latency."""
 
@@ -362,4 +416,6 @@ def make_transcriber(
 
             client = OpenAI()
         return OpenAITranscriber(client, initial_prompt=initial_prompt, source=source)
+    if settings.stt_backend == "parakeet":
+        return ParakeetTranscriber(source=source)
     return MicTranscriber(initial_prompt=initial_prompt, source=source)

@@ -195,7 +195,7 @@ def run(
     """Run the Oracle: say "Reachy" to start a voice Q&A; people are known by voice."""
     from dotenv import load_dotenv
 
-    from reachy_vec.audio.listen import MicTranscriber, make_transcriber
+    from reachy_vec.audio.listen import make_transcriber
     from reachy_vec.audio.sources import RobotAudioSource
     from reachy_vec.audio.speak import make_speaker
     from reachy_vec.audio.vocab import VocabSnappingTranscriber
@@ -246,7 +246,7 @@ def run(
 
     typer.echo("Warming up models (STT, voices, embeddings)...")
     transcriber = make_transcriber(client=stt_client(client), source=audio_source)
-    if isinstance(transcriber, MicTranscriber):
+    if hasattr(transcriber, "warm_up"):  # local models: load before the first utterance
         transcriber.warm_up()
     if titles:
         transcriber = VocabSnappingTranscriber(transcriber, titles)

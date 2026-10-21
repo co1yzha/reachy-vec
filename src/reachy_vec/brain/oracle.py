@@ -25,7 +25,7 @@ APOLOGY = "Sorry, my brain isn't responding right now."
 OFFER = "Hi! I don't think we've met. Would you like me to remember your voice? Say yes or no."
 DEFAULT_WAKE_WORDS = (
     "reachy", "reachie", "reechy", "reachi", "reache", "reachee", "reechie", "reechi",
-    "rechy", "rachie", "richie", "ritchie", "ritchy",
+    "rechy", "rachie", "richie", "ritchie", "ritchy", "riachi", "riyachi", "ryachi",
 )
 
 # Short lines spoken on waking from idle sleep, so a wake is unmissable.

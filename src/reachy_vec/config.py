@@ -48,7 +48,8 @@ class Settings(BaseSettings):
     llm_disable_thinking: bool = True  # local only: send enable_thinking=False
     llm_timeout_s: float = 30.0  # local client request timeout
     stt_model: str = "base.en"  # faster-whisper size; english-only = fastest + most accurate for EN
-    stt_backend: str = "local"  # local (faster-whisper) | openai (gpt-4o-transcribe)
+    stt_backend: str = "local"  # local (faster-whisper) | parakeet (parakeet-mlx) | openai
+    parakeet_model: str = "mlx-community/parakeet-tdt-0.6b-v2"  # stt_backend=parakeet
     stt_hotwords: str = "Reachy"  # bias local whisper toward the wake word ("Reachy"
     # was heard as "I'm reaching."); empty = off. Clear it if noise causes false wakes
     embedding_model: str = "BAAI/bge-small-en-v1.5"
@@ -107,7 +108,7 @@ class Settings(BaseSettings):
     idle_sleep_s: float = 300.0       # not called for this long -> robot sleeps
     wake_words: list[str] = [
         "reachy", "reachie", "reechy", "reachi", "reache", "reachee", "reechie", "reechi",
-        "rechy", "rachie", "richie", "ritchie", "ritchy",
+        "rechy", "rachie", "richie", "ritchie", "ritchy", "riachi", "riyachi", "ryachi",
     ]
     # mishearings of "Reachy" that are not everyday words - "reach", "reaching",
     # "ready", "rich" are deliberately absent (they'd wake the robot constantly)

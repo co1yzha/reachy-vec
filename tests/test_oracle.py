@@ -545,7 +545,8 @@ def test_filler_then_apology_when_brain_fails(tmp_path):
 
 
 WAKE_VARIANTS = ["reachy", "reachie", "reechy", "reachi", "reache", "reachee", "reechie",
-                 "reechi", "rechy", "rachie", "richie", "ritchie", "ritchy"]
+                 "reechi", "rechy", "rachie", "richie", "ritchie", "ritchy",
+                 "riachi", "riyachi", "ryachi"]
 
 
 @pytest.mark.parametrize("word", WAKE_VARIANTS)

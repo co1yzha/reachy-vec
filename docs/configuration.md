@@ -36,7 +36,8 @@ keys are ignored.
 | `LLM_REASONING_EFFORT` | `minimal` | Reasoning effort for gpt-5* models (`minimal`/`low`/`medium`/`high`); ignored for others |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | must stay 384-dim (`EMBEDDING_DIM`); changing models requires re-ingesting everything (docs and memories share the space) |
 | `EMBEDDING_QUERY_PREFIX` | `Represent this sentence for searching relevant passages: ` | BGE query instruction, applied to search queries only (never documents); set empty when using a non-BGE embedding model |
-| `STT_BACKEND` | `local` | `local` (faster-whisper) or `openai` (`gpt-4o-transcribe`; more accurate, ~1 s slower) |
+| `STT_BACKEND` | `local` | `local` (faster-whisper), `parakeet` (NVIDIA Parakeet TDT via parakeet-mlx on the Apple GPU; install with `uv pip install --python .venv/bin/python parakeet-mlx`), or `openai` (`gpt-4o-transcribe`; ~1 s network latency). Compare them with `scripts/stt_eval.py` |
+| `PARAKEET_MODEL` | `mlx-community/parakeet-tdt-0.6b-v2` | model for `STT_BACKEND=parakeet`; downloaded on first use |
 | `STT_MODEL` | `base.en` | faster-whisper size for the local backend; `small.en` = more accurate, slower |
 | `TTS_BACKEND` | `say` | `say` (macOS built-in) or `qwen-tts` (voice clone, local MLX) |
 | `TTS_MODEL` | `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16` | mlx-audio model id for `qwen-tts`; swap for a 1.7B variant if clone quality disappoints |

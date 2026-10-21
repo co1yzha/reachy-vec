@@ -311,3 +311,36 @@ def test_default_hotwords_setting_is_reachy():
     from reachy_vec.config import Settings
 
     assert Settings.model_fields["stt_hotwords"].default == "Reachy"
+
+
+# -- Parakeet backend -----------------------------------------------------------
+
+
+def test_parakeet_transcriber_returns_utterance_and_keeps_raw_audio(monkeypatch):
+    from reachy_vec.audio.listen import ParakeetTranscriber
+
+    seen = []
+    t = ParakeetTranscriber(transcribe=lambda audio: seen.append(audio) or " Reachy, hi. ")
+    audio = np.full(16000, 0.001, dtype=np.float32)
+    monkeypatch.setattr(t, "_capture", lambda timeout_s: audio)
+    monkeypatch.setattr(t, "_load", lambda: None)
+    utt = t.listen_once(5)
+    assert utt.text == "Reachy, hi." and utt.audio is audio
+    assert seen[0] is not audio                 # STT gets the loudness-normalized copy
+
+
+def test_parakeet_transcriber_silence_and_empty_text(monkeypatch):
+    from reachy_vec.audio.listen import ParakeetTranscriber
+
+    t = ParakeetTranscriber(transcribe=lambda audio: "  ")
+    monkeypatch.setattr(t, "_load", lambda: None)
+    monkeypatch.setattr(t, "_capture", lambda timeout_s: None)
+    assert t.listen_once(5) is None             # nothing captured
+    monkeypatch.setattr(t, "_capture", lambda timeout_s: np.zeros(16000, dtype=np.float32))
+    assert t.listen_once(5) is None             # captured, but no words
+
+
+def test_parakeet_default_model_setting():
+    from reachy_vec.config import Settings
+
+    assert Settings.model_fields["parakeet_model"].default == "mlx-community/parakeet-tdt-0.6b-v2"

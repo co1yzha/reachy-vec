@@ -35,6 +35,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/reachy_vec"]
 
+[project.optional-dependencies]
+# STT_BACKEND=parakeet. Install without re-locking (the lock can't resolve here):
+#   uv pip install --python .venv/bin/python parakeet-mlx
+parakeet = ["parakeet-mlx>=0.5.3"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

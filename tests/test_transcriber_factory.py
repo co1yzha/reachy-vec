@@ -50,3 +50,10 @@ def test_openai_transcriber_silence_returns_none(monkeypatch):
     t = OpenAITranscriber(FakeAudioClient())
     monkeypatch.setattr(t, "_capture", lambda timeout_s: None)
     assert t.listen_once(5) is None
+
+
+def test_make_transcriber_parakeet(monkeypatch):
+    from reachy_vec.audio.listen import ParakeetTranscriber
+
+    monkeypatch.setattr("reachy_vec.audio.listen.settings.stt_backend", "parakeet")
+    assert isinstance(make_transcriber(), ParakeetTranscriber)
