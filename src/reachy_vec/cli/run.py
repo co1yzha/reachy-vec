@@ -155,6 +155,33 @@ def prepare_fillers(speaker) -> list[str]:
     return list(settings.ack_fillers)
 
 
+def make_camera_tools(media, *, client, body, speak, llm_kwargs=None, camera_cls=None,
+                      frame_timeout_s: float = 10.0) -> dict:
+    """ChatBrain kwargs for look / selfie / look_around on the robot camera, or {}
+    when disabled, without robot media, or if no frame arrives (the Mac mini has
+    no webcam)."""
+    if not settings.camera_tools or media is None:
+        return {}
+    from reachy_vec.brain.chat import default_opener
+    from reachy_vec.perception.camera import RobotCamera
+    from reachy_vec.perception.vision import make_look_around_fn, make_look_fn, make_selfie_fn
+
+    camera = (camera_cls or RobotCamera)(media)
+    if wait_for_frame(camera, timeout_s=frame_timeout_s) is None:
+        typer.echo("No frame from the robot camera - camera tools are off.", err=True)
+        return {}
+    model = settings.vision_model or settings.llm_model
+    return {
+        "look_fn": make_look_fn(camera, client, model=model, max_px=settings.vision_image_max_px,
+                                body=body, llm_kwargs=llm_kwargs),
+        "selfie_fn": make_selfie_fn(camera, settings.photos_dir, body=body, speak=speak,
+                                    opener=default_opener),
+        "look_around_fn": make_look_around_fn(
+            camera, client, model=model, max_px=settings.vision_image_max_px, body=body,
+            settle_s=settings.look_around_settle_s, llm_kwargs=llm_kwargs),
+    }
+
+
 def wrap_reconnect(body, connect_body, announce):
     """Wrap a RobotBody so motions survive a daemon/WiFi drop; pass others through."""
     from reachy_vec.body.robot import ReconnectingBody, RobotBody
@@ -328,6 +355,12 @@ def run(
 
         speaker = SwayingSpeaker(speaker, SpeakingSway(body))
     hermes = make_hermes(store)
+    thinking_off = uses_local_llm() and settings.llm_disable_thinking
+    camera_tools = make_camera_tools(
+        media, client=client, body=body, speak=speaker.speak,
+        llm_kwargs={"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+        if thinking_off else None,
+    )
     brain = ChatBrain(
         k=settings.rag_k,
         rag_min_score=settings.rag_min_score,
@@ -337,8 +370,9 @@ def run(
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
         web_search=settings.web_search,
-        disable_thinking=uses_local_llm() and settings.llm_disable_thinking,
+        disable_thinking=thinking_off,
         hermes=hermes,
+        **camera_tools,
     )
     if not brain.warm_up():
         typer.echo(

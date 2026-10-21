@@ -66,6 +66,7 @@ class Settings(BaseSettings):
 
     # Vision (look/selfie/look_around tools; currently not wired into run); None => llm_model
     vision_model: str | None = None
+    camera_tools: bool = True  # look / selfie / look_around on the robot camera
     vision_image_max_px: int = 1024  # downscale long edge before encoding, to cut vision tokens
     look_around_settle_s: float = 0.8  # pause after a base turn before capturing,
     # so the WebRTC frame catches up to the new heading (first frame lags ~2s)

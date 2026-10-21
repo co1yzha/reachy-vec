@@ -43,7 +43,16 @@ def encode_frame_jpeg(frame, max_px: int) -> str:
     return f"data:image/jpeg;base64,{encoded}"
 
 
-def make_look_fn(camera, client, model: str, max_px: int, body=None) -> Callable[[str], str]:
+def _spoken_text(content: str | None) -> str:
+    """Model reply minus any <think> reasoning (local Qwen may emit it)."""
+    from reachy_vec.brain.chat import _strip_think
+
+    return (_strip_think(content) or "").strip()
+
+
+def make_look_fn(
+    camera, client, model: str, max_px: int, body=None, llm_kwargs: dict | None = None
+) -> Callable[[str], str]:
     """Return a look(question) closure over the camera + OpenAI client.
     If `body` is given, perform the 'look' gesture before capturing (best-effort).
     """
@@ -72,8 +81,9 @@ def make_look_fn(camera, client, model: str, max_px: int, body=None) -> Callable
                         ],
                     },
                 ],
+                **(llm_kwargs or {}),
             )
-            answer = (response.choices[0].message.content or "").strip()
+            answer = _spoken_text(response.choices[0].message.content)
         except Exception:
             logger.exception("look vision call failed")
             return "I had trouble seeing just now."
@@ -85,7 +95,7 @@ def make_look_fn(camera, client, model: str, max_px: int, body=None) -> Callable
 
 def make_look_around_fn(
     camera, client, model: str, max_px: int, body=None, *,
-    settle_s: float = 0.8, sleep=time.sleep,
+    settle_s: float = 0.8, sleep=time.sleep, llm_kwargs: dict | None = None,
 ) -> Callable[[], str]:
     """Return a look_around() closure: turn the base left then right, capture a
     frame at each, recenter, and describe the surroundings in one vision call.
@@ -129,8 +139,9 @@ def make_look_around_fn(
                     {"role": "system", "content": VISION_SYSTEM},
                     {"role": "user", "content": content},
                 ],
+                **(llm_kwargs or {}),
             )
-            answer = (response.choices[0].message.content or "").strip()
+            answer = _spoken_text(response.choices[0].message.content)
         except Exception:
             logger.exception("look_around vision call failed")
             return "I had trouble seeing just now."

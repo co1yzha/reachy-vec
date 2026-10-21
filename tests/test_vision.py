@@ -238,3 +238,23 @@ def test_selfie_best_effort_failures_still_save(tmp_path):
     result = selfie()
     assert list((tmp_path / "photos").glob("*.jpg"))  # saved despite speak+pose failing
     assert "photo" in result.lower()
+
+
+THINK_OFF = {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+
+
+def test_look_fn_passes_llm_kwargs_and_strips_reasoning():
+    client = FakeLLMClient(reply="<think>hmm</think>A tidy desk.")
+    look = make_look_fn(FakeCamera([_frame()]), client, model="m", max_px=1024,
+                        llm_kwargs=THINK_OFF)
+    assert look("what do you see?") == "A tidy desk."
+    assert client.chat.completions.last_kwargs["extra_body"] == THINK_OFF["extra_body"]
+
+
+def test_look_around_passes_llm_kwargs():
+    client = FakeLLMClient(reply="A room.")
+    look_around = make_look_around_fn(FakeCamera([_frame(), _frame(), _frame()]), client,
+                                      model="m", max_px=1024, sleep=lambda s: None,
+                                      llm_kwargs=THINK_OFF)
+    look_around()
+    assert client.chat.completions.last_kwargs["extra_body"] == THINK_OFF["extra_body"]

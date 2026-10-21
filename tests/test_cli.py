@@ -389,3 +389,37 @@ def test_robot_mic_needs_no_mac_check():
         raise AssertionError("should not query Mac devices")
 
     assert check_mic("robot", robot_media=True, has_mac_input=boom) == "robot"
+
+
+def test_camera_tools_off_without_robot_media(monkeypatch):
+    from reachy_vec.cli.run import make_camera_tools
+
+    monkeypatch.setattr(settings, "camera_tools", True)
+    assert make_camera_tools(None, client=object(), body=None, speak=print) == {}
+
+
+def test_camera_tools_off_when_disabled(monkeypatch):
+    from reachy_vec.cli.run import make_camera_tools
+
+    monkeypatch.setattr(settings, "camera_tools", False)
+    assert make_camera_tools(object(), client=object(), body=None, speak=print) == {}
+
+
+def test_camera_tools_built_when_a_frame_arrives(monkeypatch):
+    from reachy_vec.cli.run import make_camera_tools
+    from tests.conftest import FakeCamera
+
+    monkeypatch.setattr(settings, "camera_tools", True)
+    tools = make_camera_tools(object(), client=object(), body=None, speak=print,
+                              camera_cls=lambda media: FakeCamera(["frame"]))
+    assert set(tools) == {"look_fn", "selfie_fn", "look_around_fn"}
+
+
+def test_camera_tools_skipped_when_camera_gives_no_frame(monkeypatch):
+    from reachy_vec.cli.run import make_camera_tools
+    from tests.conftest import FakeCamera
+
+    monkeypatch.setattr(settings, "camera_tools", True)
+    tools = make_camera_tools(object(), client=object(), body=None, speak=print,
+                              camera_cls=lambda media: FakeCamera([]), frame_timeout_s=0.01)
+    assert tools == {}
