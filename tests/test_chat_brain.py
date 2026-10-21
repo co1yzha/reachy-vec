@@ -1173,3 +1173,34 @@ def test_no_direct_call_without_hermes(tmp_path):
     client = FakeLLMClient(reply="ok")
     make_brain(tmp_path, client).respond("ask Hermes to research X", identity=YANG)
     assert len(client.chat.completions.calls) == 1   # normal turn, no tool injected
+
+
+@pytest.mark.parametrize("question", [
+    "what's the latest AI news?", "any news about the Reachy Mini SDK?",
+    "what are today's headlines?", "who won the match last night?",
+    "what's the current price of bitcoin?", "what's the latest release of Python?",
+])
+def test_current_information_questions_go_to_hermes(tmp_path, question):
+    """The local model can't know current events and rarely chooses ask_hermes
+    itself, so clear "needs live information" questions are routed to Hermes."""
+    client = FakeLLMClient(reply="Here's what Hermes found.")
+    hermes = _RecordingHermes()
+    make_brain(tmp_path, client, hermes=hermes).respond(question, identity=YANG)
+    assert hermes.asked and hermes.asked[0][0] == question
+
+
+@pytest.mark.parametrize("question", [
+    "what is the latest demo in the hub?", "how are you today?", "what's the weather today?",
+    "what time is it?", "tell me about the food mapping demo", "what's a p-value?",
+])
+def test_other_questions_are_not_routed(tmp_path, question):
+    client = FakeLLMClient(reply="ok")
+    hermes = _RecordingHermes()
+    make_brain(tmp_path, client, hermes=hermes).respond(question, identity=YANG)
+    assert hermes.asked == []
+
+
+def test_hermes_hint_covers_current_information():
+    from reachy_vec.brain.chat import ASK_HERMES_HINT
+
+    assert "news" in ASK_HERMES_HINT and "current" in ASK_HERMES_HINT

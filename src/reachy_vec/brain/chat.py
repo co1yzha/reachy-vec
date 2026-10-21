@@ -185,7 +185,9 @@ ASK_HERMES_TOOL = {
 
 ASK_HERMES_HINT = (
     " ask_hermes hands a task to Hermes, your AI agent colleague (not a person: "
-    "never use send_message for Hermes). Each turn says whether Hermes is working "
+    "never use send_message for Hermes). Use it whenever an answer needs current "
+    "information from the internet - news, recent releases, results, prices - since "
+    "you cannot know those yourself. Each turn says whether Hermes is working "
     "on something; report that as it is, never guess. Reminders and task-board "
     "entries need a recognised speaker - if the speaker is unknown, say you can "
     "only schedule things for people you know."
@@ -288,6 +290,14 @@ MAX_HISTORY_MESSAGES = 20
 # "ask/get/have/tell/let Hermes ..." or "Hermes, ..." -> call Hermes directly
 EXPLICIT_HERMES = re.compile(r"\b(ask|get|have|tell|let)\s+hermes\b|^\W*hermes\b\s*[,:]",
                              re.IGNORECASE)
+
+# needs live information the model can't know (news, results, prices, releases)
+# -> route to Hermes; "latest demo" questions are handled by RECENT_DEMOS instead
+CURRENT_INFO = re.compile(
+    r"\b(news|headlines?|current events|who won|scores?|stock|share price|price of|"
+    r"exchange rate)\b|\b(latest|newest|current)\b.*\b(release|version|price|update)s?\b",
+    re.IGNORECASE,
+)
 
 # "latest/newest/recent ... demo(s)" in either order -> add the date-sorted list
 RECENT_DEMOS = re.compile(
@@ -470,10 +480,13 @@ class ChatBrain:
             }
         )
         explicit = self._hermes is not None and EXPLICIT_HERMES.search(question)
-        if explicit:
-            # "ask Hermes to X" goes to Hermes in code: oMLX ignores tool_choice and
-            # the model tends to answer itself or claim to delegate without calling
-            task = re.sub(r"^to\s+", "", question[explicit.end():].strip(" ,:")) or question
+        live = (self._hermes is not None and not explicit and CURRENT_INFO.search(question)
+                and not RECENT_DEMOS.search(question))
+        if explicit or live:
+            # Hermes in code: oMLX ignores tool_choice and the model tends to answer
+            # itself (or claim to delegate) - and it cannot know current events
+            task = (re.sub(r"^to\s+", "", question[explicit.end():].strip(" ,:")) or question
+                    if explicit else question)
             message = _StreamedMessage(
                 "", {0: {"id": "call_hermes", "name": "ask_hermes",
                          "arguments": json.dumps({"task": task})}}
