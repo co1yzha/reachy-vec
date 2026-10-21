@@ -403,3 +403,39 @@ def test_parakeet_returns_empty_utterance_for_wordless_sound(monkeypatch):
     monkeypatch.setattr(t, "_capture", lambda timeout_s: audio)
     utt = t.listen_once(5)
     assert utt is not None and utt.text == "" and utt.audio is audio
+
+
+def test_barge_in_with_confirm_fires_only_when_confirmed():
+    speech = np.ones(512, dtype=np.float32)
+    checks = []
+
+    def confirm(audio):
+        checks.append(len(audio))
+        return len(checks) >= 2           # first window rejected, second accepted
+
+    fired = []
+    mon = BargeInMonitor(ScriptedSource([speech] * 12), min_speech_s=0.096,
+                         is_speech=lambda f: bool(f[0]), spawn=_inline, confirm=confirm)
+    mon.start(on_fire=lambda: fired.append(True))
+    assert fired == [True] and len(checks) == 2
+
+
+def test_barge_in_with_confirm_never_fires_on_unconfirmed_speech():
+    """Reachy's own voice keeps the VAD busy for the whole reply - without the
+    interrupt phrase it must never fire."""
+    speech = np.ones(512, dtype=np.float32)
+    checks = []
+    mon = BargeInMonitor(ScriptedSource([speech] * 200), min_speech_s=0.096,
+                         is_speech=lambda f: bool(f[0]), spawn=_inline,
+                         confirm=lambda audio: checks.append(len(audio)) or False)
+    mon.start(on_fire=lambda: None)
+    assert mon.fired is False and len(checks) > 3
+    assert max(checks) <= int(16000 * 3.0)      # rolling window stays bounded
+
+
+def test_parakeet_transcribe_audio_for_barge_in():
+    from reachy_vec.audio.listen import ParakeetTranscriber
+
+    t = ParakeetTranscriber(transcribe=lambda audio: " Reachy, stop. ")
+    t._load = lambda: None
+    assert t.transcribe_audio(np.zeros(8000, dtype=np.float32)) == "Reachy, stop."

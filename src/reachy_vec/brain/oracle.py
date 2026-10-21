@@ -57,6 +57,19 @@ def split_wake(text: str, wake_words=DEFAULT_WAKE_WORDS) -> str | None:
     return text[match.end():].strip()
 
 
+INTERRUPT_WORDS = re.compile(
+    r"\b(stop|wait|hold on|be quiet|quiet|shush|pause|enough|shut up)\b", re.IGNORECASE
+)
+
+
+def is_interrupt(text: str, wake_words=DEFAULT_WAKE_WORDS) -> bool:
+    """Speech over a reply counts as an interruption only if it says Reachy's
+    name or a stop word - Reachy's own reply (heard by the mic) never does."""
+    if not text or not text.strip():
+        return False
+    return split_wake(text, wake_words) is not None or bool(INTERRUPT_WORDS.search(text))
+
+
 class OracleLoop:
     def __init__(
         self,

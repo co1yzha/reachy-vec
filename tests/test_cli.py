@@ -111,6 +111,7 @@ def test_barge_in_factory_builds_monitor_when_enabled(monkeypatch):
     from reachy_vec.cli.run import make_barge_in_factory
 
     monkeypatch.setattr("reachy_vec.cli.run.settings.barge_in", True)
+    monkeypatch.setattr("reachy_vec.cli.run.settings.barge_in_mode", "speech")
     factory = make_barge_in_factory("mac", media=None)
     assert isinstance(factory(), BargeInMonitor)
 
@@ -423,3 +424,32 @@ def test_camera_tools_skipped_when_camera_gives_no_frame(monkeypatch):
     tools = make_camera_tools(object(), client=object(), body=None, speak=print,
                               camera_cls=lambda media: FakeCamera([]), frame_timeout_s=0.01)
     assert tools == {}
+
+
+def test_keyword_barge_in_confirms_with_the_interrupt_phrase(monkeypatch):
+    from reachy_vec.cli.run import make_barge_in_factory
+
+    monkeypatch.setattr(settings, "barge_in", True)
+    monkeypatch.setattr(settings, "barge_in_mode", "keyword")
+    heard = {"text": "the latest demo is"}
+    factory = make_barge_in_factory("mac", None, transcribe=lambda audio: heard["text"])
+    monitor = factory()
+    assert monitor._confirm(None) is False
+    heard["text"] = "Reachy, stop"
+    assert monitor._confirm(None) is True
+
+
+def test_speech_barge_in_has_no_confirm(monkeypatch):
+    from reachy_vec.cli.run import make_barge_in_factory
+
+    monkeypatch.setattr(settings, "barge_in", True)
+    monkeypatch.setattr(settings, "barge_in_mode", "speech")
+    assert make_barge_in_factory("mac", None, transcribe=lambda a: "")()._confirm is None
+
+
+def test_keyword_barge_in_without_transcriber_is_off(monkeypatch):
+    from reachy_vec.cli.run import make_barge_in_factory
+
+    monkeypatch.setattr(settings, "barge_in", True)
+    monkeypatch.setattr(settings, "barge_in_mode", "keyword")
+    assert make_barge_in_factory("mac", None, transcribe=None) is None

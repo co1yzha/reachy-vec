@@ -5,6 +5,8 @@ import typer
 
 from reachy_vec.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 def _setup_logging() -> None:
     """INFO-level reachy_vec logs (heard utterances, opened URLs, errors)
@@ -78,12 +80,33 @@ def check_mic(mic: str, *, robot_media: bool, has_mac_input=_mac_has_input) -> s
     raise typer.Exit(code=1)
 
 
-def make_barge_in_factory(chosen: str, media, is_self_voice=None):
-    """Zero-arg factory building a fresh BargeInMonitor per reply, or None."""
+def make_barge_in_factory(chosen: str, media, is_self_voice=None, transcribe=None):
+    """Zero-arg factory building a fresh BargeInMonitor per reply, or None.
+
+    barge_in_mode=keyword (default): talking over a reply only interrupts when
+    it says Reachy's name or a stop word ("Reachy, stop") - checked by
+    transcribing the overlapping speech - so the mic hearing the robot's own
+    voice can't cut replies short. speech: any sustained speech interrupts.
+    """
     if not settings.barge_in:
         return None
     from reachy_vec.audio.listen import BargeInMonitor, MicSource
     from reachy_vec.audio.sources import RobotAudioSource
+    from reachy_vec.brain.oracle import is_interrupt
+
+    confirm = None
+    if settings.barge_in_mode == "keyword":
+        if transcribe is None:
+            typer.echo("Barge-in by keyword needs a local transcriber - barge-in is off.",
+                       err=True)
+            return None
+
+        def confirm(audio) -> bool:
+            text = transcribe(audio)
+            hit = is_interrupt(text, settings.wake_words)
+            if hit:
+                logger.info("barge-in phrase heard: %r", text)
+            return hit
 
     def factory():
         source = (
@@ -95,6 +118,7 @@ def make_barge_in_factory(chosen: str, media, is_self_voice=None):
             source,
             min_speech_s=settings.barge_in_min_speech_s,
             is_self_voice=is_self_voice,
+            confirm=confirm,
         )
 
     return factory
@@ -334,6 +358,8 @@ def run(
 
     typer.echo("Warming up models (STT, voices, embeddings)...")
     transcriber = make_transcriber(client=stt_client(client), source=audio_source)
+    # barge-in phrase check reuses the loaded local STT model (None for cloud STT)
+    interrupt_stt = getattr(transcriber, "transcribe_audio", None)
     if hasattr(transcriber, "warm_up"):  # local models: load before the first utterance
         transcriber.warm_up()
     if titles:
@@ -399,7 +425,8 @@ def run(
         voice_passive_cap=settings.voice_passive_cap,
         enroll_phrases=settings.enroll_voice_phrases,
         barge_in_factory=make_barge_in_factory(
-            mic, media, is_self_voice=make_self_voice_checker(store)
+            mic, media, is_self_voice=make_self_voice_checker(store),
+            transcribe=interrupt_stt,
         ),
         settle_s=settings.post_speech_settle_s,
         ack_fillers=fillers,

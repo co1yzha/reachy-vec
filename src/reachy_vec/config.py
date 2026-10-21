@@ -127,6 +127,8 @@ class Settings(BaseSettings):
     post_speech_settle_s: float = 0.3  # mic opens this long after the robot stops
     # talking, so the echo tail of its own voice isn't heard as an utterance
     barge_in: bool = True  # allow talking over a reply to interrupt it
+    barge_in_mode: str = "keyword"  # keyword: only "Reachy"/"stop"/"wait"... interrupts
+    # (the mic hearing the robot's own voice can't) | speech: any sustained speech
     barge_in_min_speech_s: float = 0.7  # sustained speech needed to fire (raise if false triggers)
     speech_wobble: bool = True  # audio-synced head sway while the robot speaker plays
     ack_enabled: bool = True  # speak a short filler while the LLM reads the prompt

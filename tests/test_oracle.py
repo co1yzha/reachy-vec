@@ -595,3 +595,15 @@ def test_wordless_noise_is_not_a_wake():
     from reachy_vec.audio.listen import Utterance  # noqa: F401  (shape check below)
 
     assert split_wake("") is None
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("Reachy, stop.", True), ("Hey Reachy wait", True), ("stop", True),
+    ("hold on a second", True), ("okay, be quiet", True), ("Richie!", True),
+    ("The latest demo in the hub is Metaliverpool.", False),
+    ("It tracks food access across the city.", False), ("", False),
+])
+def test_is_interrupt(text, expected):
+    from reachy_vec.brain.oracle import is_interrupt
+
+    assert is_interrupt(text) is expected

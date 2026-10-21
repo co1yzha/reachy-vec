@@ -116,9 +116,16 @@ class BargeInMonitor:
         is_speech=None,
         spawn=None,
         is_self_voice=None,
+        confirm=None,
+        window_s: float = 3.0,
     ):
         self._source = source
         self._min_chunks = max(1, int(min_speech_s / CHUNK_S))
+        # confirm(audio) -> bool must also agree before firing (e.g. the speech
+        # contains "Reachy, stop"); re-checked every min_speech_s on a rolling
+        # window, so the robot's own sustained reply never interrupts itself
+        self._confirm = confirm
+        self._max_chunks = max(self._min_chunks, int(window_s / CHUNK_S))
         self._sample_rate = sample_rate
         self._is_speech = is_speech
         self._is_self_voice = is_self_voice
@@ -150,13 +157,21 @@ class BargeInMonitor:
                         return
                     if is_speech(frame):
                         run.append(frame)
-                        if len(run) >= self._min_chunks:
+                        if len(run) > self._max_chunks:
+                            run = run[-self._max_chunks:]
+                        if len(run) >= self._min_chunks and (
+                            self._confirm is None or len(run) % self._min_chunks == 0
+                        ):
                             if self._is_self_voice and self._is_self_voice(
                                 np.concatenate(run)
                             ):
                                 logger.info("barge-in vetoed: robot's own voice")
                                 run = []
                                 continue
+                            if self._confirm is not None and not self._confirm(
+                                np.concatenate(run)
+                            ):
+                                continue  # no interrupt phrase yet: keep watching
                             logger.info("barge-in fired: %.1fs of speech over the reply",
                                         len(run) * CHUNK_S)
                             self.fired = True
@@ -317,6 +332,15 @@ class MicTranscriber(_AudioCapture):
         silence = np.zeros(self._sample_rate, dtype=np.float32)
         list(self._whisper.transcribe(silence, language="en")[0])
 
+    def transcribe_audio(self, audio: np.ndarray) -> str:
+        """Text for already-captured audio (barge-in interrupt-phrase check)."""
+        self._load()
+        segments, _info = self._whisper.transcribe(
+            normalize_rms(audio, settings.stt_target_rms), language="en",
+            hotwords=self._hotwords or None,
+        )
+        return " ".join(seg.text.strip() for seg in segments).strip()
+
     def listen_once(self, timeout_s: float) -> Utterance | None:
         self._load()
         audio = self._capture(timeout_s)
@@ -400,6 +424,11 @@ class ParakeetTranscriber(_AudioCapture):
     def warm_up(self) -> None:
         self._load()
         self._transcribe(np.zeros(self._sample_rate, dtype=np.float32))
+
+    def transcribe_audio(self, audio: np.ndarray) -> str:
+        """Text for already-captured audio (barge-in interrupt-phrase check)."""
+        self._load()
+        return self._transcribe(normalize_rms(audio, settings.stt_target_rms)).strip()
 
     def listen_once(self, timeout_s: float) -> Utterance | None:
         self._load()
