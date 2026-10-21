@@ -1,3 +1,4 @@
+import pytest
 from typer.testing import CliRunner
 
 from reachy_vec.cli import app
@@ -340,3 +341,21 @@ def test_hermes_api_key_reads_the_profile_api_server_key(monkeypatch):
     monkeypatch.delenv("REACHY_VEC_HERMES_API_KEY", raising=False)
     monkeypatch.setenv("API_SERVER_KEY", "x" * 32)
     assert Settings(_env_file=None).hermes_api_key == "x" * 32
+
+
+@pytest.mark.parametrize(("media_source", "mic_setting", "expected"), [
+    ("robot", "auto", "robot"),   # default: mic follows the media source
+    ("mac", "auto", "mac"),
+    ("robot", "mac", "mac"),      # robot speaker + Mac/USB mic
+    ("mac", "robot", "mac"),      # can't use the robot mic without robot media
+])
+def test_resolve_mic(media_source, mic_setting, expected):
+    from reachy_vec.cli.run import resolve_mic
+
+    assert resolve_mic(media_source, mic_setting) == expected
+
+
+def test_mic_source_default_is_auto():
+    from reachy_vec.config import Settings
+
+    assert Settings.model_fields["mic_source"].default == "auto"

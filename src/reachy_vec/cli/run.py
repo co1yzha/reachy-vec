@@ -46,6 +46,15 @@ def resolve_media_source(requested: str, media_available: bool) -> str:
     return "robot" if media_available else "mac"
 
 
+def resolve_mic(media_source: str, mic_setting: str) -> str:
+    """Whose mic to listen on: 'auto' follows the media source; 'mac' uses the
+    Mac's default input (e.g. a USB mic) even with the robot speaker. The robot
+    mic needs robot media, so it falls back to 'mac' without it."""
+    if mic_setting == "mac" or media_source != "robot":
+        return "mac"
+    return "robot"
+
+
 def make_barge_in_factory(chosen: str, media, is_self_voice=None):
     """Zero-arg factory building a fresh BargeInMonitor per reply, or None."""
     if not settings.barge_in:
@@ -255,7 +264,8 @@ def run(
         )
         raise typer.Exit(code=1)
 
-    if chosen == "robot":
+    mic = resolve_mic(chosen, settings.mic_source)
+    if mic == "robot":
         audio_source = RobotAudioSource(media, target_rate=settings.audio_input_rate)
     else:
         audio_source = None  # MicSource default
@@ -330,7 +340,7 @@ def run(
         voice_passive_cap=settings.voice_passive_cap,
         enroll_phrases=settings.enroll_voice_phrases,
         barge_in_factory=make_barge_in_factory(
-            chosen, media, is_self_voice=make_self_voice_checker(store)
+            mic, media, is_self_voice=make_self_voice_checker(store)
         ),
         settle_s=settings.post_speech_settle_s,
         ack_fillers=fillers,

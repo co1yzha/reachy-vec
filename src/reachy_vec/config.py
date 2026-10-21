@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     # Perception
     camera_index: int = 0
     media_source: str = "auto"  # auto | robot | mac — where camera/mic/speaker live
+    mic_source: str = "auto"  # auto (follow media_source) | mac (Mac default input, e.g.
+    # a USB mic, even with the robot speaker) | robot
     audio_input_rate: int = 16000  # target rate fed to VAD/STT/ECAPA
     min_utterance_rms: float = 0.005  # discard quieter captures (STT hallucinates on
     # near-silence); raise if phantom demo names persist, lower if real speech drops

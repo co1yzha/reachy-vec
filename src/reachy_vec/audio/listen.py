@@ -317,6 +317,30 @@ class MicTranscriber(_AudioCapture):
         return Utterance(text=text, audio=audio) if text else None
 
 
+_stt_tap_counter = 0
+
+
+def _stt_tap(audio: np.ndarray, sample_rate: int, text: str) -> None:
+    """REACHY_VEC_STT_TAP=<dir>: save each captured utterance (raw, before the
+    STT loudness boost) plus its transcript, to see what the recogniser got.
+    Debug aid; off unless the env var is set."""
+    import os
+
+    tap_dir = os.environ.get("REACHY_VEC_STT_TAP")
+    if not tap_dir:
+        return
+    global _stt_tap_counter
+    import soundfile as sf
+
+    _stt_tap_counter += 1
+    os.makedirs(tap_dir, exist_ok=True)
+    name = f"stt_tap_{_stt_tap_counter:03d}.wav"
+    sf.write(os.path.join(tap_dir, name), audio, sample_rate)
+    rms = float(np.sqrt(np.mean(audio**2))) if len(audio) else 0.0
+    with open(os.path.join(tap_dir, "stt_tap.log"), "a") as log:
+        log.write(f"{name} {len(audio) / sample_rate:.1f}s rms={rms:.4f} {text!r}\n")
+
+
 class ParakeetTranscriber(_AudioCapture):
     """Local STT: NVIDIA Parakeet TDT via parakeet-mlx (Apple GPU), lazily loaded.
 
@@ -367,6 +391,7 @@ class ParakeetTranscriber(_AudioCapture):
         if audio is None:
             return None
         text = self._transcribe(normalize_rms(audio, settings.stt_target_rms)).strip()
+        _stt_tap(audio, self._sample_rate, text)
         logger.info("heard (parakeet): %r", text)
         return Utterance(text=text, audio=audio) if text else None
 

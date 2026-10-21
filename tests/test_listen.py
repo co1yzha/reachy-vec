@@ -344,3 +344,20 @@ def test_parakeet_default_model_setting():
     from reachy_vec.config import Settings
 
     assert Settings.model_fields["parakeet_model"].default == "mlx-community/parakeet-tdt-0.6b-v2"
+
+
+def test_stt_tap_saves_each_utterance_with_its_transcript(monkeypatch, tmp_path):
+    import soundfile as sf
+
+    from reachy_vec.audio.listen import ParakeetTranscriber
+
+    monkeypatch.setenv("REACHY_VEC_STT_TAP", str(tmp_path))
+    t = ParakeetTranscriber(transcribe=lambda audio: "")
+    monkeypatch.setattr(t, "_load", lambda: None)
+    monkeypatch.setattr(t, "_capture", lambda timeout_s: np.full(8000, 0.01, dtype=np.float32))
+    t.listen_once(5)
+    files = sorted(tmp_path.glob("stt_tap_*.wav"))
+    assert len(files) == 1
+    audio, rate = sf.read(files[0])
+    assert rate == 16000 and len(audio) == 8000
+    assert (tmp_path / "stt_tap.log").read_text().strip().endswith("''")
