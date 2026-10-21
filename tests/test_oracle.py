@@ -607,3 +607,28 @@ def test_is_interrupt(text, expected):
     from reachy_vec.brain.oracle import is_interrupt
 
     assert is_interrupt(text) is expected
+
+
+@pytest.mark.parametrize("ask", ["Reachy, remember me", "can you remember my voice?",
+                                 "my name is Yang", "please learn my voice"])
+def test_unrecognised_speaker_can_ask_to_be_remembered(tmp_path, ask):
+    """Asking to be remembered starts real enrollment instead of the model
+    promising "I'll remember you" with nothing stored."""
+    loop, speaker, _, store, brain = make_loop(
+        tmp_path,
+        utterances=[said("Reachy"), said(ask), said("yes"), said("Yang"), said("yes"),
+                    said("I work on data"), said("and I like tea")],
+        voices=[None, None],
+    )
+    loop.run_once()
+    assert store.match_voice(VOICE_VEC)[1] == "Yang"
+    assert ask not in [q for q, _ in brain.asked]       # handled by enrollment, not the LLM
+
+
+def test_recognised_speaker_asking_to_be_remembered_goes_to_the_brain(tmp_path):
+    loop, _, _, store, brain = make_loop(
+        tmp_path, utterances=[said("Reachy"), said("remember me")],
+        voices=[ALICE_VOICE, ALICE_VOICE],
+    )
+    loop.run_once()
+    assert [q for q, _ in brain.asked] == ["remember me"]

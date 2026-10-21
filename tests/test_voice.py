@@ -83,3 +83,14 @@ def test_broken_model_degrades_to_cant_tell(tmp_path, monkeypatch):
     )
     assert ident.identify(audio(2)) is None
     assert ident.identify(audio(2)) is None  # stays disabled, no retry storm
+
+
+def test_first_voice_with_nobody_enrolled_is_a_stranger(tmp_path):
+    """With an empty voices table everyone used to be "can't tell", so the
+    enrollment offer (strangers only) never happened and nobody could enroll."""
+    obs = identifier(Store(tmp_path / "db"), [0.3] * 192).identify(audio(2))
+    assert obs is not None and obs.person_id is None
+
+
+def test_too_short_audio_is_still_cant_tell_with_nobody_enrolled(tmp_path):
+    assert identifier(Store(tmp_path / "db"), [0.3] * 192).identify(audio(0.3)) is None

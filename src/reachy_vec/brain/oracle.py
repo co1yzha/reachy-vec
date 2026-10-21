@@ -57,6 +57,12 @@ def split_wake(text: str, wake_words=DEFAULT_WAKE_WORDS) -> str | None:
     return text[match.end():].strip()
 
 
+# an unrecognised speaker asking to be remembered -> real voice enrollment
+REMEMBER_ME = re.compile(
+    r"\b(remember|learn|save|know)\s+(me|my\s+(voice|name))\b|\bmy\s+name\s+is\b",
+    re.IGNORECASE,
+)
+
 INTERRUPT_WORDS = re.compile(
     r"\b(stop|wait|hold on|be quiet|quiet|shush|pause|enough|shut up)\b", re.IGNORECASE
 )
@@ -189,6 +195,13 @@ class OracleLoop:
                 if owner is None and turn_voice is not None and turn_voice.person_id:
                     owner = turn_voice  # recognized mid-conversation
                     self._deliver_messages(owner.person_id)
+            if (self._speaker_id is not None and REMEMBER_ME.search(text)
+                    and (turn_voice is None or turn_voice.person_id is None)):
+                # the LLM would just promise "I'll remember you" - enroll for real
+                offered = True
+                _event, enrolled = self._offer_enroll(first_audio=audio)
+                owner = enrolled or owner
+                continue
             if self._reply(text, turn_voice, ack=ack):
                 self._maybe_bank_voice(turn_voice, audio)
                 continue  # interrupted: user is already talking, skip the nod

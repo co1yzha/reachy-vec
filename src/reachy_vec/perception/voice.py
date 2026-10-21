@@ -88,7 +88,9 @@ class EcapaSpeakerIdentifier:
             return None
         match = self._store.match_voice(vector)
         if match is None:
-            return None  # nobody has a voice profile yet
+            # nobody is enrolled yet: this is necessarily a stranger. (Returning
+            # "can't tell" here meant the enrollment offer never fired.)
+            return Observation(person_id=None, name=None, score=0.0)
         person_id, name, score = match
         if score >= self._threshold:
             return Observation(person_id=person_id, name=name, score=score)
