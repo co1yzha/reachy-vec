@@ -39,6 +39,9 @@ packages = ["src/reachy_vec"]
 # STT_BACKEND=parakeet. Install without re-locking (the lock can't resolve here):
 #   uv pip install --python .venv/bin/python parakeet-mlx
 parakeet = ["parakeet-mlx>=0.5.3"]
+# TTS_BACKEND=kokoro (Kokoro's text-to-phoneme step):
+#   uv pip install --python .venv/bin/python "misaki[en]"
+kokoro = ["misaki[en]>=0.9.4"]
 
 [dependency-groups]
 dev = [

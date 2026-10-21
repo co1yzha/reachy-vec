@@ -40,6 +40,7 @@ keys are ignored.
 | `PARAKEET_MODEL` | `mlx-community/parakeet-tdt-0.6b-v2` | model for `STT_BACKEND=parakeet`; downloaded on first use |
 | `STT_MODEL` | `base.en` | faster-whisper size for the local backend; `small.en` = more accurate, slower |
 | `TTS_BACKEND` | `say` | `say` (macOS built-in) or `qwen-tts` (voice clone, local MLX) |
+| `KOKORO_VOICE` | `af_heart` | voice for `TTS_BACKEND=kokoro` (Kokoro-82M via mlx-audio: preset voices, no cloning, ~25x faster than real time). Prefix sets the accent: `a…` US, `b…` UK — e.g. `af_heart`, `bf_emma`, `am_michael`, `bm_george`. Needs `uv pip install --python .venv/bin/python "misaki[en]"`. `TTS_SPEED` is a real tempo change here (pitch kept). Reachy patches an mlx-audio 0.4.4 length bug that crashed ~1 in 6 sentences |
 | `TTS_MODEL` | `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16` | mlx-audio model id for `qwen-tts`; swap for a 1.7B variant if clone quality disappoints |
 | `VOICE_SAMPLE` | unset | ~10 s clean WAV of the voice to clone; required for `qwen-tts` |
 | `VOICE_SAMPLE_TEXT` | unset | transcript of the sample; omit → auto-transcribed once via Whisper on first synthesis |

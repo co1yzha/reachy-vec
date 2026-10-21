@@ -60,7 +60,8 @@ class Settings(BaseSettings):
     rag_k: int = 3  # max retrieved doc chunks per turn
     rag_min_score: float = 0.62  # cosine floor for retrieved chunks; small talk scores
     # ~0.45-0.61 and demo questions ~0.66-0.78 on bge-small, so chit-chat gets none
-    tts_backend: str = "say"  # say (macOS built-in) | qwen-tts (voice clone, local MLX)
+    tts_backend: str = "say"  # say (macOS) | qwen-tts (voice clone) | kokoro (fast presets)
+    kokoro_voice: str = "af_heart"  # tts_backend=kokoro; prefix a=US b=UK, e.g. bf_emma, am_michael
     tts_model: str = ""  # mlx-audio model id; empty -> QWEN_TTS_DEFAULT_MODEL (0.6B)
     # tts_model: str = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"  # mlx-audio model id
 

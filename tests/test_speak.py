@@ -76,8 +76,8 @@ def test_make_speaker_say_backend(monkeypatch):
 
 
 def test_make_speaker_unknown_backend_raises(monkeypatch):
-    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "kokoro")
-    with pytest.raises(NotImplementedError, match="kokoro"):
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "nonexistent")
+    with pytest.raises(NotImplementedError, match="nonexistent"):
         make_speaker()
 
 
@@ -516,3 +516,59 @@ def test_tts_speed_default_is_unchanged():
     from reachy_vec.config import Settings
 
     assert Settings.model_fields["tts_speed"].default == 1.0
+
+
+# -- Kokoro backend -------------------------------------------------------------
+
+
+def test_kokoro_synthesizes_with_voice_speed_and_plays():
+    from reachy_vec.audio.speak import KokoroSpeaker
+
+    calls, played = [], []
+
+    def generate(text, voice, speed, lang_code):
+        calls.append((text, voice, speed, lang_code))
+        return np.zeros(2400, dtype=np.float32), 24000
+
+    speaker = KokoroSpeaker(voice="bf_emma", speed=1.1, generate=generate,
+                            play=lambda audio, sr: played.append(sr))
+    speaker.speak("Hello there.")
+    assert calls == [("Hello there.", "bf_emma", 1.1, "b")]   # lang from the voice prefix
+    assert played == [24000]                                  # native speed, no rate trick
+
+
+def test_kokoro_precache_and_failures_are_non_fatal(caplog):
+    from reachy_vec.audio.speak import KokoroSpeaker
+
+    calls = []
+
+    def generate(text, voice, speed, lang_code):
+        calls.append(text)
+        if text == "Bad.":
+            raise ValueError("broadcast_shapes")
+        return np.zeros(240, dtype=np.float32), 24000
+
+    speaker = KokoroSpeaker(generate=generate, play=lambda a, s: None)
+    speaker.precache(["Mm.", "Bad."])        # a failing filler is skipped, not raised
+    speaker.speak("Mm.")
+    assert calls == ["Mm.", "Bad."]           # "Mm." came from the cache
+    speaker.speak("Bad.")                     # logged and skipped
+    assert "TTS synthesis failed" in caplog.text
+
+
+def test_kokoro_length_fit_trims_and_pads():
+    import mlx.core as mx
+
+    from reachy_vec.audio.speak import _fit_length
+
+    assert _fit_length(mx.zeros((1, 33900, 9)), 33600).shape == (1, 33600, 9)
+    assert _fit_length(mx.zeros((1, 33300, 9)), 33600).shape == (1, 33600, 9)
+    same = mx.zeros((1, 10, 9))
+    assert _fit_length(same, 10) is same
+
+
+def test_make_speaker_kokoro(monkeypatch):
+    from reachy_vec.audio.speak import KokoroSpeaker
+
+    monkeypatch.setattr("reachy_vec.audio.speak.settings.tts_backend", "kokoro")
+    assert isinstance(make_speaker(), KokoroSpeaker)

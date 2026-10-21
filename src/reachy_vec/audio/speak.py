@@ -323,6 +323,124 @@ class QwenTTSSpeaker:
             self._stop()
 
 
+def _fit_length(sines, n: int):
+    """Trim/pad Kokoro's harmonic source to the f0 length. mlx-audio 0.4.4's
+    SineGen down- then up-samples by 300 and can come back 300 samples long,
+    so ~1 in 6 sentences crashed with a broadcast error."""
+    import mlx.core as mx
+
+    if sines.shape[1] > n:
+        return sines[:, :n, :]
+    if sines.shape[1] < n:
+        return mx.pad(sines, [(0, 0), (0, n - sines.shape[1]), (0, 0)])
+    return sines
+
+
+def _patch_kokoro_sinegen() -> None:
+    from mlx_audio.tts.models.kokoro import istftnet
+
+    gen = istftnet.SineGen
+    if getattr(gen, "_reachy_fitted", False):
+        return
+    original = gen._f02sine
+
+    def _f02sine(self, f0_values):
+        return _fit_length(original(self, f0_values), f0_values.shape[1])
+
+    gen._f02sine = _f02sine
+    gen._reachy_fitted = True
+
+
+class KokoroSpeaker:
+    """Kokoro-82M via mlx-audio: preset voices (no cloning), ~25x faster than
+    real time on Apple silicon. Voice prefix picks the accent (a = US, b = UK).
+    `generate(text, voice, speed, lang_code) -> (audio, rate)` and `play` are
+    injectable for tests."""
+
+    def __init__(
+        self,
+        voice: str = "af_heart",
+        speed: float = 1.0,
+        model_id: str = "mlx-community/Kokoro-82M-bf16",
+        generate=None,
+        play=None,
+        stop=None,
+        target_rms: float = 0.0,
+        presence_db: float = 0.0,
+        presence_hz: float = 3200.0,
+    ):
+        self._voice = voice
+        self._speed = speed
+        self._model_id = model_id
+        self._generate = generate
+        if play is None:
+            player = AfplayPlayer()
+            play, stop = player, stop or player.stop
+        self._play = play
+        self._stop = stop
+        self._target_rms = target_rms
+        self._presence_db = presence_db
+        self._presence_hz = presence_hz
+        self._cache: dict[str, tuple] = {}
+
+    def _ensure_generate(self):
+        if self._generate is None:
+            import numpy as np
+            from mlx_audio.tts.utils import load_model
+
+            _patch_kokoro_sinegen()
+            model = load_model(self._model_id)
+
+            def generate(text, voice, speed, lang_code):
+                results = list(model.generate(text=text, voice=voice, speed=speed,
+                                              lang_code=lang_code))
+                audio = np.concatenate([np.asarray(r.audio) for r in results])
+                return audio, results[0].sample_rate
+
+            self._generate = generate
+        return self._generate
+
+    def _synthesize(self, text: str):
+        audio, sample_rate = self._ensure_generate()(
+            text, self._voice, self._speed, self._voice[:1] or "a"
+        )
+        audio = _process_loudness(
+            audio, sample_rate, self._target_rms, self._presence_db, self._presence_hz
+        )
+        return audio, sample_rate
+
+    def synthesize(self, text: str):
+        text = text.strip()
+        return self._cache.get(text) or self._synthesize(text)
+
+    def play_clip(self, clip) -> None:
+        audio, sample_rate = clip
+        _debug_tap(audio, sample_rate)
+        self._play(audio, sample_rate)
+
+    def precache(self, texts: list[str]) -> None:
+        for text in texts:
+            text = text.strip()
+            if not text or text in self._cache:
+                continue
+            try:
+                self._cache[text] = self._synthesize(text)
+            except Exception:
+                logger.warning("could not pre-generate %r; it will synthesize live", text)
+
+    def speak(self, text: str) -> None:
+        if not text.strip():
+            return
+        try:
+            self.play_clip(self.synthesize(text))
+        except Exception:
+            logger.exception("TTS synthesis failed; skipping sentence")
+
+    def stop(self) -> None:
+        if self._stop is not None:
+            self._stop()
+
+
 def make_speaker(media=None) -> Speaker:
     backend = settings.tts_backend
     if backend == "say":
@@ -349,6 +467,15 @@ def make_speaker(media=None) -> Speaker:
             presence_hz=settings.tts_presence_hz,
             speed=settings.tts_speed,
         )
+    if backend == "kokoro":
+        return KokoroSpeaker(
+            voice=settings.kokoro_voice,
+            speed=settings.tts_speed,
+            play=RobotAudioSink(media) if media is not None else None,
+            target_rms=settings.tts_target_rms,
+            presence_db=settings.tts_presence_db,
+            presence_hz=settings.tts_presence_hz,
+        )
     raise NotImplementedError(
-        f"TTS backend {backend!r} is not wired - use 'say' or 'qwen-tts'"
+        f"TTS backend {backend!r} is not wired - use 'say', 'qwen-tts' or 'kokoro'"
     )
