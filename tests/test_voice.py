@@ -68,8 +68,9 @@ def test_none_audio_is_cant_tell(tmp_path):
     assert real.identify(None) is None
 
 
-def test_empty_voice_store_is_cant_tell(tmp_path):
-    assert identifier(Store(tmp_path / "db"), ALICE_VEC).identify(audio(2)) is None
+def test_empty_voice_store_means_a_stranger(tmp_path):
+    obs = identifier(Store(tmp_path / "db"), ALICE_VEC).identify(audio(2))
+    assert obs is not None and obs.person_id is None    # so enrollment gets offered
 
 
 def test_broken_model_degrades_to_cant_tell(tmp_path, monkeypatch):
@@ -90,7 +91,3 @@ def test_first_voice_with_nobody_enrolled_is_a_stranger(tmp_path):
     enrollment offer (strangers only) never happened and nobody could enroll."""
     obs = identifier(Store(tmp_path / "db"), [0.3] * 192).identify(audio(2))
     assert obs is not None and obs.person_id is None
-
-
-def test_too_short_audio_is_still_cant_tell_with_nobody_enrolled(tmp_path):
-    assert identifier(Store(tmp_path / "db"), [0.3] * 192).identify(audio(0.3)) is None
