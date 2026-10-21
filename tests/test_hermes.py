@@ -246,3 +246,17 @@ def test_status_reports_running_task_then_clears(tmp_path):
     assert jobs.status() == ("research X", 45.0)       # handed off, still running
     wait_until(lambda: not jobs.busy)
     assert jobs.status() is None                       # finished
+
+
+def test_anonymous_requester_waits_longer_instead_of_dropping(tmp_path):
+    """Nothing can be delivered later to someone unrecognised, so wait longer."""
+    jobs = HermesJobs(FakeAgent(["The headlines are X."], delay_s=0.15), Store(tmp_path / "db"),
+                      wait_s=0.05, wait_anonymous_s=1.0, task_timeout_s=5)
+    assert jobs.ask("latest AI news", requester_id=None, requester_name=None) == \
+        "The headlines are X."
+
+
+def test_recognised_requester_keeps_the_short_wait(tmp_path):
+    jobs = HermesJobs(FakeAgent(["late"], delay_s=0.15), Store(tmp_path / "db"),
+                      wait_s=0.05, wait_anonymous_s=1.0, task_timeout_s=5)
+    assert jobs.ask("x", requester_id="p1", requester_name="Yang").startswith("still working")

@@ -144,6 +144,8 @@ class Settings(BaseSettings):
     hermes_profile: str = "reachy"
     hermes_toolsets: str = "web,browser,memory,skills,session_search,todo,cronjob,kanban"
     hermes_wait_s: float = 20.0  # how long to wait before handing off to background
+    hermes_wait_anonymous_s: float = 60.0  # unrecognised speakers get no late delivery,
+    # so wait longer and answer in the same turn
     hermes_task_timeout_s: float = 600.0
     hermes_transport: str = "cli"  # cli (one-shot `hermes -z`) | gateway (running API server)
     hermes_gateway_url: str = "http://127.0.0.1:8642"

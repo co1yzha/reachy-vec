@@ -240,6 +240,7 @@ def make_hermes(store, settings=settings, which=None, gateway_cls=None,
         agent,
         store,
         wait_s=settings.hermes_wait_s,
+        wait_anonymous_s=settings.hermes_wait_anonymous_s,
         task_timeout_s=settings.hermes_task_timeout_s,
     )
 

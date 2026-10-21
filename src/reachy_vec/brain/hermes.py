@@ -260,6 +260,7 @@ class HermesJobs:
         store: Store,
         *,
         wait_s: float,
+        wait_anonymous_s: float | None = None,
         task_timeout_s: float,
         clock=time.monotonic,
     ):
@@ -269,6 +270,8 @@ class HermesJobs:
         self._started = 0.0
         self._store = store
         self._wait_s = wait_s
+        # an unrecognised speaker can't get a late result, so wait longer for them
+        self._wait_anonymous_s = wait_s if wait_anonymous_s is None else wait_anonymous_s
         self._task_timeout_s = task_timeout_s
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hermes")
         self._future: Future | None = None
@@ -315,7 +318,8 @@ class HermesJobs:
         future = self._pool.submit(self._run, task, requester_name, requester_id)
         self._future = future
         try:
-            return future.result(timeout=self._wait_s).strip()
+            wait = self._wait_s if requester_id else self._wait_anonymous_s
+            return future.result(timeout=wait).strip()
         except FutureTimeout:
             pass
         except Exception:
