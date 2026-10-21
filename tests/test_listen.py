@@ -337,7 +337,7 @@ def test_parakeet_transcriber_silence_and_empty_text(monkeypatch):
     monkeypatch.setattr(t, "_capture", lambda timeout_s: None)
     assert t.listen_once(5) is None             # nothing captured
     monkeypatch.setattr(t, "_capture", lambda timeout_s: np.zeros(16000, dtype=np.float32))
-    assert t.listen_once(5) is None             # captured, but no words
+    assert t.listen_once(5).text == ""          # captured, but no words: not silence
 
 
 def test_parakeet_default_model_setting():
@@ -391,3 +391,15 @@ def test_capture_survives_a_vanished_microphone(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="reachy_vec.audio.listen"):
         assert cap._capture(timeout_s=5) is None
     assert "microphone unavailable" in caplog.text and naps == [1.0]
+
+
+def test_parakeet_returns_empty_utterance_for_wordless_sound(monkeypatch):
+    """Sound but no words is not silence: callers keep listening."""
+    from reachy_vec.audio.listen import ParakeetTranscriber
+
+    t = ParakeetTranscriber(transcribe=lambda audio: "   ")
+    monkeypatch.setattr(t, "_load", lambda: None)
+    audio = np.zeros(16000, dtype=np.float32)
+    monkeypatch.setattr(t, "_capture", lambda timeout_s: audio)
+    utt = t.listen_once(5)
+    assert utt is not None and utt.text == "" and utt.audio is audio

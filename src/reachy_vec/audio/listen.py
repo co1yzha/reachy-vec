@@ -330,7 +330,7 @@ class MicTranscriber(_AudioCapture):
         )
         text = " ".join(seg.text.strip() for seg in segments).strip()
         logger.info("heard: %r", text)
-        return Utterance(text=text, audio=audio) if text else None
+        return Utterance(text=text, audio=audio)  # "" = sound without words, not silence
 
 
 _stt_tap_counter = 0
@@ -409,7 +409,7 @@ class ParakeetTranscriber(_AudioCapture):
         text = self._transcribe(normalize_rms(audio, settings.stt_target_rms)).strip()
         _stt_tap(audio, self._sample_rate, text)
         logger.info("heard (parakeet): %r", text)
-        return Utterance(text=text, audio=audio) if text else None
+        return Utterance(text=text, audio=audio)  # "" = sound without words, not silence
 
 
 class OpenAITranscriber(_AudioCapture):
@@ -445,7 +445,7 @@ class OpenAITranscriber(_AudioCapture):
             return None
         text = result.text.strip()
         logger.info("heard (openai): %r", text)
-        return Utterance(text=text, audio=audio) if text else None
+        return Utterance(text=text, audio=audio)  # "" = sound without words, not silence
 
 
 def make_transcriber(

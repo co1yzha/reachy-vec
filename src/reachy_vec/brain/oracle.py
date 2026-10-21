@@ -25,7 +25,7 @@ APOLOGY = "Sorry, my brain isn't responding right now."
 OFFER = "Hi! I don't think we've met. Would you like me to remember your voice? Say yes or no."
 DEFAULT_WAKE_WORDS = (
     "reachy", "reachie", "reechy", "reachi", "reache", "reachee", "reechie", "reechi",
-    "rechy", "rachie", "richie", "ritchie", "ritchy", "riachi", "riyachi", "ryachi",
+    "rechy", "rachie", "richie", "ritchie", "ritchy", "riachi", "riyachi", "ryachi", "haruchi",
 )
 
 # Short lines spoken on waking from idle sleep, so a wake is unmissable.
@@ -239,9 +239,22 @@ class OracleLoop:
         return monitor is not None and monitor.fired
 
     def _listen(self, timeout_s: float):
+        """Next utterance with words, or None after timeout_s of no speech.
+
+        A sound transcribed as "" (noise, a cough) is skipped and listening
+        resumes for the rest of the window - it used to read as silence and
+        end the conversation right after a reply.
+        """
         if self._settle_s > 0:
             self._sleep(self._settle_s)
-        return self._transcriber.listen_once(timeout_s)
+        deadline = time.monotonic() + timeout_s
+        while True:
+            utterance = self._transcriber.listen_once(timeout_s)
+            if utterance is None or utterance.text.strip():
+                return utterance
+            timeout_s = deadline - time.monotonic()
+            if timeout_s <= 0:
+                return None
 
     def _identify_voice(self, audio):
         if self._speaker_id is None:

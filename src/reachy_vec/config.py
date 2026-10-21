@@ -116,6 +116,7 @@ class Settings(BaseSettings):
     wake_words: list[str] = [
         "reachy", "reachie", "reechy", "reachi", "reache", "reachee", "reechie", "reechi",
         "rechy", "rachie", "richie", "ritchie", "ritchy", "riachi", "riyachi", "ryachi",
+        "haruchi",
     ]
     # mishearings of "Reachy" that are not everyday words - "reach", "reaching",
     # "ready", "rich" are deliberately absent (they'd wake the robot constantly)

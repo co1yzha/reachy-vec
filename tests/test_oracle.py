@@ -546,7 +546,7 @@ def test_filler_then_apology_when_brain_fails(tmp_path):
 
 WAKE_VARIANTS = ["reachy", "reachie", "reechy", "reachi", "reache", "reachee", "reechie",
                  "reechi", "rechy", "rachie", "richie", "ritchie", "ritchy",
-                 "riachi", "riyachi", "ryachi"]
+                 "riachi", "riyachi", "ryachi", "haruchi"]
 
 
 @pytest.mark.parametrize("word", WAKE_VARIANTS)
@@ -576,3 +576,22 @@ def test_oracle_default_matches_config_default():
     from reachy_vec.config import Settings
 
     assert list(DEFAULT_WAKE_WORDS) == Settings.model_fields["wake_words"].default
+
+
+def test_wordless_noise_does_not_end_the_conversation(tmp_path):
+    """A noise blip transcribed as "" used to look like silence and end the chat."""
+    from reachy_vec.audio.listen import Utterance
+
+    loop, speaker, body, _, brain = make_loop(
+        tmp_path,
+        utterances=[said("Reachy"), Utterance(text="", audio=AUDIO), said("what's new?")],
+    )
+    assert loop.run_once() == "conversation"
+    assert [q for q, _ in brain.asked] == ["what's new?"]   # still listening after the blip
+    assert body.motions.count("goodbye") == 1               # ended once, on real silence
+
+
+def test_wordless_noise_is_not_a_wake():
+    from reachy_vec.audio.listen import Utterance  # noqa: F401  (shape check below)
+
+    assert split_wake("") is None
