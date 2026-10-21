@@ -8,6 +8,7 @@ the OpenAI API (gpt-4o-transcribe). Select with settings.stt_backend.
 import io
 import logging
 import threading
+import time
 import wave
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -246,11 +247,24 @@ class _AudioCapture:
         is bounded separately (settings.utterance_max_s), so a sentence begun
         late in the window is never truncated.
         """
-        import torch
 
         self._load_vad()
         chunk_samples = int(self._sample_rate * CHUNK_S)
         max_silence = int(settings.utterance_max_silence_s / CHUNK_S)
+
+        try:
+            return self._collect(chunk_samples, max_silence, timeout_s)
+        except Exception as e:
+            # a USB mic can drop off mid-run (PortAudioError "Error querying device
+            # -1"); keep the loop alive and retry instead of crashing the Oracle
+            if not (isinstance(e, OSError) or type(e).__name__ == "PortAudioError"):
+                raise
+            logger.warning("microphone unavailable (%s) - retrying", e)
+            time.sleep(1.0)
+            return None
+
+    def _collect(self, chunk_samples: int, max_silence: int, timeout_s: float):
+        import torch
 
         frame_iter = self._source.frames(chunk_samples)
 

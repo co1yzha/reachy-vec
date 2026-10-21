@@ -372,3 +372,22 @@ def test_barge_in_logs_when_it_fires(caplog):
     with caplog.at_level(logging.INFO, logger="reachy_vec.audio.listen"):
         mon.start(on_fire=lambda: None)
     assert "barge-in fired" in caplog.text
+
+
+def test_capture_survives_a_vanished_microphone(monkeypatch, caplog):
+    """A USB mic dropping off raised PortAudioError out of the Oracle loop."""
+    import logging
+
+    class GoneSource:
+        def frames(self, chunk_samples):
+            raise OSError("Error querying device -1")   # stands in for PortAudioError
+            yield
+
+    naps = []
+    monkeypatch.setattr("reachy_vec.audio.listen.time.sleep", naps.append)
+    cap = _AudioCapture(source=GoneSource())
+    cap._load_vad = lambda: None
+    cap._vad = lambda frame, rate: None
+    with caplog.at_level(logging.WARNING, logger="reachy_vec.audio.listen"):
+        assert cap._capture(timeout_s=5) is None
+    assert "microphone unavailable" in caplog.text and naps == [1.0]

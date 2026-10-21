@@ -359,3 +359,33 @@ def test_mic_source_default_is_auto():
     from reachy_vec.config import Settings
 
     assert Settings.model_fields["mic_source"].default == "auto"
+
+
+def test_mac_mic_missing_falls_back_to_robot_mic():
+    from reachy_vec.cli.run import check_mic
+
+    assert check_mic("mac", robot_media=True, has_mac_input=lambda: False) == "robot"
+
+
+def test_mac_mic_present_is_kept():
+    from reachy_vec.cli.run import check_mic
+
+    assert check_mic("mac", robot_media=True, has_mac_input=lambda: True) == "mac"
+
+
+def test_no_mic_anywhere_is_a_clear_error():
+    import typer
+
+    from reachy_vec.cli.run import check_mic
+
+    with pytest.raises(typer.Exit):
+        check_mic("mac", robot_media=False, has_mac_input=lambda: False)
+
+
+def test_robot_mic_needs_no_mac_check():
+    from reachy_vec.cli.run import check_mic
+
+    def boom():
+        raise AssertionError("should not query Mac devices")
+
+    assert check_mic("robot", robot_media=True, has_mac_input=boom) == "robot"

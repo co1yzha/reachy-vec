@@ -55,6 +55,29 @@ def resolve_mic(media_source: str, mic_setting: str) -> str:
     return "robot"
 
 
+def _mac_has_input() -> bool:
+    import sounddevice as sd
+
+    try:
+        return sd.query_devices(kind="input") is not None
+    except Exception:  # PortAudioError "Error querying device -1": no input at all
+        return False
+
+
+def check_mic(mic: str, *, robot_media: bool, has_mac_input=_mac_has_input) -> str:
+    """The Mac mic must exist (a USB mic can drop off); fall back to the robot
+    mic when it doesn't, or stop with a clear message if there is none."""
+    if mic != "mac" or has_mac_input():
+        return mic
+    if robot_media:
+        typer.echo("No Mac microphone found (USB mic unplugged?) - using the robot's mic.",
+                   err=True)
+        return "robot"
+    typer.echo("No microphone found - plug one in (System Settings > Sound > Input).",
+               err=True)
+    raise typer.Exit(code=1)
+
+
 def make_barge_in_factory(chosen: str, media, is_self_voice=None):
     """Zero-arg factory building a fresh BargeInMonitor per reply, or None."""
     if not settings.barge_in:
@@ -264,7 +287,7 @@ def run(
         )
         raise typer.Exit(code=1)
 
-    mic = resolve_mic(chosen, settings.mic_source)
+    mic = check_mic(resolve_mic(chosen, settings.mic_source), robot_media=media is not None)
     if mic == "robot":
         audio_source = RobotAudioSource(media, target_rate=settings.audio_input_rate)
     else:
