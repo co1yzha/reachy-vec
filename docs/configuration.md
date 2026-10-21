@@ -94,6 +94,11 @@ keys are ignored.
 | `HERMES_TOOLSETS` | `web,browser,memory,skills,session_search,todo,cronjob,kanban` | read-only + scheduling toolsets passed via `-t` |
 | `HERMES_WAIT_S` | `20` | how long the robot waits before handing off; a slower task for a recognised speaker is delivered later as a message from Hermes |
 | `HERMES_TASK_TIMEOUT_S` | `600` | hard cap per task |
+| `HERMES_TRANSPORT` | `cli` | `gateway` = send tasks to the running Hermes gateway's API server (no per-task startup; ~0.7 s once warm, ~13 s for the first run after a gateway restart, so Reachy warms it in the background at startup; per-teammate Hermes memory via `X-Hermes-Session-Key: reachy:<person_id>`). Falls back to `cli` if the key is missing, the gateway is down, or its API toolsets exceed `HERMES_TOOLSETS`. `cli` = one-shot `hermes -p reachy -z` per task |
+| `HERMES_GATEWAY_URL` | `http://127.0.0.1:8642` | gateway API server; Reachy calls `/p/<HERMES_PROFILE>/v1/runs` |
+| `HERMES_API_KEY` | — | the profile's `API_SERVER_KEY`; read automatically from `~/.hermes/profiles/reachy/.env`, so it lives in one place |
+
+**Gateway setup (one-off, outside this repo):** the gateway multiplexes profiles, so the shared listener is enabled in the **default** profile (`API_SERVER_ENABLED=true` + its own `API_SERVER_KEY` in `~/.hermes/.env`) and the `reachy` profile needs its own key (`~/.hermes/profiles/reachy/.env`). There is no per-request toolset flag: set `platform_toolsets.api_server` to the read-only + scheduling list in **both** profiles (`hermes [-p reachy] config set platform_toolsets.api_server "[web, browser, memory, skills, session_search, todo, cronjob, kanban]"`), then `hermes gateway restart`. Runs that need a tool approval are stopped, never approved.
 
 Hermes runs with its working directory at `data/hermes_cwd`, so it does not load the repo's agent rules.
 

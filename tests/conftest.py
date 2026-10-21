@@ -300,7 +300,8 @@ class FakeAgent:
         self.delay_s = delay_s
         self.calls: list[tuple[str, str | None]] = []
 
-    def run(self, task: str, *, requester: str | None, timeout_s: float) -> str:
+    def run(self, task: str, *, requester: str | None, timeout_s: float,
+            requester_id: str | None = None) -> str:
         import time
 
         self.calls.append((task, requester))

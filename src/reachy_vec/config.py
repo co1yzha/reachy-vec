@@ -13,6 +13,7 @@ OPENAI_API_KEY is read by the openai SDK directly.
 
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Deployment-level config home: shared secrets/defaults for this robot brain
@@ -142,6 +143,14 @@ class Settings(BaseSettings):
     hermes_toolsets: str = "web,browser,memory,skills,session_search,todo,cronjob,kanban"
     hermes_wait_s: float = 20.0  # how long to wait before handing off to background
     hermes_task_timeout_s: float = 600.0
+    hermes_transport: str = "cli"  # cli (one-shot `hermes -z`) | gateway (running API server)
+    hermes_gateway_url: str = "http://127.0.0.1:8642"
+    # the reachy profile's API_SERVER_KEY - read straight from
+    # ~/.hermes/profiles/reachy/.env (loaded above), so it lives in one place
+    hermes_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("REACHY_VEC_HERMES_API_KEY", "API_SERVER_KEY"),
+    )
 
     # Storage
     data_dir: Path = Path("data")

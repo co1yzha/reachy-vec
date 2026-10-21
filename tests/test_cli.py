@@ -187,6 +187,7 @@ def test_make_hermes_none_when_binary_missing(monkeypatch, tmp_path):
     from reachy_vec.config import settings
 
     monkeypatch.setattr(settings, "hermes_enabled", True)
+    monkeypatch.setattr(settings, "hermes_transport", "cli")  # independent of the real .env
     assert make_hermes(Store(tmp_path / "db"), which=lambda b: None) is None
 
 
@@ -196,6 +197,7 @@ def test_make_hermes_builds_jobs_with_settings(monkeypatch, tmp_path):
     from reachy_vec.config import settings
 
     monkeypatch.setattr(settings, "hermes_enabled", True)
+    monkeypatch.setattr(settings, "hermes_transport", "cli")
     monkeypatch.setattr(settings, "data_dir", tmp_path)
     jobs = make_hermes(Store(tmp_path / "db"), which=lambda b: "/x/hermes")
     assert isinstance(jobs, HermesJobs)
@@ -265,3 +267,76 @@ def test_default_fillers():
 
     assert Settings.model_fields["ack_fillers"].default == ["Mm.", "Right.", "Okay.", "Let me see."]
     assert Settings.model_fields["ack_enabled"].default is True
+
+
+class _FakeGatewayAgent:
+    instances: list = []
+
+    def __init__(self, *, base_url, profile, api_key, fail_check=None):
+        self.base_url, self.profile, self.api_key = base_url, profile, api_key
+        self.fail_check = fail_check
+        self.warmed = False
+        _FakeGatewayAgent.instances.append(self)
+
+    def check_toolsets(self, allowed):
+        self.allowed = allowed
+        if self.fail_check:
+            from reachy_vec.brain.hermes import HermesError
+
+            raise HermesError(self.fail_check)
+
+    def warm_up(self):
+        self.warmed = True
+
+
+def _gateway_settings(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "hermes_enabled", True)
+    monkeypatch.setattr(settings, "hermes_transport", "gateway")
+    monkeypatch.setattr(settings, "hermes_api_key", "k" * 32)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+
+
+def test_make_hermes_uses_the_gateway(monkeypatch, tmp_path):
+    from reachy_vec.cli.run import make_hermes
+
+    _gateway_settings(monkeypatch, tmp_path)
+    jobs = make_hermes(Store(tmp_path / "db"), which=lambda b: "/x/hermes",
+                       gateway_cls=_FakeGatewayAgent, warm_in_background=False)
+    agent = jobs._agent
+    assert isinstance(agent, _FakeGatewayAgent)
+    assert (agent.base_url, agent.profile) == ("http://127.0.0.1:8642", "reachy")
+    assert agent.allowed == {"web", "browser", "memory", "skills", "session_search", "todo",
+                             "cronjob", "kanban"}
+    assert agent.warmed
+
+
+def test_make_hermes_falls_back_to_cli_when_gateway_unsafe_or_down(monkeypatch, tmp_path):
+    from functools import partial
+
+    from reachy_vec.brain.hermes import HermesCli
+    from reachy_vec.cli.run import make_hermes
+
+    _gateway_settings(monkeypatch, tmp_path)
+    jobs = make_hermes(Store(tmp_path / "db"), which=lambda b: "/x/hermes",
+                       gateway_cls=partial(_FakeGatewayAgent, fail_check="terminal enabled"),
+                       warm_in_background=False)
+    assert isinstance(jobs._agent, HermesCli)
+
+
+def test_make_hermes_gateway_without_key_falls_back(monkeypatch, tmp_path):
+    from reachy_vec.brain.hermes import HermesCli
+    from reachy_vec.cli.run import make_hermes
+
+    _gateway_settings(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "hermes_api_key", None)
+    jobs = make_hermes(Store(tmp_path / "db"), which=lambda b: "/x/hermes",
+                       warm_in_background=False)
+    assert isinstance(jobs._agent, HermesCli)
+
+
+def test_hermes_api_key_reads_the_profile_api_server_key(monkeypatch):
+    from reachy_vec.config import Settings
+
+    monkeypatch.delenv("REACHY_VEC_HERMES_API_KEY", raising=False)
+    monkeypatch.setenv("API_SERVER_KEY", "x" * 32)
+    assert Settings(_env_file=None).hermes_api_key == "x" * 32

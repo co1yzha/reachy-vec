@@ -152,31 +152,58 @@ def stt_client(llm_client, settings=settings, openai_cls=None):
     return openai_cls()
 
 
-def make_hermes(store, settings=settings, which=None):
-    """HermesJobs for the ask_hermes tool, or None when disabled/unavailable."""
+def make_hermes(store, settings=settings, which=None, gateway_cls=None,
+                warm_in_background=True):
+    """HermesJobs for the ask_hermes tool, or None when disabled/unavailable.
+
+    hermes_transport=gateway talks to the running gateway's API server (no
+    per-task startup, per-person memory); it falls back to the one-shot CLI
+    when the key is missing, the gateway is down, or its API toolsets go
+    beyond hermes_toolsets.
+    """
     import shutil
 
     if not settings.hermes_enabled:
         return None
-    which = which or shutil.which
-    if which(settings.hermes_bin) is None:
-        typer.echo(
-            f"Hermes enabled but '{settings.hermes_bin}' not found on PATH - "
-            "ask_hermes is off.",
-            err=True,
-        )
-        return None
-    from reachy_vec.brain.hermes import HermesCli, HermesJobs
+    from reachy_vec.brain.hermes import HermesCli, HermesError, HermesGateway, HermesJobs
 
-    # hermes -z loads AGENTS.md/rules from its CWD, so keep it out of the repo
-    cwd = settings.data_dir / "hermes_cwd"
-    cwd.mkdir(parents=True, exist_ok=True)
-    agent = HermesCli(
-        bin=settings.hermes_bin,
-        profile=settings.hermes_profile,
-        toolsets=settings.hermes_toolsets,
-        cwd=cwd,
-    )
+    agent = None
+    if settings.hermes_transport == "gateway":
+        try:
+            agent = (gateway_cls or HermesGateway)(
+                base_url=settings.hermes_gateway_url,
+                profile=settings.hermes_profile,
+                api_key=settings.hermes_api_key,
+            )
+            agent.check_toolsets(allowed=set(settings.hermes_toolsets.split(",")))
+        except (ValueError, HermesError) as e:
+            typer.echo(f"Hermes gateway not usable ({e}) - using the hermes CLI.", err=True)
+            agent = None
+        else:
+            if warm_in_background:
+                import threading
+
+                threading.Thread(target=agent.warm_up, daemon=True).start()
+            else:
+                agent.warm_up()
+    if agent is None:
+        which = which or shutil.which
+        if which(settings.hermes_bin) is None:
+            typer.echo(
+                f"Hermes enabled but '{settings.hermes_bin}' not found on PATH - "
+                "ask_hermes is off.",
+                err=True,
+            )
+            return None
+        # hermes -z loads AGENTS.md/rules from its CWD, so keep it out of the repo
+        cwd = settings.data_dir / "hermes_cwd"
+        cwd.mkdir(parents=True, exist_ok=True)
+        agent = HermesCli(
+            bin=settings.hermes_bin,
+            profile=settings.hermes_profile,
+            toolsets=settings.hermes_toolsets,
+            cwd=cwd,
+        )
     return HermesJobs(
         agent,
         store,

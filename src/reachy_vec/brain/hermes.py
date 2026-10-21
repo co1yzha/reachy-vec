@@ -1,5 +1,7 @@
-"""Agent adapter: delegates spoken tasks to the local Hermes CLI."""
+"""Agent adapters: delegate spoken tasks to Hermes - via the running gateway's
+HTTP API (HermesGateway, preferred) or a one-shot CLI process (HermesCli)."""
 
+import json
 import logging
 import subprocess
 import time
@@ -26,7 +28,10 @@ class HermesError(Exception):
 
 
 class Agent(Protocol):
-    def run(self, task: str, *, requester: str | None, timeout_s: float) -> str: ...
+    def run(
+        self, task: str, *, requester: str | None, timeout_s: float,
+        requester_id: str | None = None,
+    ) -> str: ...
 
 
 def build_prompt(task: str, requester: str | None) -> str:
@@ -57,7 +62,10 @@ class HermesCli:
         self.cwd = cwd
         self._proc = None
 
-    def run(self, task: str, *, requester: str | None, timeout_s: float) -> str:
+    def run(
+        self, task: str, *, requester: str | None, timeout_s: float,
+        requester_id: str | None = None,  # the CLI has no per-person session key
+    ) -> str:
         args = [
             self.bin, "-p", self.profile, "-z", build_prompt(task, requester),
             "-t", self.toolsets,
@@ -110,6 +118,139 @@ class HermesCli:
             logger.warning("hermes terminate failed", exc_info=True)
 
 
+TERMINAL_STATES = {"completed", "failed", "cancelled", "interrupted"}
+
+
+def _urllib_http(method: str, url: str, headers: dict, body: bytes | None):
+    """(status, parsed JSON) - HTTP errors come back as their status, not raised."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"{}")
+        except ValueError:
+            return e.code, {}
+
+
+class HermesGateway:
+    """Hermes via the always-running gateway's API server (Hermes >= 0.22).
+
+    Starts a run on /p/<profile>/v1/runs, polls it to a terminal state, and
+    stops it on timeout or when it parks waiting for a tool approval (never
+    approves). No per-request toolset flag exists, so check_toolsets() verifies
+    the profile's api_server toolsets instead. `http`, `clock`, `sleep` are
+    injectable for tests.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        profile: str,
+        api_key: str | None,
+        http=_urllib_http,
+        poll_s: float = 0.5,
+        clock=time.monotonic,
+        sleep=time.sleep,
+    ):
+        if not profile.strip():
+            raise ValueError("Hermes profile must not be empty")  # no default fallback
+        if not api_key:
+            raise ValueError("Hermes gateway needs the profile's API_SERVER_KEY")
+        self._base = f"{base_url.rstrip('/')}/p/{profile.strip()}"
+        self._key = api_key
+        self._http = http
+        self._poll_s = poll_s
+        self._clock = clock
+        self._sleep = sleep
+        self._run_id: str | None = None
+
+    def _call(self, method: str, path: str, body: dict | None = None, extra=None):
+        headers = {"Authorization": f"Bearer {self._key}", **(extra or {})}
+        data = None
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+            data = json.dumps(body).encode()
+        try:
+            return self._http(method, self._base + path, headers, data)
+        except OSError as e:
+            raise HermesError(f"Hermes gateway unreachable: {e}") from e
+
+    def run(
+        self, task: str, *, requester: str | None, timeout_s: float,
+        requester_id: str | None = None,
+    ) -> str:
+        extra = {"Idempotency-Key": f"reachy-{uuid.uuid4().hex}"}
+        if requester_id:
+            extra["X-Hermes-Session-Key"] = f"reachy:{requester_id}"  # per-person memory
+        body = {"input": build_prompt(task, requester)}
+        if requester:
+            body["author"] = {"name": requester}
+        status, data = self._call("POST", "/v1/runs", body, extra)
+        if status == 401:
+            raise HermesError("Hermes gateway rejected the key (auth 401)")
+        if status == 429:
+            raise HermesError("Hermes gateway is busy (429)")
+        if status not in (200, 202) or "run_id" not in data:
+            raise HermesError(f"Hermes gateway refused the run ({status}): {data}")
+        self._run_id = run_id = data["run_id"]
+        deadline = self._clock() + timeout_s
+        try:
+            while True:
+                _, run = self._call("GET", f"/v1/runs/{run_id}")
+                state = run.get("status")
+                if state in TERMINAL_STATES:
+                    output = (run.get("output") or "").strip()
+                    if state == "completed" and output:
+                        return output
+                    raise HermesError(f"Hermes run {state}: {run.get('error') or 'no output'}")
+                if state == "waiting_for_approval":
+                    self._stop(run_id)
+                    raise HermesError("Hermes run needed a tool approval; stopped it")
+                if self._clock() >= deadline:
+                    self._stop(run_id)
+                    raise HermesError(f"Hermes run timed out after {timeout_s:.0f}s")
+                self._sleep(self._poll_s)
+        finally:
+            self._run_id = None
+
+    def _stop(self, run_id: str) -> None:
+        try:
+            self._call("POST", f"/v1/runs/{run_id}/stop", {})
+        except HermesError:
+            logger.warning("could not stop Hermes run %s", run_id)
+
+    def terminate(self) -> None:
+        """Stop the in-flight run (on quit); a no-op when idle. Never raises."""
+        run_id = self._run_id
+        if run_id is not None:
+            self._stop(run_id)
+
+    def check_toolsets(self, allowed: set[str]) -> None:
+        """Raise unless the profile's API runs have only `allowed` toolsets."""
+        status, data = self._call("GET", "/v1/toolsets")
+        if status != 200:
+            raise HermesError(f"could not read Hermes toolsets ({status})")
+        enabled = {t["name"] for t in data.get("data", []) if t.get("enabled")}
+        extra = sorted(enabled - allowed)
+        if extra:
+            raise HermesError(f"Hermes API toolsets beyond the allowed set: {', '.join(extra)}")
+
+    def warm_up(self) -> None:
+        """One tiny run so oMLX caches Hermes's ~14k-token prompt (cold ~13 s,
+        warm ~0.7 s). Best-effort."""
+        try:
+            self.run("Reply with the single word ready. Do not use tools.",
+                     requester=None, timeout_s=120)
+        except HermesError as e:
+            logger.warning("Hermes gateway warm-up failed: %s", e)
+
+
 class HermesJobs:
     """One Hermes task at a time: wait briefly, else hand off as a message."""
 
@@ -153,12 +294,13 @@ class HermesJobs:
             terminate()
         self._pool.shutdown(wait=False, cancel_futures=True)
 
-    def _run(self, task: str, requester_name: str | None) -> str:
+    def _run(self, task: str, requester_name: str | None, requester_id: str | None) -> str:
         start = time.monotonic()
         logger.info("hermes task from %s: %r", requester_name, task)
         try:
             result = self._agent.run(
-                task, requester=requester_name, timeout_s=self._task_timeout_s
+                task, requester=requester_name, timeout_s=self._task_timeout_s,
+                requester_id=requester_id,
             )
         except Exception as e:
             logger.warning("hermes task failed after %.1fs: %s", time.monotonic() - start, e)
@@ -170,7 +312,7 @@ class HermesJobs:
         if self.busy:
             return BUSY
         self._task, self._started = task, self._clock()
-        future = self._pool.submit(self._run, task, requester_name)
+        future = self._pool.submit(self._run, task, requester_name, requester_id)
         self._future = future
         try:
             return future.result(timeout=self._wait_s).strip()
