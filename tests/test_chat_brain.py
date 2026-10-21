@@ -1040,7 +1040,8 @@ def test_trimmed_persona_keeps_the_rules():
     from reachy_vec.brain.chat import PERSONALITY
 
     assert len(PERSONALITY) < 2000  # was 3195; every char is re-read each turn
-    for phrase in ("spoken aloud", "Never invent", "off the top of my head",
+    for phrase in ("spoken aloud", "leading with a brief one", "Never invent",
+                   "off the top of my head",
                    "offer to find out", "use their first name occasionally",
                    "explicitly asks to open"):
         assert phrase in PERSONALITY

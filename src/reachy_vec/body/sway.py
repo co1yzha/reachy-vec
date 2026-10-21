@@ -48,6 +48,17 @@ class SwayingSpeaker:
     def __init__(self, speaker, sway: SpeakingSway):
         self._speaker = speaker
         self._sway = sway
+        if hasattr(speaker, "synthesize") and hasattr(speaker, "play_clip"):
+            # keep the two-stage split visible to SpeechPipeline; sway on playback
+            self.synthesize = speaker.synthesize
+            self.play_clip = self._play_clip
+
+    def _play_clip(self, clip) -> None:
+        self._sway.start()
+        try:
+            self._speaker.play_clip(clip)
+        finally:
+            self._sway.stop()
 
     def speak(self, text: str) -> None:
         self._sway.start()

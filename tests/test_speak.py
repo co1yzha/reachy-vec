@@ -478,3 +478,24 @@ def test_qwen_precache_failure_is_non_fatal(caplog):
 
 def test_say_precache_is_a_noop():
     SaySpeaker(popen=lambda *a, **k: None).precache(["Mm."])
+
+
+def test_qwen_synthesize_and_play_clip_split_speak():
+    played = []
+    speaker = QwenTTSSpeaker(sample_path=Path("me.wav"),
+                             generate=lambda text: (f"AUDIO<{text}>", 24000),
+                             play=lambda audio, sr: played.append(audio))
+    clip = speaker.synthesize("Hello.")
+    assert played == []                       # synthesis alone plays nothing
+    speaker.play_clip(clip)
+    assert played == ["AUDIO<Hello.>"]
+
+
+def test_qwen_synthesize_uses_precache():
+    generated = []
+    speaker = QwenTTSSpeaker(sample_path=Path("me.wav"),
+                             generate=lambda t: generated.append(t) or ("A", 24000),
+                             play=lambda a, s: None)
+    speaker.precache(["Mm."])
+    speaker.synthesize("Mm.")
+    assert generated == ["Mm."]               # from cache the second time

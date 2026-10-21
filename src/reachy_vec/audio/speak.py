@@ -295,14 +295,22 @@ class QwenTTSSpeaker:
             self._generate = generate
         return self._generate
 
-    def speak(self, text: str) -> None:
+    def synthesize(self, text: str):
+        """Processed (audio, sample_rate) for text - cached fillers instantly.
+        Split from playback so SpeechPipeline can render ahead."""
         text = text.strip()
-        if not text:
+        return self._cache.get(text) or self._synthesize(text)
+
+    def play_clip(self, clip) -> None:
+        audio, sample_rate = clip
+        _debug_tap(audio, sample_rate)
+        self._play(audio, sample_rate)
+
+    def speak(self, text: str) -> None:
+        if not text.strip():
             return
         try:
-            audio, sample_rate = self._cache.get(text) or self._synthesize(text)
-            _debug_tap(audio, sample_rate)
-            self._play(audio, sample_rate)
+            self.play_clip(self.synthesize(text))
         except Exception:
             logger.exception("TTS synthesis failed; skipping sentence")
 

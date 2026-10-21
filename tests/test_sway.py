@@ -103,3 +103,33 @@ def test_swaying_speaker_stop_halts_sway_too():
     speaker.stop()  # barge-in path
     assert inner.stopped == 1
     assert sway.events == ["stop"]
+
+
+def test_swaying_speaker_exposes_clips_only_when_inner_does():
+    from reachy_vec.body.sway import SwayingSpeaker
+    from tests.conftest import FakeSpeaker
+
+    class Sway:
+        def __init__(self):
+            self.log = []
+
+        def start(self):
+            self.log.append("start")
+
+        def stop(self):
+            self.log.append("stop")
+
+    plain = SwayingSpeaker(FakeSpeaker(), Sway())
+    assert not hasattr(plain, "synthesize")
+
+    class ClipInner(FakeSpeaker):
+        def synthesize(self, text):
+            return f"clip<{text}>"
+
+        def play_clip(self, clip):
+            self.spoken.append(clip)
+
+    sway = Sway()
+    s = SwayingSpeaker(ClipInner(), sway)
+    s.play_clip(s.synthesize("Hi."))
+    assert s._speaker.spoken == ["clip<Hi.>"] and sway.log == ["start", "stop"]

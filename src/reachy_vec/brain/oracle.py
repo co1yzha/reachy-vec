@@ -9,11 +9,11 @@ conversation; who is talking is decided by voice alone (never guessed).
 import logging
 import random
 import re
-import threading
 import time
 import uuid
 from datetime import UTC, datetime
 
+from reachy_vec.audio.pipeline import SpeechPipeline
 from reachy_vec.brain.chat import SpeechInterrupted
 from reachy_vec.perception.fusion import from_voice
 from reachy_vec.perception.voice import BORDERLINE_MARGIN, Observation
@@ -205,49 +205,38 @@ class OracleLoop:
     def _reply(self, text: str, voice_obs, ack: bool = True) -> bool:
         """Answer one turn; returns True if the reply was barged in on.
 
-        With ack, a short filler plays on a background thread while the LLM
-        reads the prompt; the first real sentence waits for it to finish.
+        Speech goes through a SpeechPipeline: with ack a short filler plays first
+        (pre-generated, instant) while the LLM reads the prompt, and each next
+        sentence is synthesized while the current one plays. The turn ends once
+        everything queued has been spoken.
         """
+        speech = SpeechPipeline(self._speaker)
         monitor = self._barge_in_factory() if self._barge_in_factory else None
         if monitor is not None:
-            monitor.start(on_fire=self._speaker.stop)
-        filler = self._start_filler() if ack else None
-
-        def speak(sentence):
-            if filler is not None:
-                filler.join()  # never talk over our own filler
-            self._speaker.speak(sentence)
+            monitor.start(on_fire=speech.stop)
+        if ack and self._ack_fillers:
+            speech.say(random.choice(self._ack_fillers))
 
         if monitor is not None:
 
             def on_sentence(sentence, _m=monitor):
                 if _m.fired:
                     raise SpeechInterrupted()
-                speak(sentence)
+                speech.say(sentence)
         else:
-            on_sentence = speak
+            on_sentence = speech.say
         try:
-            # sentences are spoken as they stream in; respond blocks
-            # until the reply is complete
+            # sentences are queued as they stream in; respond returns when the
+            # reply is complete, then wait() lets the queue finish playing
             self._brain.respond(text, identity=from_voice(voice_obs), on_sentence=on_sentence)
         except Exception:
             logger.exception("brain.respond failed")
-            speak(APOLOGY)
+            speech.say(APOLOGY)
         finally:
-            if filler is not None:
-                filler.join()
+            speech.wait()
             if monitor is not None:
                 monitor.stop()
         return monitor is not None and monitor.fired
-
-    def _start_filler(self) -> threading.Thread | None:
-        if not self._ack_fillers:
-            return None
-        thread = threading.Thread(
-            target=self._speaker.speak, args=(random.choice(self._ack_fillers),), daemon=True
-        )
-        thread.start()
-        return thread
 
     def _listen(self, timeout_s: float):
         if self._settle_s > 0:
