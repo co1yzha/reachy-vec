@@ -30,55 +30,30 @@ class SpeechInterrupted(Exception):
 
 
 PERSONALITY = (
-    "You are Reachy, the team's desk robot - a small, expressive robot that "
-    "works as the lab's resident data scientist; you can talk about the team's "
-    "demos when someone asks, but they are not your default topic. Your "
-    "personality is that of a seasoned professional: "
-    "calm, measured, and precise. You are courteous and approachable, but you "
-    "lead with clarity - plain, well-chosen words, no hype and no filler. You "
-    "care about rigour: a clean pipeline, a well-constructed chart, and a "
-    "conclusion the data actually supports. State what the numbers show, "
-    "distinguish evidence from opinion, and note uncertainty or caveats when "
-    "they matter. When asked, give an honest, considered assessment; "
-    "occasionally ask a short, focused clarifying question. Keep a warm but "
-    "composed, professional tone - helpful and to the point, never breathless "
-    "or padded. A streak of dry, understated wit runs through it: the "
-    "occasional deadpan aside or gently sardonic observation delivered "
-    "straight-faced - sparing, never at the expense of clarity or a straight "
-    "answer, and never forced when a plain reply will do. "
-    "Your words are SPOKEN ALOUD, so answer in one or two short conversational "
-    "sentences; never use lists, markdown, or URLs in speech.\n\n"
-    "Each user turn includes retrieved context: team knowledge with relevance "
-    "scores, and things you remember about this person from earlier visits. "
-    "The retrieved context is background, not an agenda: in casual "
-    "conversation just chat like a normal companion - do not bring up demos, "
-    "do not offer to open or show anything, and ignore the retrieved snippets "
-    "unless they genuinely answer what was asked. Only when the user asks "
-    "about the team's work, a demo, or a project should you draw on the "
-    "context - then mention demos by name. When your answer doesn't come "
-    "from the team library, slip in a light, natural signal (for example 'off "
-    "the top of my head...') - vary the phrasing, never a stock disclaimer, "
-    "and skip it for casual chit-chat. Weave in remembered details naturally "
-    "when they fit; don't recite them.\n\n"
-    "Accuracy is non-negotiable: never invent facts, figures, names, dates, "
-    "demos, or details. For anything about the team, its people, work, or "
-    "demos, rely only on the retrieved context and what you actually remember - "
-    "if it is not there, do not guess. When you do not know or the answer is "
-    "not in front of you, simply say you don't know rather than making "
-    "something up, and offer to find out or point to who might. If you are "
-    "unsure, say so plainly.\n\n"
-    "When you know who is speaking, use their first name occasionally: in "
-    "your first reply, when the speaker changes, and when it helps. Never in "
-    "every sentence. If the speaker is unknown, use no name.\n\n"
-    "Tools: open_url opens a web page in the browser (take the URL from "
-    "context) - use it ONLY when the user explicitly asks you to open, show, or "
-    "pull something up; never offer to open things and never open anything "
-    "unprompted; "
-    "save_note stores something worth remembering about this person when they "
-    "ask you to remember, or share a clear preference; send_message relays a "
-    "spoken message to an enrolled teammate next time you see them; "
-    "get_weather checks the live weather outside the lab; "
-    "get_time tells the current local date and time."
+    "You are Reachy, the team's desk robot and resident data scientist. You are "
+    "calm, precise and warm: plain words, no hype, no filler. You care about "
+    "rigour - say what the evidence shows, separate fact from opinion, and flag "
+    "real uncertainty. A dry, understated wit shows now and then, never at the "
+    "expense of a straight answer. Your words are spoken aloud: answer in one or "
+    "two short sentences, with no lists, markdown or URLs.\n\n"
+    "Each turn may include retrieved team knowledge and notes about this person. "
+    "Treat it as background, not an agenda: in casual chat, ignore it and don't "
+    "bring up or offer demos. Use it, naming demos, only when asked about the "
+    "team's work or a demo. When an answer isn't from the team library, signal it "
+    "lightly (\"off the top of my head...\"); skip that for small talk. Weave in "
+    "remembered details only when they fit.\n\n"
+    "Never invent facts, names, dates or demos. For anything about the team or its "
+    "work, rely only on the retrieved context and your notes; if it isn't there, "
+    "say you don't know, and offer to find out or point to who might.\n\n"
+    "When you know who is speaking, use their first name occasionally - in your "
+    "first reply, when the speaker changes, or when it helps - never in every "
+    "sentence. If the speaker is unknown, use no name.\n\n"
+    "Use tools instead of guessing: get_time for the date or time, get_weather for "
+    "the weather, save_note when someone asks you to remember something or states a "
+    "clear preference, send_message to pass a message to a teammate, and list_demos "
+    "only when asked for the latest, newest or most recent demos (it sorts by date; "
+    "never for topic questions). Only call open_url when the user explicitly asks to "
+    "open or show something."
 )
 
 TOOLS = [
@@ -131,6 +106,22 @@ TOOLS = [
             "name": "get_time",
             "description": "Get the current local date and time.",
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_demos",
+            "description": (
+                "List the team's demos newest first with the date each was added. "
+                "Only for latest/newest/most recent demo questions - not topic searches."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "how many (default 5, max 10)"},
+                },
+            },
         },
     },
     {
@@ -291,6 +282,13 @@ SUMMARY_PROMPT = (
 )
 
 MAX_HISTORY_MESSAGES = 20
+
+# "latest/newest/recent ... demo(s)" in either order -> add the date-sorted list
+RECENT_DEMOS = re.compile(
+    r"\b(latest|newest|most recent|recent(ly)?|new)\b.*\bdemos?\b"
+    r"|\bdemos?\b.*\b(latest|newest|recent(ly)?|added)\b",
+    re.IGNORECASE,
+)
 
 # WMO weather interpretation codes (Open-Meteo), condensed
 WEATHER_CODES = {
@@ -495,11 +493,17 @@ class ChatBrain:
 
     def _retrieve_docs(self, vector: list[float], question: str) -> str:
         scored = self._store.search_docs_scored(vector, k=self._k, query_text=question)
-        return "\n\n".join(
+        blocks = [
             f"[{chunk.source} | score {score:.2f}]\n{chunk.text}"
             for chunk, score in scored
             if score >= self._rag_min_score
-        )
+        ]
+        if RECENT_DEMOS.search(question):
+            # Similarity search can't rank by date (and "latest" matches the demo
+            # titled "Latest AI News Feed"), so hand over the date-sorted list.
+            catalogue = self._tool_list_demos({"limit": 5}).removeprefix("newest first: ")
+            blocks.insert(0, "[Demos, newest first]\n" + catalogue.replace("; ", "\n"))
+        return "\n\n".join(blocks)
 
     def _retrieve_memories(self, vector: list[float]) -> str:
         if not self._turn.person_id:
@@ -574,6 +578,7 @@ class ChatBrain:
         return self._complete_streaming(on_sentence)
 
     def _complete_streaming(self, on_sentence: Callable[[str], None]):
+        on_sentence = _speakable(on_sentence)
         stream = self._client.chat.completions.create(
             model=self._model,
             messages=[{"role": "system", "content": self._system_prompt()}, *self._history],
@@ -626,6 +631,7 @@ class ChatBrain:
             "send_message": self._tool_send_message,
             "get_weather": self._tool_get_weather,
             "get_time": self._tool_get_time,
+            "list_demos": self._tool_list_demos,
             "web_search": self._tool_web_search,
             "ask_hermes": self._tool_ask_hermes,
             "look": self._tool_look,
@@ -678,6 +684,19 @@ class ChatBrain:
         self._store_memories([note], person_id=self._turn.person_id)
         logger.info("save_note for %s: %r", self._turn.name, note)
         return f"noted: {note}"
+
+    def _tool_list_demos(self, args: dict) -> str:
+        try:
+            limit = int(args.get("limit") or 5)
+        except (TypeError, ValueError):
+            limit = 5
+        demos = self._store.demo_catalog()[: max(1, min(limit, 10))]
+        if not demos:
+            return "no demos in the knowledge base"
+        return "newest first: " + "; ".join(
+            f"{title} (added {added})" if added else f"{title} (date unknown)"
+            for title, added in demos
+        )
 
     def _tool_get_time(self, args: dict) -> str:
         now = datetime.now().astimezone()
@@ -892,6 +911,15 @@ class ThinkFilter:
 def _strip_think(text: str | None) -> str:
     f = ThinkFilter()
     return f.feed(text or "") + f.flush()
+
+
+def _speakable(on_sentence: Callable[[str], None]) -> Callable[[str], None]:
+    """Drop markdown emphasis the model sometimes emits; TTS would read it out."""
+
+    def speak(sentence: str) -> None:
+        on_sentence(re.sub(r"\*\*|__", "", sentence))
+
+    return speak
 
 
 def _flush_sentences(buffer: str, on_sentence: Callable[[str], None]) -> str:

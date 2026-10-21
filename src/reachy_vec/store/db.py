@@ -1,5 +1,6 @@
 """LanceDB connection and vector-search helpers."""
 
+import re
 import threading
 from datetime import UTC
 from pathlib import Path
@@ -113,6 +114,21 @@ class Store:
             if r["source"].startswith("demo: ")
         }
         return sorted(s.removeprefix("demo: ") for s in sources)[:limit]
+
+    def demo_catalog(self) -> list[tuple[str, str | None]]:
+        """(title, added YYYY-MM-DD or None) per demo, newest first, undated
+        last. The date is the synced "Added:" line (mongo_sync.format_demo)."""
+        added: dict[str, str | None] = {}
+        for r in self._docs().to_arrow().to_pylist():
+            if not r["source"].startswith("demo: "):
+                continue
+            title = r["source"].removeprefix("demo: ")
+            match = re.search(r"^Added: (\d{4}-\d{2}-\d{2})", r["text"], re.MULTILINE)
+            if match or title not in added:
+                added[title] = match.group(1) if match else added.get(title)
+        dated = sorted(((t, a) for t, a in added.items() if a), key=lambda kv: kv[1],
+                       reverse=True)
+        return dated + sorted((t, a) for t, a in added.items() if not a)
 
     # -- memories (Phase 2a) ------------------------------------------------
 

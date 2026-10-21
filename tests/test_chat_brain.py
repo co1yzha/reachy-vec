@@ -1004,3 +1004,83 @@ def test_rag_settings_defaults():
 
     assert Settings.model_fields["rag_min_score"].default == 0.62
     assert Settings.model_fields["rag_k"].default == 3
+
+
+def test_list_demos_tool_returns_newest_first(tmp_path):
+    tool_call = FakeToolCall("list_demos", json.dumps({"limit": 2}))
+    client = FakeLLMClient(messages=[FakeChoiceMessage(None, tool_calls=[tool_call]),
+                                     FakeChoiceMessage("The newest is New.")])
+    brain = make_brain(tmp_path, client)
+    brain._store.demo_catalog = lambda: [("New", "2026-10-13"), ("Mid", "2024-01-01"),
+                                         ("Old", "2022-05-19")]
+    brain.respond("what's the latest demo?", identity=YANG)
+    result = next(m["content"] for m in client.chat.completions.calls[1]["messages"]
+                  if m.get("role") == "tool")
+    assert result == "newest first: New (added 2026-10-13); Mid (added 2024-01-01)"
+
+
+def test_list_demos_tool_defaults_and_caps_limit(tmp_path):
+    brain = make_brain(tmp_path, FakeLLMClient(reply="x"))
+    brain._store.demo_catalog = lambda: [(f"D{i}", f"2026-01-{i + 1:02d}") for i in range(20)]
+    assert brain._tool_list_demos({}).count("added") == 5          # default
+    assert brain._tool_list_demos({"limit": 50}).count("added") == 10  # cap
+    brain._store.demo_catalog = lambda: [("Undated", None)]
+    assert brain._tool_list_demos({}) == "newest first: Undated (date unknown)"
+    brain._store.demo_catalog = lambda: []
+    assert brain._tool_list_demos({}) == "no demos in the knowledge base"
+
+
+def test_list_demos_tool_is_offered():
+    from reachy_vec.brain.chat import TOOLS
+
+    assert "list_demos" in [t["function"]["name"] for t in TOOLS]
+
+
+def test_trimmed_persona_keeps_the_rules():
+    from reachy_vec.brain.chat import PERSONALITY
+
+    assert len(PERSONALITY) < 2000  # was 3195; every char is re-read each turn
+    for phrase in ("spoken aloud", "Never invent", "off the top of my head",
+                   "offer to find out", "use their first name occasionally",
+                   "explicitly asks to open"):
+        assert phrase in PERSONALITY
+
+
+def test_markdown_emphasis_is_not_spoken(tmp_path):
+    client = FakeLLMClient(reply="The latest is **Metaliverpool**. It's __new__.")
+    sentences = []
+    make_brain(tmp_path, client).respond("latest?", on_sentence=sentences.append)
+    assert sentences == ["The latest is Metaliverpool.", "It's new."]
+
+
+def test_persona_says_when_to_use_tools():
+    from reachy_vec.brain.chat import PERSONALITY
+
+    for tool in ("get_time", "save_note", "send_message", "list_demos", "open_url"):
+        assert tool in PERSONALITY
+
+
+@pytest.mark.parametrize("question", ["what is the latest demo in the hub?",
+                                      "which demos were added most recently?",
+                                      "show me the newest demos", "any recent demos?"])
+def test_recency_question_gets_the_date_sorted_catalogue(tmp_path, question):
+    client = FakeLLMClient(reply="Metaliverpool - Site Assessment.")
+    brain = make_brain(tmp_path, client)
+    brain._store.demo_catalog = lambda: [("Metaliverpool - Site Assessment", "2026-10-13"),
+                                         ("Wundrr Agentic AI", "2026-10-06")]
+    brain.respond(question, identity=YANG)
+    user = client.chat.completions.last_kwargs["messages"][-1]["content"]
+    assert "[Demos, newest first]" in user
+    assert user.index("Metaliverpool - Site Assessment (added 2026-10-13)") < user.index(
+        "Wundrr Agentic AI (added 2026-10-06)")
+
+
+@pytest.mark.parametrize("question", ["any demos about food?", "what's the latest AI news?",
+                                      "how are you today"])
+def test_other_questions_do_not_get_the_catalogue(tmp_path, question):
+    client = FakeLLMClient(reply="ok")
+    brain = make_brain(tmp_path, client)
+    brain._store.demo_catalog = lambda: [("X", "2026-10-13")]
+    brain.respond(question, identity=YANG)
+    assert "[Demos, newest first]" not in client.chat.completions.last_kwargs["messages"][-1][
+        "content"]

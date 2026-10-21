@@ -40,3 +40,24 @@ def test_search_empty_table_returns_no_hits(tmp_path):
     store = Store(tmp_path / "lancedb")
     query_vector = FakeEmbedder().embed(["anything"])[0]
     assert store.search_docs(query_vector) == []
+
+
+def test_demo_catalog_newest_first_undated_last(tmp_path):
+    from reachy_vec.store.schemas import DocChunk
+
+    store = Store(tmp_path / "db")
+
+    def chunk(cid, title, text):
+        return DocChunk(chunk_id=cid, text=text, vector=[0.1] * 384, source=f"demo: {title}",
+                        ingested_at="2026-10-20T00:00:00+00:00")
+
+    store.add_doc_chunks([
+        chunk("a:0", "Old", "Demo: Old\nAdded: 2022-05-19\nnotes"),
+        chunk("b:0", "New", "Demo: New\nAdded: 2026-10-13"),
+        chunk("b:1", "New", "second chunk of New, no date line"),
+        chunk("c:0", "Undated", "Demo: Undated"),
+        DocChunk(chunk_id="d:0", text="Added: 2030-01-01", vector=[0.1] * 384,
+                 source="notes.md", ingested_at="2026-10-20T00:00:00+00:00"),  # not a demo
+    ])
+    assert store.demo_catalog() == [("New", "2026-10-13"), ("Old", "2022-05-19"),
+                                    ("Undated", None)]

@@ -21,6 +21,10 @@ def format_demo(doc: dict) -> str:
     lines = [f"Demo: {title}"]
     if doc.get("project"):
         lines[0] += f" ({doc['project']})"
+    if doc.get("createdAt"):
+        created = doc["createdAt"]
+        day = created.date().isoformat() if hasattr(created, "date") else str(created)[:10]
+        lines.append(f"Added: {day}")
     if doc.get("authors"):
         lines.append("Authors: " + ", ".join(doc["authors"]))
     if doc.get("tags"):

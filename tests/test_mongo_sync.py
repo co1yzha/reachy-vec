@@ -58,3 +58,12 @@ def test_sync_is_idempotent_and_preserves_other_docs(tmp_path):
     assert hit.source == "demo: Liverpool City Food Mapping"
     assert store.doc_count() >= 2  # notes.md survived
     assert store.demo_titles() == ["Liverpool City Food Mapping"]
+
+
+def test_format_demo_includes_added_date():
+    from datetime import datetime
+
+    created = datetime(2026, 10, 13, 9)
+    assert "Added: 2026-10-13" in format_demo({"title": "T", "createdAt": created})
+    assert "Added: 2025-01-02" in format_demo({"title": "T", "createdAt": "2025-01-02T10:00:00Z"})
+    assert "Added:" not in format_demo({"title": "T"})
