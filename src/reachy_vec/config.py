@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     tts_presence_db: float = 4.0  # high-shelf lift above tts_presence_hz for
     # clarity/intelligibility; the clone's brightness tracks the sample. 0 = off
     tts_presence_hz: float = 3200.0  # presence shelf corner frequency
+    tts_speed: float = 1.0  # >1 plays the cloned voice faster AND higher (tape-style, no
+    # processing cost) - a livelier delivery; ~1.05-1.12, beyond that it sounds sped up
 
     # Perception
     camera_index: int = 0

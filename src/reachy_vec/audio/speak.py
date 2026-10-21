@@ -239,8 +239,10 @@ class QwenTTSSpeaker:
         target_rms: float = 0.0,
         presence_db: float = 0.0,
         presence_hz: float = 3200.0,
+        speed: float = 1.0,
     ):
         self._sample_path = sample_path
+        self._speed = speed
         self._sample_text = sample_text
         self._model_id = model_id
         self._target_rms = target_rms
@@ -263,7 +265,9 @@ class QwenTTSSpeaker:
             self._presence_db,
             self._presence_hz,
         )
-        return audio, sample_rate
+        # tape-style speed-up: declare a higher rate instead of resampling, so
+        # tempo and pitch rise together at zero cost (a brighter, livelier voice)
+        return audio, int(round(sample_rate * self._speed))
 
     def precache(self, texts: list[str]) -> None:
         """Pre-generate short fixed lines (acknowledgement fillers) so they
@@ -343,6 +347,7 @@ def make_speaker(media=None) -> Speaker:
             target_rms=settings.tts_target_rms,
             presence_db=settings.tts_presence_db,
             presence_hz=settings.tts_presence_hz,
+            speed=settings.tts_speed,
         )
     raise NotImplementedError(
         f"TTS backend {backend!r} is not wired - use 'say' or 'qwen-tts'"

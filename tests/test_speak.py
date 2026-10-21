@@ -499,3 +499,20 @@ def test_qwen_synthesize_uses_precache():
     speaker.precache(["Mm."])
     speaker.synthesize("Mm.")
     assert generated == ["Mm."]               # from cache the second time
+
+
+def test_tts_speed_plays_the_clip_faster_at_no_cost():
+    """speed > 1 is applied by declaring a higher sample rate (tape-style: tempo
+    and pitch rise together) - no resampling work per sentence."""
+    played = []
+    speaker = QwenTTSSpeaker(sample_path=Path("me.wav"),
+                             generate=lambda text: (np.zeros(24000, dtype=np.float32), 24000),
+                             play=lambda audio, sr: played.append((len(audio), sr)), speed=1.1)
+    speaker.speak("Hello.")
+    assert played == [(24000, 26400)]          # same samples, 10% faster
+
+
+def test_tts_speed_default_is_unchanged():
+    from reachy_vec.config import Settings
+
+    assert Settings.model_fields["tts_speed"].default == 1.0
