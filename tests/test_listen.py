@@ -361,3 +361,14 @@ def test_stt_tap_saves_each_utterance_with_its_transcript(monkeypatch, tmp_path)
     audio, rate = sf.read(files[0])
     assert rate == 16000 and len(audio) == 8000
     assert (tmp_path / "stt_tap.log").read_text().strip().endswith("''")
+
+
+def test_barge_in_logs_when_it_fires(caplog):
+    import logging
+
+    speech = np.ones(512, dtype=np.float32)
+    mon = BargeInMonitor(ScriptedSource([speech] * 5), min_speech_s=0.096,
+                         is_speech=lambda f: bool(f[0]), spawn=_inline)
+    with caplog.at_level(logging.INFO, logger="reachy_vec.audio.listen"):
+        mon.start(on_fire=lambda: None)
+    assert "barge-in fired" in caplog.text

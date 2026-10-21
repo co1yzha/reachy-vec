@@ -156,6 +156,8 @@ class BargeInMonitor:
                                 logger.info("barge-in vetoed: robot's own voice")
                                 run = []
                                 continue
+                            logger.info("barge-in fired: %.1fs of speech over the reply",
+                                        len(run) * CHUNK_S)
                             self.fired = True
                             if self._on_fire:
                                 self._on_fire()
