@@ -113,8 +113,19 @@ class HermesCli:
 class HermesJobs:
     """One Hermes task at a time: wait briefly, else hand off as a message."""
 
-    def __init__(self, agent: Agent, store: Store, *, wait_s: float, task_timeout_s: float):
+    def __init__(
+        self,
+        agent: Agent,
+        store: Store,
+        *,
+        wait_s: float,
+        task_timeout_s: float,
+        clock=time.monotonic,
+    ):
         self._agent = agent
+        self._clock = clock
+        self._task: str | None = None
+        self._started = 0.0
         self._store = store
         self._wait_s = wait_s
         self._task_timeout_s = task_timeout_s
@@ -124,6 +135,13 @@ class HermesJobs:
     @property
     def busy(self) -> bool:
         return self._future is not None and not self._future.done()
+
+    def status(self) -> tuple[str, float] | None:
+        """(task, seconds running) while a job is in flight, else None - so
+        Reachy can say truthfully what Hermes is doing."""
+        if not self.busy or self._task is None:
+            return None
+        return self._task, self._clock() - self._started
 
     def close(self) -> None:
         """Kill the in-flight Hermes process and stop accepting work.
@@ -151,6 +169,7 @@ class HermesJobs:
     def ask(self, task: str, *, requester_id: str | None, requester_name: str | None) -> str:
         if self.busy:
             return BUSY
+        self._task, self._started = task, self._clock()
         future = self._pool.submit(self._run, task, requester_name)
         self._future = future
         try:

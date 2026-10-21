@@ -184,9 +184,11 @@ ASK_HERMES_TOOL = {
 }
 
 ASK_HERMES_HINT = (
-    " ask_hermes hands a task to your agent colleague Hermes; reminders and "
-    "task-board entries need a recognised speaker - if the speaker is unknown, "
-    "say you can only schedule things for people you know."
+    " ask_hermes hands a task to Hermes, your AI agent colleague (not a person: "
+    "never use send_message for Hermes). Each turn says whether Hermes is working "
+    "on something; report that as it is, never guess. Reminders and task-board "
+    "entries need a recognised speaker - if the speaker is unknown, say you can "
+    "only schedule things for people you know."
 )
 
 HERMES_HOLDING_LINE = "Let me look into that."
@@ -282,6 +284,10 @@ SUMMARY_PROMPT = (
 )
 
 MAX_HISTORY_MESSAGES = 20
+
+# "ask/get/have/tell/let Hermes ..." or "Hermes, ..." -> call Hermes directly
+EXPLICIT_HERMES = re.compile(r"\b(ask|get|have|tell|let)\s+hermes\b|^\W*hermes\b\s*[,:]",
+                             re.IGNORECASE)
 
 # "latest/newest/recent ... demo(s)" in either order -> add the date-sorted list
 RECENT_DEMOS = re.compile(
@@ -454,7 +460,7 @@ class ChatBrain:
         self._history.append(
             {
                 "role": "user",
-                "content": change_note + CONTEXT_TEMPLATE.format(
+                "content": change_note + self._hermes_note() + CONTEXT_TEMPLATE.format(
                     context=self._retrieve_docs(vector, question)
                     or "(nothing relevant found)",
                     memories=self._retrieve_memories(vector),
@@ -463,7 +469,17 @@ class ChatBrain:
                 ),
             }
         )
-        message = self._complete(on_sentence)
+        explicit = self._hermes is not None and EXPLICIT_HERMES.search(question)
+        if explicit:
+            # "ask Hermes to X" goes to Hermes in code: oMLX ignores tool_choice and
+            # the model tends to answer itself or claim to delegate without calling
+            task = re.sub(r"^to\s+", "", question[explicit.end():].strip(" ,:")) or question
+            message = _StreamedMessage(
+                "", {0: {"id": "call_hermes", "name": "ask_hermes",
+                         "arguments": json.dumps({"task": task})}}
+            )
+        else:
+            message = self._complete(on_sentence)
         interrupted = getattr(message, "interrupted", False)
         if not interrupted and getattr(message, "tool_calls", None):
             self._history.append(_assistant_tool_message(message))
@@ -490,6 +506,17 @@ class ChatBrain:
         return text
 
     # -- internals ------------------------------------------------------------
+
+    def _hermes_note(self) -> str:
+        """Live Hermes job state for this turn, so "is Hermes done?" gets a true
+        answer instead of an invented one."""
+        if self._hermes is None:
+            return ""
+        status = self._hermes.status()
+        if status is None:
+            return "[Hermes is idle - no task running]\n"
+        task, seconds = status
+        return f'[Hermes is working on: "{task}" - {seconds:.0f} s so far]\n'
 
     def _retrieve_docs(self, vector: list[float], question: str) -> str:
         scored = self._store.search_docs_scored(vector, k=self._k, query_text=question)

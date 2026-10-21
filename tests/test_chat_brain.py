@@ -1084,3 +1084,92 @@ def test_other_questions_do_not_get_the_catalogue(tmp_path, question):
     brain.respond(question, identity=YANG)
     assert "[Demos, newest first]" not in client.chat.completions.last_kwargs["messages"][-1][
         "content"]
+
+
+class _StatusHermes:
+    """HermesJobs stand-in exposing only what ChatBrain reads per turn."""
+
+    def __init__(self, status):
+        self._status = status
+        self.busy = status is not None
+
+    def status(self):
+        return self._status
+
+    def ask(self, task, *, requester_id, requester_name):
+        return "ok"
+
+
+def test_turn_context_says_what_hermes_is_working_on(tmp_path):
+    client = FakeLLMClient(reply="Still on it.")
+    brain = make_brain(tmp_path, client, hermes=_StatusHermes(("research X", 45.2)))
+    brain.respond("is Hermes done yet?", identity=YANG)
+    user = client.chat.completions.last_kwargs["messages"][-1]["content"]
+    assert '[Hermes is working on: "research X" - 45 s so far]' in user
+
+
+def test_turn_context_says_hermes_is_idle(tmp_path):
+    client = FakeLLMClient(reply="Nothing running.")
+    brain = make_brain(tmp_path, client, hermes=_StatusHermes(None))
+    brain.respond("is Hermes doing anything?", identity=YANG)
+    user = client.chat.completions.last_kwargs["messages"][-1]["content"]
+    assert "[Hermes is idle - no task running]" in user
+
+
+def test_no_hermes_line_without_hermes(tmp_path):
+    client = FakeLLMClient(reply="hi")
+    make_brain(tmp_path, client).respond("hello", identity=YANG)
+    assert "Hermes" not in client.chat.completions.last_kwargs["messages"][-1]["content"]
+
+
+def test_hermes_hint_says_it_is_an_agent_not_a_teammate():
+    from reachy_vec.brain.chat import ASK_HERMES_HINT
+
+    assert "not a person" in ASK_HERMES_HINT and "send_message" in ASK_HERMES_HINT
+
+
+class _RecordingHermes(_StatusHermes):
+    def __init__(self):
+        super().__init__(None)
+        self.asked = []
+
+    def ask(self, task, *, requester_id, requester_name):
+        self.asked.append((task, requester_name))
+        return "Canberra."
+
+
+@pytest.mark.parametrize(("question", "task"), [
+    ("Ask Hermes to look up the capital of Australia", "look up the capital of Australia"),
+    ("can you get hermes to research the SDK release?", "research the SDK release?"),
+    ("have Hermes add a task to the board", "add a task to the board"),
+    ("Hermes, find me today's AI news", "find me today's AI news"),
+])
+def test_explicit_hermes_request_calls_hermes_directly(tmp_path, question, task):
+    """oMLX doesn't enforce tool_choice and the model often answers itself or
+    pretends to delegate - so an explicit "ask Hermes" goes to Hermes in code."""
+    client = FakeLLMClient(reply="Hermes says it's Canberra.")
+    hermes = _RecordingHermes()
+    sentences = []
+    reply = make_brain(tmp_path, client, hermes=hermes).respond(
+        question, identity=YANG, on_sentence=sentences.append)
+    assert hermes.asked == [(task, "Yang")]
+    assert sentences[0] == "Let me look into that."            # holding line still spoken
+    assert len(client.chat.completions.calls) == 1             # only the summary LLM call
+    tool_msgs = [m for m in client.chat.completions.calls[0]["messages"] if m.get("role") == "tool"]
+    assert tool_msgs[0]["content"] == "Canberra." and reply == "Hermes says it's Canberra."
+
+
+@pytest.mark.parametrize("question", ["what's the capital of Australia?",
+                                      "is Hermes working on anything right now?",
+                                      "who is Hermes?"])
+def test_other_questions_leave_hermes_to_the_model(tmp_path, question):
+    client = FakeLLMClient(reply="ok")
+    hermes = _RecordingHermes()
+    make_brain(tmp_path, client, hermes=hermes).respond(question, identity=YANG)
+    assert hermes.asked == []
+
+
+def test_no_direct_call_without_hermes(tmp_path):
+    client = FakeLLMClient(reply="ok")
+    make_brain(tmp_path, client).respond("ask Hermes to research X", identity=YANG)
+    assert len(client.chat.completions.calls) == 1   # normal turn, no tool injected

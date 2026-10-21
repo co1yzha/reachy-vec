@@ -234,3 +234,15 @@ def test_close_terminates_in_flight_hermes_process(tmp_path):
     jobs.close()
     assert made[0].terminated
     assert wait_until(lambda: not jobs.busy, 1.0)
+
+
+def test_status_reports_running_task_then_clears(tmp_path):
+    clock = {"t": 100.0}
+    jobs = HermesJobs(FakeAgent(["done"], delay_s=0.3), Store(tmp_path / "db"),
+                      wait_s=0.05, task_timeout_s=5, clock=lambda: clock["t"])
+    assert jobs.status() is None                       # idle
+    jobs.ask("research X", requester_id="p1", requester_name="Yang")
+    clock["t"] = 145.0
+    assert jobs.status() == ("research X", 45.0)       # handed off, still running
+    wait_until(lambda: not jobs.busy)
+    assert jobs.status() is None                       # finished
