@@ -372,6 +372,7 @@ def run(
         web_search=settings.web_search,
         disable_thinking=thinking_off,
         hermes=hermes,
+        fix_body_fn=getattr(body, "fix", None),  # "get your head up": motors on + wake
         **camera_tools,
     )
     if not brain.warm_up():

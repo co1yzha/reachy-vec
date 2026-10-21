@@ -1205,3 +1205,38 @@ def test_hermes_hint_covers_current_information():
     from reachy_vec.brain.chat import ASK_HERMES_HINT
 
     assert "news" in ASK_HERMES_HINT and "current" in ASK_HERMES_HINT
+
+
+@pytest.mark.parametrize("question", ["can you get your head up?", "lift your head please",
+                                      "are your motors on?", "why aren't you moving?",
+                                      "your head is stuck down"])
+def test_body_problems_go_to_fix_body(tmp_path, question):
+    fixed = []
+    client = FakeLLMClient(reply="Done - I'm up!")
+    brain = make_brain(tmp_path, client,
+                       fix_body_fn=lambda: fixed.append(1) or "My motors were off - fixed.")
+    reply = brain.respond(question, identity=YANG)
+    assert fixed == [1]
+    tool_msgs = [m for m in client.chat.completions.calls[0]["messages"] if m.get("role") == "tool"]
+    assert tool_msgs[0]["content"] == "My motors were off - fixed."
+    assert reply == "Done - I'm up!"
+
+
+@pytest.mark.parametrize("question", ["what's the latest demo?", "how are you?",
+                                      "head over to the food mapping demo"])
+def test_other_questions_do_not_trigger_fix_body(tmp_path, question):
+    fixed = []
+    make_brain(tmp_path, FakeLLMClient(reply="ok"),
+               fix_body_fn=lambda: fixed.append(1) or "x").respond(question, identity=YANG)
+    assert fixed == []
+
+
+def test_fix_body_tool_offered_only_with_a_body(tmp_path):
+    def names(client):
+        return [t["function"]["name"] for t in client.chat.completions.last_kwargs["tools"]]
+
+    c1 = FakeLLMClient(reply="ok")
+    make_brain(tmp_path, c1).respond("hi")
+    c2 = FakeLLMClient(reply="ok")
+    make_brain(tmp_path, c2, fix_body_fn=lambda: "x").respond("hi")
+    assert "fix_body" not in names(c1) and "fix_body" in names(c2)

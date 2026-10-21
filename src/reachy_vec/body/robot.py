@@ -20,18 +20,29 @@ class NullBody:
     def perform(self, motion: str) -> None:
         logger.debug("NullBody: skipping motion %r", motion)
 
+    def fix(self) -> str:
+        return "No robot is connected, so I'm running without a body right now."
+
 
 class RobotBody:
     """Plays keyframes on a connected ReachyMini (sim or real)."""
 
-    def __init__(self, mini):
+    def __init__(self, mini, motor_status: "Callable[[], str | None] | None" = None):
         self._mini = mini
+        # daemon's motor mode ("enabled"/"disabled"/...) or None if unknown
+        self._motor_status = motor_status or (lambda: None)
+
+    def enable_motors(self) -> None:
+        """Motors come up disabled after a daemon (re)start; with them off every
+        motion "succeeds" but nothing moves, and the head stays down."""
+        self._mini.enable_motors()
 
     def perform(self, motion: str) -> None:
         if motion == "sleep":
             self._mini.goto_sleep()
             return
         if motion == "wake":
+            self.enable_motors()
             self._mini.wake_up()
             return
         frames = MOTIONS.get(motion)
@@ -49,6 +60,43 @@ class RobotBody:
             if kf.body_yaw is not None:
                 kwargs["body_yaw"] = kf.body_yaw
             self._mini.goto_target(**kwargs)
+
+
+    def fix(self) -> str:
+        """Self-repair on request ("get your head up"): motors on, head up,
+        then report what changed. Never restarts the daemon (that would cut
+        the live mic/speaker)."""
+        before = self._motor_status()
+        try:
+            self.enable_motors()
+            self._mini.wake_up()
+        except Exception as exc:
+            logger.warning("body fix failed: %s", exc)
+            return ("I tried, but the robot isn't responding - restart its daemon or "
+                    "power-cycle it.")
+        after = self._motor_status()
+        if after not in (None, "enabled"):
+            return (f"My motors are still off ({after}) - restart the robot daemon or "
+                    "power-cycle me.")
+        if before == "disabled":
+            return "My motors were off - I've switched them on and lifted my head."
+        if before == "enabled":
+            return "My motors were already on - I've lifted my head again."
+        return "I've switched my motors on and lifted my head."
+
+
+def _daemon_motor_status() -> str | None:
+    """Motor mode from the daemon REST API (network mode), or None."""
+    import json
+    import urllib.request
+
+    host = settings.robot_host or "localhost"
+    try:
+        url = f"http://{host}:{settings.robot_port}/api/motors/status"
+        with urllib.request.urlopen(url, timeout=3) as response:
+            return json.loads(response.read()).get("mode")
+    except Exception:
+        return None
 
 
 class ReconnectingBody:
@@ -75,6 +123,17 @@ class ReconnectingBody:
         self._inner: Body | None = initial
         self._failures = 0
         self._dead = False
+
+    def fix(self) -> str:
+        if self._dead or self._inner is None:
+            try:
+                self.perform("idle")          # re-dial through the normal path
+            except Exception:
+                pass
+        inner = self._inner
+        if inner is None or not hasattr(inner, "fix"):
+            return "I can't reach my body right now - check the robot is on and its daemon."
+        return inner.fix()
 
     def perform(self, motion: str) -> None:
         if self._dead:
@@ -129,6 +188,15 @@ def _rest_acquire_media() -> None:
     time.sleep(2.0)  # let the signalling server come up
 
 
+def _connected_body(mini) -> "RobotBody":
+    body = RobotBody(mini, motor_status=_daemon_motor_status)
+    try:
+        body.enable_motors()  # off after any daemon restart: the head wouldn't lift
+    except Exception as exc:
+        logger.warning("could not enable motors (%s); continuing.", exc)
+    return body
+
+
 def make_robot(
     with_media: bool = False, connect=None, pre_acquire=None
 ) -> tuple[Body, object | None]:
@@ -181,9 +249,9 @@ def make_robot(
                     mini.client.disconnect()
 
             atexit.register(_cleanup)
-            return RobotBody(mini), mini.media
+            return _connected_body(mini), mini.media
         atexit.register(mini.client.disconnect)
-        return RobotBody(mini), None
+        return _connected_body(mini), None
     except Exception as exc:  # daemon down, robot absent, etc.
         logger.warning("No robot/daemon available (%s); running body-less.", exc)
         return NullBody(), None

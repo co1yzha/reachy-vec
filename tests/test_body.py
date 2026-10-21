@@ -59,13 +59,16 @@ class RecordingMini:
     def wake_up(self):
         self.modes.append("wake")
 
+    def enable_motors(self, ids=None):
+        self.modes.append("enable")
+
 
 def test_robot_body_sleep_and_wake_use_sdk_modes():
     mini = RecordingMini()
     body = RobotBody(mini)
     body.perform("sleep")
     body.perform("wake")
-    assert mini.modes == ["sleep", "wake"]
+    assert mini.modes == ["sleep", "enable", "wake"]   # motors on before the head lifts
     assert mini.calls == []  # no keyframes for mode changes
 
 
@@ -384,3 +387,57 @@ def test_reconnecting_body_is_noop_after_death():
     for _ in range(10):
         body.perform("nod")
     assert healthy.motions == []  # dead body never reaches a later healthy connection
+
+
+
+def test_fix_reports_motors_were_off_and_lifts_the_head():
+    mini = RecordingMini()
+    states = iter(["disabled", "enabled"])
+    body = RobotBody(mini, motor_status=lambda: next(states))
+    report = body.fix()
+    assert mini.modes == ["enable", "wake"]
+    assert "were off" in report and "head" in report
+
+
+def test_fix_when_motors_already_on():
+    mini = RecordingMini()
+    body = RobotBody(mini, motor_status=lambda: "enabled")
+    assert "already on" in body.fix()
+
+
+def test_fix_reports_when_motors_stay_off():
+    mini = RecordingMini()
+    body = RobotBody(mini, motor_status=lambda: "disabled")
+    report = body.fix()
+    assert "still off" in report and "restart" in report
+
+
+def test_fix_survives_a_robot_that_errors():
+    class Broken(RecordingMini):
+        def enable_motors(self, ids=None):
+            raise ConnectionError("daemon gone")
+
+    report = RobotBody(Broken(), motor_status=lambda: None).fix()
+    assert "isn't responding" in report
+
+
+def test_null_body_fix_says_no_robot():
+    assert "no robot" in NullBody().fix().lower()
+
+
+def test_reconnecting_body_delegates_fix():
+    from reachy_vec.body.robot import ReconnectingBody
+
+    mini = RecordingMini()
+    body = ReconnectingBody(connect_body=lambda: RobotBody(mini),
+                            initial=RobotBody(mini, motor_status=lambda: "enabled"))
+    assert "already on" in body.fix()
+
+
+def test_make_robot_enables_motors_on_connect():
+    from reachy_vec.body.robot import make_robot
+
+    mini = RecordingMini()
+    mini.client = type("C", (), {"disconnect": lambda self: None})()
+    make_robot(with_media=False, connect=lambda **kw: mini)
+    assert mini.modes == ["enable"]

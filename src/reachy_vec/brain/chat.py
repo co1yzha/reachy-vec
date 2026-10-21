@@ -185,6 +185,31 @@ ASK_HERMES_TOOL = {
     },
 }
 
+FIX_BODY_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "fix_body",
+        "description": (
+            "Check your own motors and fix them: switch the motors on and lift your "
+            "head. Use when asked to get your head up, or told you aren't moving."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+FIX_BODY_HINT = (
+    " fix_body checks and repairs your motors and lifts your head - report what it "
+    "says; never guess why you can't move."
+)
+
+# "head up/stuck/down", "motors", "not moving" -> check and repair the body
+BODY_PROBLEM = re.compile(
+    r"\b(head|neck)\b.*\b(up|lift|raise|stuck|down|droop\w*)\b"
+    r"|\b(lift|raise)\s+(your|ur)\s+head\b|\bmotors?\b"
+    r"|\b(not|aren'?t|isn'?t|can'?t|won'?t)\s+(you\s+)?(moving|move)\b",
+    re.IGNORECASE,
+)
+
 ASK_HERMES_HINT = (
     " ask_hermes hands a task to Hermes, your AI agent colleague (not a person: "
     "never use send_message for Hermes). Use it whenever an answer needs current "
@@ -370,6 +395,7 @@ class ChatBrain:
         open_url_triggers: list[str] | None = None,
         disable_thinking: bool = False,
         hermes: HermesJobs | None = None,
+        fix_body_fn: Callable[[], str] | None = None,
     ):
         self._store = store
         self._embedder = embedder
@@ -395,6 +421,7 @@ class ChatBrain:
                 logger.warning("web_search enabled but TAVILY_API_KEY missing; disabling")
         self._web_search_fetch = web_search_fetch
         self._hermes = hermes
+        self._fix_body_fn = fix_body_fn  # motors on + head up; None = no body
         self._on_sentence: Callable[[str], None] | None = None
         self._look_fn = look_fn
         self._selfie_fn = selfie_fn
@@ -493,6 +520,12 @@ class ChatBrain:
                 "", {0: {"id": "call_hermes", "name": "ask_hermes",
                          "arguments": json.dumps({"task": task})}}
             )
+        elif self._fix_body_fn is not None and BODY_PROBLEM.search(question):
+            # "get your head up" - check and repair for real instead of the
+            # model inventing a reason it can't move
+            message = _StreamedMessage(
+                "", {0: {"id": "call_fix_body", "name": "fix_body", "arguments": "{}"}}
+            )
         else:
             message = self._complete(on_sentence)
         interrupted = getattr(message, "interrupted", False)
@@ -564,6 +597,8 @@ class ChatBrain:
             tools.append(WEB_SEARCH_TOOL)
         if self._hermes is not None:
             tools.append(ASK_HERMES_TOOL)
+        if self._fix_body_fn is not None:
+            tools.append(FIX_BODY_TOOL)
         if self._look_fn:
             tools.append(LOOK_TOOL)
         if self._selfie_fn:
@@ -578,6 +613,8 @@ class ChatBrain:
             prompt += WEB_SEARCH_HINT
         if self._hermes is not None:
             prompt += ASK_HERMES_HINT
+        if self._fix_body_fn is not None:
+            prompt += FIX_BODY_HINT
         if self._look_fn:
             prompt += LOOK_HINT
         if self._selfie_fn:
@@ -676,6 +713,7 @@ class ChatBrain:
             "list_demos": self._tool_list_demos,
             "web_search": self._tool_web_search,
             "ask_hermes": self._tool_ask_hermes,
+            "fix_body": self._tool_fix_body,
             "look": self._tool_look,
             "selfie": self._tool_selfie,
             "look_around": self._tool_look_around,
@@ -726,6 +764,15 @@ class ChatBrain:
         self._store_memories([note], person_id=self._turn.person_id)
         logger.info("save_note for %s: %r", self._turn.name, note)
         return f"noted: {note}"
+
+    def _tool_fix_body(self, args: dict) -> str:
+        if self._fix_body_fn is None:
+            return "I have no body connected to fix."
+        try:
+            return self._fix_body_fn()
+        except Exception:
+            logger.exception("fix_body failed")
+            return "I tried to fix my body but something went wrong."
 
     def _tool_list_demos(self, args: dict) -> str:
         try:
