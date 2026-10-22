@@ -1040,7 +1040,7 @@ def test_trimmed_persona_keeps_the_rules():
     from reachy_vec.brain.chat import PERSONALITY
 
     assert len(PERSONALITY) < 2000  # was 3195; every char is re-read each turn
-    for phrase in ("upbeat", "spoken aloud", "leading with a brief one", "Never invent",
+    for phrase in ("upbeat", "emoji", "spoken aloud", "leading with a brief one", "Never invent",
                    "off the top of my head",
                    "offer to find out", "use their first name occasionally",
                    "explicitly asks to open"):
@@ -1237,7 +1237,7 @@ def test_no_router_means_no_routing(tmp_path):
 
 def test_condense_for_speech_uses_the_llm(tmp_path):
     client = FakeLLMClient(reply="**Two** short sentences. Done!")
-    out = make_brain(tmp_path, client).condense_for_speech("- long\n- markdown\n" * 20)
+    out = make_brain(tmp_path, client).condense_for_speech("- long item.\n- markdown.\n" * 20)
     assert out == "Two short sentences. Done!"
     assert "spoken" in client.chat.completions.last_kwargs["messages"][0]["content"]
 
@@ -1258,7 +1258,7 @@ def test_condense_for_speech_falls_back_to_first_sentences(tmp_path):
                     raise ConnectionError("down")
 
     text = "**One.** Two is here. Three is long. " + "More. " * 50
-    out = make_brain(tmp_path, Down()).condense_for_speech(text)
+    out = make_brain(tmp_path, Down()).condense_for_speech(text, max_sentences=2)
     assert out == "One. Two is here." and "**" not in out
 
 
@@ -1269,3 +1269,24 @@ def test_open_url_guard_note_does_not_invite_an_explanation(tmp_path):
     make_brain(tmp_path, client).respond("tell me about the food demo", identity=YANG)
     note = [m for m in client.chat.completions.calls[1]["messages"] if m.get("role") == "tool"]
     assert "do not mention" in note[0]["content"].lower()
+
+
+def test_condense_respects_the_sentence_budget(tmp_path):
+    client = FakeLLMClient(reply="One. Two. Three.")
+    make_brain(tmp_path, client).condense_for_speech("x. " * 200, max_sentences=4)
+    assert "4 short sentences" in client.chat.completions.last_kwargs["messages"][0]["content"]
+
+
+def test_add_context_lets_follow_ups_see_the_full_message(tmp_path):
+    client = FakeLLMClient(reply="David builds the demos.")
+    brain = make_brain(tmp_path, client)
+    brain.add_context("FULL: David Boardman built the AI news feed.", "Short: team update.")
+    brain.respond("tell me more about David", identity=YANG)
+    sent = json.dumps(client.chat.completions.last_kwargs["messages"])
+    assert "David Boardman built the AI news feed" in sent
+
+
+def test_persona_allows_an_emoji_as_a_gesture():
+    from reachy_vec.brain.chat import PERSONALITY
+
+    assert "emoji" in PERSONALITY

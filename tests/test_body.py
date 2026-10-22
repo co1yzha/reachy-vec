@@ -5,6 +5,7 @@ from reachy_vec.config import settings as _settings
 EXPECTED = {
     "greet", "nod", "listen", "idle", "acknowledge", "goodbye", "look", "pose",
     "wakeup", "sway", "startle", "turn_left", "turn_right", "turn_front",
+    "happy", "excited", "laugh", "love", "sad", "surprised", "thinking",
 }
 
 

@@ -9,11 +9,13 @@ conversation; who is talking is decided by voice alone (never guessed).
 import logging
 import random
 import re
+import threading
 import time
 import uuid
 from datetime import UTC, datetime
 
 from reachy_vec.audio.pipeline import SpeechPipeline
+from reachy_vec.body.emotion import split_emojis
 from reachy_vec.brain.chat import SpeechInterrupted
 from reachy_vec.perception.fusion import from_voice
 from reachy_vec.perception.voice import BORDERLINE_MARGIN, Observation
@@ -138,6 +140,7 @@ class OracleLoop:
         settle_s: float = 0.0,
         sleep=time.sleep,
         auto_offer: bool = False,
+        spawn=None,
         enroll_cooldown_s: float = 600.0,
         name_extractor=None,
     ):
@@ -155,6 +158,8 @@ class OracleLoop:
         # short lines ("Mm.") played while the LLM reads the prompt; empty = off
         self._ack_fillers = list(ack_fillers or [])
         self._auto_offer = auto_offer  # offer enrollment unasked to strangers
+        # runs emotion gestures without blocking speech (tests pass lambda f: f())
+        self._spawn = spawn or (lambda f: threading.Thread(target=f, daemon=True).start())
         self._enroll_cooldown_s = enroll_cooldown_s
         self._declined_at: float | None = None
         # answer text -> the name in it, or None. run passes the LLM-backed
@@ -301,9 +306,9 @@ class OracleLoop:
             def on_sentence(sentence, _m=monitor):
                 if _m.fired:
                     raise SpeechInterrupted()
-                speech.say(sentence)
+                speech.say(self._express(sentence))
         else:
-            on_sentence = speech.say
+            on_sentence = lambda s: speech.say(self._express(s))  # noqa: E731
         try:
             # sentences are queued as they stream in; respond returns when the
             # reply is complete, then wait() lets the queue finish playing
@@ -464,14 +469,26 @@ class OracleLoop:
         if not messages:
             return False
         condense = getattr(self._brain, "condense_for_speech", None)
+        add_context = getattr(self._brain, "add_context", None)
         lines = []
         for msg in messages:
             text = condense(msg.text) if condense else msg.text
-            lines.append(f"By the way, {msg.from_name} left you a message: {text}")
+            line = f"By the way, {msg.from_name} left you a message: {text}"
+            lines.append(line)
+            if add_context:   # the full text, so "tell me more about..." works
+                add_context(f"[Full message from {msg.from_name}]\n{msg.text}", line)
             self._store.mark_delivered(msg.message_id)
             logger.info("delivered message %s to %s", msg.message_id, msg.to_name)
         self._speak_interruptibly(lines)
         return True
+
+    def _express(self, sentence: str) -> str:
+        """Emojis become gestures, not words: strip them from the spoken text
+        and play their emotion motions alongside the speech."""
+        clean, emotions = split_emojis(sentence)
+        if emotions:
+            self._spawn(lambda: [self._body.perform(e) for e in emotions])
+        return clean
 
     def _speak_interruptibly(self, lines: list[str]) -> bool:
         """Speak lines sentence by sentence with barge-in on ("Reachy, stop"
@@ -483,7 +500,7 @@ class OracleLoop:
         try:
             for line in lines:
                 for sentence in re.split(r"(?<=[.!?])\s+", line):
-                    speech.say(sentence)
+                    speech.say(self._express(sentence))
         finally:
             speech.wait()
             if monitor is not None:

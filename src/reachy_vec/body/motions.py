@@ -79,6 +79,49 @@ MOTIONS: dict[str, list[Keyframe]] = {
         Keyframe(head={"yaw": 4, "pitch": -3}, antennas=(0.2, 0.15), duration=0.6),
         Keyframe(head={"yaw": -4, "pitch": -1}, antennas=(0.15, 0.2), duration=0.6),
     ],
+    # emotions: emojis in a reply become these (body/emotion.py) - short, so they
+    # play while the sentence is spoken; pitch < 0 = head up
+    "happy": [
+        Keyframe(head={"pitch": -8}, antennas=(0.7, 0.7), duration=0.35),
+        Keyframe(head={"pitch": -4}, antennas=(0.4, 0.4), duration=0.3),
+        NEUTRAL,
+    ],
+    "excited": [
+        Keyframe(head={"pitch": -12}, antennas=(1.0, -0.6), duration=0.2),
+        Keyframe(head={"pitch": -12}, antennas=(-0.6, 1.0), duration=0.2),
+        Keyframe(head={"pitch": -10}, antennas=(1.0, -0.6), duration=0.2),
+        Keyframe(head={"pitch": -10}, antennas=(-0.6, 1.0), duration=0.2),
+        NEUTRAL,
+    ],
+    "laugh": [
+        Keyframe(head={"pitch": -10, "roll": 5}, antennas=(0.6, 0.6), duration=0.18),
+        Keyframe(head={"pitch": 2, "roll": -5}, antennas=(0.3, 0.3), duration=0.18),
+        Keyframe(head={"pitch": -10, "roll": 5}, antennas=(0.6, 0.6), duration=0.18),
+        Keyframe(head={"pitch": 2, "roll": -5}, antennas=(0.3, 0.3), duration=0.18),
+        NEUTRAL,
+    ],
+    "love": [
+        Keyframe(head={"pitch": -6, "roll": 12}, antennas=(0.5, 0.5), duration=0.5),
+        Keyframe(head={"pitch": -6, "roll": 12}, antennas=(0.2, 0.2), duration=0.4),
+        NEUTRAL,
+    ],
+    "sad": [
+        Keyframe(head={"pitch": 16, "roll": -4}, antennas=(-0.7, -0.7), duration=0.7),
+        Keyframe(head={"pitch": 14}, antennas=(-0.6, -0.6), duration=0.5),
+        NEUTRAL,
+    ],
+    "surprised": [
+        Keyframe(head={"pitch": -18}, antennas=(1.0, 1.0), duration=0.15),
+        Keyframe(head={"pitch": -14}, antennas=(0.8, 0.8), duration=0.4),
+        NEUTRAL,
+    ],
+    "thinking": [
+        Keyframe(head={"pitch": -6, "roll": -10, "yaw": 8}, antennas=(0.6, -0.2),
+                 duration=0.6),
+        Keyframe(head={"pitch": -6, "roll": -10, "yaw": 8}, antennas=(0.4, -0.2),
+                 duration=0.5),
+        NEUTRAL,
+    ],
     # look-around: rotate the whole base and HOLD (no return-to-neutral frame),
     # so make_look_around_fn can capture the camera at each heading.
     "turn_left": [

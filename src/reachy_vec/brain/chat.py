@@ -41,7 +41,7 @@ PERSONALITY = (
     "\"not bad at all\") used lightly - never at the expense of a straight answer. "
     "Your words are spoken aloud: answer in one or "
     "two short sentences, leading with a brief one (it is voiced first), with no "
-    "lists, markdown or URLs.\n\n"
+    "lists, markdown or URLs. One emoji may show a feeling - you act it out.\n\n"
     "Each turn may include retrieved team knowledge and notes about this person. "
     "Treat it as background, not an agenda: in casual chat, ignore it and don't "
     "bring up or offer demos. Use it, naming demos, only when asked about the "
@@ -190,8 +190,9 @@ ASK_HERMES_TOOL = {
 }
 
 CONDENSE_PROMPT = (
-    "Rewrite this message so it can be spoken aloud by a robot in at most two short "
-    "sentences. Keep the most important facts. No markdown, lists, URLs or headings."
+    "Rewrite this message so it can be spoken aloud by a robot in at most {n} short "
+    "sentences. Keep the most important facts and names. No markdown, lists, URLs, "
+    "headings or emojis."
 )
 
 
@@ -401,6 +402,7 @@ class ChatBrain:
         hermes: HermesJobs | None = None,
         fix_body_fn: Callable[[], str] | None = None,
         router=None,
+        speech_sentences: int = 4,
     ):
         self._store = store
         self._embedder = embedder
@@ -429,6 +431,7 @@ class ChatBrain:
         self._fix_body_fn = fix_body_fn  # motors on + head up; None = no body
         self._router = router  # Router: what this turn is for; None = always chat
         self.last_route = CHAT
+        self._speech_sentences = speech_sentences  # budget for condensed messages
         self._on_sentence: Callable[[str], None] | None = None
         self._look_fn = look_fn
         self._selfie_fn = selfie_fn
@@ -654,18 +657,19 @@ class ChatBrain:
             prompt += LOOK_AROUND_HINT
         return prompt
 
-    def condense_for_speech(self, text: str) -> str:
-        """A message (e.g. a long markdown Hermes result) as at most two short
-        spoken sentences; short plain text passes through unchanged."""
+    def condense_for_speech(self, text: str, max_sentences: int | None = None) -> str:
+        """A message (e.g. a long markdown Hermes result) as at most
+        max_sentences short spoken sentences; short plain text passes through."""
+        n = max_sentences or self._speech_sentences
         clean = _plain_text(text)
-        if len(clean) <= 200 and len(_sentences(clean)) <= 2:
+        if len(_sentences(clean)) <= n and len(clean) <= 80 * n:
             return clean
         try:
             response = self._client.chat.completions.create(
                 model=self._model,
-                messages=[{"role": "system", "content": CONDENSE_PROMPT},
+                messages=[{"role": "system", "content": CONDENSE_PROMPT.format(n=n)},
                           {"role": "user", "content": text}],
-                max_completion_tokens=90,
+                max_completion_tokens=40 * n,
                 **self._llm_kwargs,
             )
             short = _plain_text(_strip_think(response.choices[0].message.content or ""))
@@ -673,7 +677,14 @@ class ChatBrain:
                 return short
         except Exception:
             logger.warning("condensing failed; using the first sentences", exc_info=True)
-        return " ".join(_sentences(clean)[:2])
+        return " ".join(_sentences(clean)[:n])
+
+    def add_context(self, full_text: str, spoken: str) -> None:
+        """Something said outside a reply (a delivered message): keep its full
+        text in the conversation so follow-up questions can use the details."""
+        self._history.append({"role": "user", "content": full_text})
+        self._history.append({"role": "assistant", "content": spoken})
+        self._trim()
 
     def extract_name(self, answer: str) -> str | None:
         """The person's name from their spoken answer to "What's your name?",

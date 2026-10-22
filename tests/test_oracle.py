@@ -764,3 +764,42 @@ def test_message_delivery_can_be_interrupted(tmp_path):
     loop.run_once()
     assert not any("Third news item" in s for s in speaker.spoken)
     assert store.pending_messages_for("p1") == []           # heard enough: delivered
+
+
+def test_emojis_become_gestures_not_words(tmp_path):
+    class EmojiBrain(FakeBrain):
+        def respond(self, question, identity=None, on_sentence=None):
+            on_sentence("That's brilliant news! 🎉😄")
+            on_sentence("Anything else? 🤔")
+            return "x"
+
+    loop, speaker, body, *_ = make_loop(tmp_path, utterances=["Reachy", "guess what"],
+                                        brain=EmojiBrain(), spawn=lambda f: f())
+    loop.run_once()
+    assert "That's brilliant news!" in speaker.spoken and "Anything else?" in speaker.spoken
+    assert not any(ch in "".join(speaker.spoken) for ch in "🎉😄🤔")
+    for emotion in ("excited", "happy", "thinking"):
+        assert emotion in body.motions
+
+
+def test_delivered_message_full_text_goes_to_the_brain_context(tmp_path):
+    store = Store(tmp_path / "db")
+    _queue(store, "Long Hermes report about the whole team. " * 10)
+
+    class ContextBrain(FakeBrain):
+        def __init__(self):
+            super().__init__()
+            self.context = []
+
+        def condense_for_speech(self, text):
+            return "Short version."
+
+        def add_context(self, full_text, spoken):
+            self.context.append((full_text, spoken))
+
+    brain = ContextBrain()
+    loop, *_ = make_loop(tmp_path, utterances=[said("Reachy")], voices=[ALICE_VOICE],
+                         store=store, brain=brain)
+    loop.run_once()
+    assert brain.context and "Long Hermes report" in brain.context[0][0]
+    assert "Short version." in brain.context[0][1]
