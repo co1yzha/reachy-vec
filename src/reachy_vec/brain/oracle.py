@@ -100,11 +100,6 @@ def split_wake(text: str, wake_words=DEFAULT_WAKE_WORDS) -> str | None:
 
 
 # an unrecognised speaker asking to be remembered -> real voice enrollment
-REMEMBER_ME = re.compile(
-    r"\b(remember|learn|save|know)\s+(me|my\s+(voice|name))\b|\bmy\s+name\s+is\b",
-    re.IGNORECASE,
-)
-
 INTERRUPT_WORDS = re.compile(
     r"\b(stop|wait|hold on|be quiet|quiet|shush|pause|enough|shut up)\b", re.IGNORECASE
 )
@@ -249,14 +244,18 @@ class OracleLoop:
                 if owner is None and turn_voice is not None and turn_voice.person_id:
                     owner = turn_voice  # recognized mid-conversation
                     self._deliver_messages(owner.person_id)
-            if (self._speaker_id is not None and REMEMBER_ME.search(text)
-                    and (turn_voice is None or turn_voice.person_id is None)):
-                # the LLM would just promise "I'll remember you" - enroll for real
+            interrupted = self._reply(text, turn_voice, ack=ack)
+            if getattr(getattr(self._brain, "last_route", None), "name", "") == "remember_me":
+                # the router heard "remember me / my voice": enroll for real
+                # instead of the LLM promising "I'll remember you"
                 offered = True
-                _event, enrolled = self._offer_enroll(first_audio=audio, asked=True)
-                owner = enrolled or owner
+                if turn_voice is not None and turn_voice.person_id:
+                    self._speaker.speak(f"I already know your voice, {turn_voice.name}!")
+                elif self._speaker_id is not None:
+                    _event, enrolled = self._offer_enroll(first_audio=audio, asked=True)
+                    owner = enrolled or owner
                 continue
-            if self._reply(text, turn_voice, ack=ack):
+            if interrupted:
                 self._maybe_bank_voice(turn_voice, audio)
                 continue  # interrupted: user is already talking, skip the nod
             self._body.perform("nod")

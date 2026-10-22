@@ -314,6 +314,7 @@ def run(
     from reachy_vec.brain.chat import ChatBrain
     from reachy_vec.brain.llm import make_llm_client, uses_local_llm
     from reachy_vec.brain.oracle import OracleLoop
+    from reachy_vec.brain.router import Router
     from reachy_vec.perception.voice import EcapaSpeakerIdentifier
     from reachy_vec.store.db import Store
     from reachy_vec.store.embeddings import BgeEmbedder
@@ -399,6 +400,10 @@ def run(
         disable_thinking=thinking_off,
         hermes=hermes,
         fix_body_fn=getattr(body, "fix", None),  # "get your head up": motors on + wake
+        router=Router(client, settings.llm_model,
+                      llm_kwargs={"extra_body": {"chat_template_kwargs":
+                                                 {"enable_thinking": False}}}
+                      if thinking_off else None),  # what each turn is for
         **camera_tools,
     )
     if not brain.warm_up():

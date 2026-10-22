@@ -1061,32 +1061,6 @@ def test_persona_says_when_to_use_tools():
         assert tool in PERSONALITY
 
 
-@pytest.mark.parametrize("question", ["what is the latest demo in the hub?",
-                                      "which demos were added most recently?",
-                                      "show me the newest demos", "any recent demos?"])
-def test_recency_question_gets_the_date_sorted_catalogue(tmp_path, question):
-    client = FakeLLMClient(reply="Metaliverpool - Site Assessment.")
-    brain = make_brain(tmp_path, client)
-    brain._store.demo_catalog = lambda: [("Metaliverpool - Site Assessment", "2026-10-13"),
-                                         ("Wundrr Agentic AI", "2026-10-06")]
-    brain.respond(question, identity=YANG)
-    user = client.chat.completions.last_kwargs["messages"][-1]["content"]
-    assert "[Demos, newest first]" in user
-    assert user.index("Metaliverpool - Site Assessment (added 2026-10-13)") < user.index(
-        "Wundrr Agentic AI (added 2026-10-06)")
-
-
-@pytest.mark.parametrize("question", ["any demos about food?", "what's the latest AI news?",
-                                      "how are you today"])
-def test_other_questions_do_not_get_the_catalogue(tmp_path, question):
-    client = FakeLLMClient(reply="ok")
-    brain = make_brain(tmp_path, client)
-    brain._store.demo_catalog = lambda: [("X", "2026-10-13")]
-    brain.respond(question, identity=YANG)
-    assert "[Demos, newest first]" not in client.chat.completions.last_kwargs["messages"][-1][
-        "content"]
-
-
 class _StatusHermes:
     """HermesJobs stand-in exposing only what ChatBrain reads per turn."""
 
@@ -1139,96 +1113,10 @@ class _RecordingHermes(_StatusHermes):
         return "Canberra."
 
 
-@pytest.mark.parametrize(("question", "task"), [
-    ("Ask Hermes to look up the capital of Australia", "look up the capital of Australia"),
-    ("can you get hermes to research the SDK release?", "research the SDK release?"),
-    ("have Hermes add a task to the board", "add a task to the board"),
-    ("Hermes, find me today's AI news", "find me today's AI news"),
-])
-def test_explicit_hermes_request_calls_hermes_directly(tmp_path, question, task):
-    """oMLX doesn't enforce tool_choice and the model often answers itself or
-    pretends to delegate - so an explicit "ask Hermes" goes to Hermes in code."""
-    client = FakeLLMClient(reply="Hermes says it's Canberra.")
-    hermes = _RecordingHermes()
-    sentences = []
-    reply = make_brain(tmp_path, client, hermes=hermes).respond(
-        question, identity=YANG, on_sentence=sentences.append)
-    assert hermes.asked == [(task, "Yang")]
-    assert sentences[0] == "Let me look into that."            # holding line still spoken
-    assert len(client.chat.completions.calls) == 1             # only the summary LLM call
-    tool_msgs = [m for m in client.chat.completions.calls[0]["messages"] if m.get("role") == "tool"]
-    assert tool_msgs[0]["content"] == "Canberra." and reply == "Hermes says it's Canberra."
-
-
-@pytest.mark.parametrize("question", ["what's the capital of Australia?",
-                                      "is Hermes working on anything right now?",
-                                      "who is Hermes?"])
-def test_other_questions_leave_hermes_to_the_model(tmp_path, question):
-    client = FakeLLMClient(reply="ok")
-    hermes = _RecordingHermes()
-    make_brain(tmp_path, client, hermes=hermes).respond(question, identity=YANG)
-    assert hermes.asked == []
-
-
-def test_no_direct_call_without_hermes(tmp_path):
-    client = FakeLLMClient(reply="ok")
-    make_brain(tmp_path, client).respond("ask Hermes to research X", identity=YANG)
-    assert len(client.chat.completions.calls) == 1   # normal turn, no tool injected
-
-
-@pytest.mark.parametrize("question", [
-    "what's the latest AI news?", "any news about the Reachy Mini SDK?",
-    "what are today's headlines?", "who won the match last night?",
-    "what's the current price of bitcoin?", "what's the latest release of Python?",
-])
-def test_current_information_questions_go_to_hermes(tmp_path, question):
-    """The local model can't know current events and rarely chooses ask_hermes
-    itself, so clear "needs live information" questions are routed to Hermes."""
-    client = FakeLLMClient(reply="Here's what Hermes found.")
-    hermes = _RecordingHermes()
-    make_brain(tmp_path, client, hermes=hermes).respond(question, identity=YANG)
-    assert hermes.asked and hermes.asked[0][0] == question
-
-
-@pytest.mark.parametrize("question", [
-    "what is the latest demo in the hub?", "how are you today?", "what's the weather today?",
-    "what time is it?", "tell me about the food mapping demo", "what's a p-value?",
-])
-def test_other_questions_are_not_routed(tmp_path, question):
-    client = FakeLLMClient(reply="ok")
-    hermes = _RecordingHermes()
-    make_brain(tmp_path, client, hermes=hermes).respond(question, identity=YANG)
-    assert hermes.asked == []
-
-
 def test_hermes_hint_covers_current_information():
     from reachy_vec.brain.chat import ASK_HERMES_HINT
 
     assert "news" in ASK_HERMES_HINT and "current" in ASK_HERMES_HINT
-
-
-@pytest.mark.parametrize("question", ["can you get your head up?", "lift your head please",
-                                      "are your motors on?", "why aren't you moving?",
-                                      "your head is stuck down"])
-def test_body_problems_go_to_fix_body(tmp_path, question):
-    fixed = []
-    client = FakeLLMClient(reply="Done - I'm up!")
-    brain = make_brain(tmp_path, client,
-                       fix_body_fn=lambda: fixed.append(1) or "My motors were off - fixed.")
-    reply = brain.respond(question, identity=YANG)
-    assert fixed == [1]
-    tool_msgs = [m for m in client.chat.completions.calls[0]["messages"] if m.get("role") == "tool"]
-    assert tool_msgs[0]["content"] == "My motors were off - fixed."
-    assert reply == "Done - I'm up!"
-
-
-@pytest.mark.parametrize("question", ["what's the latest demo?", "how are you?",
-                                      "head over to the food mapping demo"])
-def test_other_questions_do_not_trigger_fix_body(tmp_path, question):
-    fixed = []
-    make_brain(tmp_path, FakeLLMClient(reply="ok"),
-               fix_body_fn=lambda: fixed.append(1) or "x").respond(question, identity=YANG)
-    assert fixed == []
 
 
 def test_fix_body_tool_offered_only_with_a_body(tmp_path):
@@ -1266,3 +1154,82 @@ def test_extract_name_falls_back_to_rules_when_llm_fails(tmp_path):
     brain = make_brain(tmp_path, Down())
     assert brain.extract_name("My name is Yang.") == "Yang"
     assert brain.extract_name("Y, A, N, G.") == "Yang"
+
+
+# -- turn router: what Reachy does with each route ------------------------------
+# (understanding phrasings is the Router's job - see scripts/route_eval.py)
+
+
+def _routed_brain(tmp_path, client, route, **kw):
+    from tests.conftest import FakeRouter
+
+    return make_brain(tmp_path, client, router=FakeRouter({"q": route}), **kw)
+
+
+def test_hermes_route_sends_the_task_and_cancels_the_normal_answer(tmp_path):
+    from reachy_vec.brain.router import Route
+
+    client = FakeLLMClient(reply="Hermes says it is Canberra.")
+    hermes = _RecordingHermes()
+    sentences = []
+    reply = _routed_brain(tmp_path, client, Route("hermes", "find the capital"),
+                          hermes=hermes).respond("q", identity=YANG,
+                                                 on_sentence=sentences.append)
+    assert hermes.asked == [("find the capital", "Yang")]
+    assert sentences == ["Let me look into that.", "Hermes says it is Canberra."]
+    assert reply == "Hermes says it is Canberra."
+
+
+def test_fix_body_route_repairs_and_reports(tmp_path):
+    fixed = []
+    client = FakeLLMClient(reply="Done - I'm up!")
+    _routed_brain(tmp_path, client, "fix_body",
+                  fix_body_fn=lambda: fixed.append(1) or "motors were off - fixed"
+                  ).respond("q", identity=YANG, on_sentence=lambda s: None)
+    assert fixed == [1]
+    tool = [m for m in client.chat.completions.last_kwargs["messages"] if m.get("role") == "tool"]
+    assert tool[0]["content"] == "motors were off - fixed"
+
+
+def test_latest_demos_route_supplies_the_date_sorted_catalogue(tmp_path):
+    client = FakeLLMClient(reply="Metaliverpool - Site Assessment.")
+    brain = _routed_brain(tmp_path, client, "latest_demos")
+    brain._store.demo_catalog = lambda: [("Metaliverpool - Site Assessment", "2026-10-13"),
+                                         ("Wundrr Agentic AI", "2026-10-06")]
+    brain.respond("q", identity=YANG, on_sentence=lambda s: None)
+    user = client.chat.completions.last_kwargs["messages"][-1]["content"]
+    assert user.startswith("[Demos, newest first]")
+    assert user.index("Metaliverpool") < user.index("Wundrr")
+
+
+def test_remember_me_route_steps_aside_for_the_oracle(tmp_path):
+    client = FakeLLMClient(reply="I'll remember you!")       # must never be spoken
+    sentences = []
+    brain = _routed_brain(tmp_path, client, "remember_me")
+    assert brain.respond("q", identity=YANG, on_sentence=sentences.append) == ""
+    assert sentences == [] and brain.last_route.name == "remember_me"
+
+
+def test_chat_route_answers_normally(tmp_path):
+    client = FakeLLMClient(reply="Hello Yang.")
+    sentences = []
+    brain = _routed_brain(tmp_path, client, "chat", hermes=_RecordingHermes())
+    brain.respond("q", identity=YANG, on_sentence=sentences.append)
+    assert sentences == ["Hello Yang."]
+
+
+def test_route_without_the_capability_falls_back_to_a_normal_answer(tmp_path):
+    client = FakeLLMClient(reply="I can't reach Hermes, but here's what I know.")
+    sentences = []
+    _routed_brain(tmp_path, client, "hermes").respond(      # no hermes configured
+        "q", identity=YANG, on_sentence=sentences.append)
+    assert sentences == ["I can't reach Hermes, but here's what I know."]
+
+
+def test_no_router_means_no_routing(tmp_path):
+    client = FakeLLMClient(reply="ok")
+    hermes = _RecordingHermes()
+    make_brain(tmp_path, client, hermes=hermes).respond("ask Hermes to research X",
+                                                        identity=YANG)
+    assert hermes.asked == []
+

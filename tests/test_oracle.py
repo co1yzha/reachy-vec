@@ -610,13 +610,12 @@ def test_is_interrupt(text, expected):
     assert is_interrupt(text) is expected
 
 
-@pytest.mark.parametrize("ask", ["Reachy, remember me", "can you remember my voice?",
-                                 "my name is Yang", "please learn my voice"])
+@pytest.mark.parametrize("ask", ["remember me", "can you remember my voice?"])
 def test_unrecognised_speaker_can_ask_to_be_remembered(tmp_path, ask):
     """Asking to be remembered starts real enrollment instead of the model
     promising "I'll remember you" with nothing stored."""
     loop, speaker, _, store, brain = make_loop(
-        tmp_path,
+        tmp_path, brain=FakeBrain(routes={ask: "remember_me"}),
         utterances=[said("Reachy"), said(ask), said("yes"), said("Yang"), said("yes"),
                     said("I work on data"), said("and I like tea")],
         voices=[None, None],
@@ -627,12 +626,13 @@ def test_unrecognised_speaker_can_ask_to_be_remembered(tmp_path, ask):
 
 
 def test_recognised_speaker_asking_to_be_remembered_goes_to_the_brain(tmp_path):
-    loop, _, _, store, brain = make_loop(
+    loop, speaker, _, store, brain = make_loop(
         tmp_path, utterances=[said("Reachy"), said("remember me")],
-        voices=[ALICE_VOICE, ALICE_VOICE],
+        voices=[ALICE_VOICE, ALICE_VOICE], brain=FakeBrain(routes={"remember me": "remember_me"}),
     )
     loop.run_once()
-    assert [q for q, _ in brain.asked] == ["remember me"]
+    assert any("already know your voice, Alice" in s for s in speaker.spoken)
+    assert store.match_voice(VOICE_VEC) is None            # no second enrollment
 
 
 # -- enrollment: assistant first, names extracted, spelling fallback -----------
@@ -669,7 +669,7 @@ def test_strangers_are_just_answered_no_unasked_offer(tmp_path):
 
 def test_asked_enrollment_extracts_name_and_spells_after_a_mishearing(tmp_path):
     loop, speaker, _, store, _ = make_loop(
-        tmp_path,
+        tmp_path, brain=FakeBrain(routes={"remember me": "remember_me"}),
         utterances=[said("Reachy, remember me"),
                     said("My name is Jan."), said("No."),          # misheard
                     said("Y, A, N, G."), said("Yes."),             # spelled, confirmed
@@ -684,7 +684,7 @@ def test_asked_enrollment_extracts_name_and_spells_after_a_mishearing(tmp_path):
 
 def test_correction_in_the_no_answer_is_used(tmp_path):
     loop, _, _, store, _ = make_loop(
-        tmp_path,
+        tmp_path, brain=FakeBrain(routes={"remember me": "remember_me"}),
         utterances=[said("Reachy, remember me"), said("I'm Young"), said("No, it's Yang."),
                     said("yes"), said("one sentence"), said("two sentences")],
         voices=[UNKNOWN_VOICE],
@@ -695,7 +695,7 @@ def test_correction_in_the_no_answer_is_used(tmp_path):
 
 def test_failed_enrollment_keeps_the_conversation_going(tmp_path):
     loop, speaker, _, _, brain = make_loop(
-        tmp_path,
+        tmp_path, brain=FakeBrain(routes={"remember me": "remember_me"}),
         utterances=[said("Reachy, remember me"), said("mumble"), said("no"),
                     said("not sure"), said("no"), said("forget it"), said("no"),
                     said("what's the weather?")],

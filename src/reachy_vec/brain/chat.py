@@ -14,9 +14,11 @@ import re
 import subprocess
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 from reachy_vec.brain.hermes import HermesJobs
+from reachy_vec.brain.router import CHAT, Route
 from reachy_vec.perception.fusion import ANONYMOUS, TurnIdentity
 from reachy_vec.store.db import Store
 from reachy_vec.store.embeddings import Embedder
@@ -211,14 +213,6 @@ FIX_BODY_HINT = (
     "says; never guess why you can't move."
 )
 
-# "head up/stuck/down", "motors", "not moving" -> check and repair the body
-BODY_PROBLEM = re.compile(
-    r"\b(head|neck)\b.*\b(up|lift|raise|stuck|down|droop\w*)\b"
-    r"|\b(lift|raise)\s+(your|ur)\s+head\b|\bmotors?\b"
-    r"|\b(not|aren'?t|isn'?t|can'?t|won'?t)\s+(you\s+)?(moving|move)\b",
-    re.IGNORECASE,
-)
-
 ASK_HERMES_HINT = (
     " ask_hermes hands a task to Hermes, your AI agent colleague (not a person: "
     "never use send_message for Hermes). Use it whenever an answer needs current "
@@ -323,25 +317,6 @@ SUMMARY_PROMPT = (
 
 MAX_HISTORY_MESSAGES = 20
 
-# "ask/get/have/tell/let Hermes ..." or "Hermes, ..." -> call Hermes directly
-EXPLICIT_HERMES = re.compile(r"\b(ask|get|have|tell|let)\s+hermes\b|^\W*hermes\b\s*[,:]",
-                             re.IGNORECASE)
-
-# needs live information the model can't know (news, results, prices, releases)
-# -> route to Hermes; "latest demo" questions are handled by RECENT_DEMOS instead
-CURRENT_INFO = re.compile(
-    r"\b(news|headlines?|current events|who won|scores?|stock|share price|price of|"
-    r"exchange rate)\b|\b(latest|newest|current)\b.*\b(release|version|price|update)s?\b",
-    re.IGNORECASE,
-)
-
-# "latest/newest/recent ... demo(s)" in either order -> add the date-sorted list
-RECENT_DEMOS = re.compile(
-    r"\b(latest|newest|most recent|recent(ly)?|new)\b.*\bdemos?\b"
-    r"|\bdemos?\b.*\b(latest|newest|recent(ly)?|added)\b",
-    re.IGNORECASE,
-)
-
 # WMO weather interpretation codes (Open-Meteo), condensed
 WEATHER_CODES = {
     0: "clear sky", 1: "mainly clear", 2: "partly cloudy", 3: "overcast",
@@ -405,6 +380,7 @@ class ChatBrain:
         disable_thinking: bool = False,
         hermes: HermesJobs | None = None,
         fix_body_fn: Callable[[], str] | None = None,
+        router=None,
     ):
         self._store = store
         self._embedder = embedder
@@ -431,6 +407,8 @@ class ChatBrain:
         self._web_search_fetch = web_search_fetch
         self._hermes = hermes
         self._fix_body_fn = fix_body_fn  # motors on + head up; None = no body
+        self._router = router  # Router: what this turn is for; None = always chat
+        self.last_route = CHAT
         self._on_sentence: Callable[[str], None] | None = None
         self._look_fn = look_fn
         self._selfie_fn = selfie_fn
@@ -517,26 +495,34 @@ class ChatBrain:
                 ),
             }
         )
-        explicit = self._hermes is not None and EXPLICIT_HERMES.search(question)
-        live = (self._hermes is not None and not explicit and CURRENT_INFO.search(question)
-                and not RECENT_DEMOS.search(question))
-        if explicit or live:
-            # Hermes in code: oMLX ignores tool_choice and the model tends to answer
-            # itself (or claim to delegate) - and it cannot know current events
-            task = (re.sub(r"^to\s+", "", question[explicit.end():].strip(" ,:")) or question
-                    if explicit else question)
-            message = _StreamedMessage(
-                "", {0: {"id": "call_hermes", "name": "ask_hermes",
-                         "arguments": json.dumps({"task": task})}}
-            )
-        elif self._fix_body_fn is not None and BODY_PROBLEM.search(question):
-            # "get your head up" - check and repair for real instead of the
-            # model inventing a reason it can't move
-            message = _StreamedMessage(
-                "", {0: {"id": "call_fix_body", "name": "fix_body", "arguments": "{}"}}
-            )
-        else:
-            message = self._complete(on_sentence)
+        # The router decides in parallel with the normal answer (~0.8 s, before
+        # its first sentence is ready); sentences are held until it has, and a
+        # non-chat route cancels the answer before anything is spoken.
+        route_future = (_ROUTER_POOL.submit(self._router.route, question)
+                        if self._router is not None else None)
+        self.last_route = CHAT
+
+        def route() -> Route:
+            # blocks only until the router answers (once); no router = chat
+            if route_future is not None:
+                self.last_route = route_future.result()
+            return self.last_route
+
+        def gated(sentence: str) -> None:
+            if route().name != "chat":
+                raise _Rerouted()
+            on_sentence(sentence)
+
+        try:
+            message = self._complete(gated if on_sentence else None)
+            if route().name != "chat":
+                raise _Rerouted()
+        except _Rerouted:
+            message = self._act_on_route(self.last_route, on_sentence)
+            if message is None:            # remember_me: the Oracle enrolls them
+                self._history.pop()
+                self._on_sentence = None
+                return ""
         interrupted = getattr(message, "interrupted", False)
         if not interrupted and getattr(message, "tool_calls", None):
             self._history.append(_assistant_tool_message(message))
@@ -564,6 +550,27 @@ class ChatBrain:
 
     # -- internals ------------------------------------------------------------
 
+    def _act_on_route(self, route: Route, on_sentence):
+        """The message to continue with for a non-chat route (None for
+        remember_me, which the Oracle handles)."""
+        if route.name == "hermes" and self._hermes is not None:
+            task = route.task or self._question
+            return _StreamedMessage("", {0: {"id": "call_hermes", "name": "ask_hermes",
+                                             "arguments": json.dumps({"task": task})}})
+        if route.name == "fix_body" and self._fix_body_fn is not None:
+            return _StreamedMessage("", {0: {"id": "call_fix_body", "name": "fix_body",
+                                             "arguments": "{}"}})
+        if route.name == "remember_me":
+            return None
+        if route.name == "latest_demos":
+            # similarity search can't rank by date: hand over the sorted list
+            catalogue = self._tool_list_demos({"limit": 5}).removeprefix("newest first: ")
+            self._history[-1]["content"] = (
+                "[Demos, newest first]\n" + catalogue.replace("; ", "\n") + "\n\n"
+                + self._history[-1]["content"]
+            )
+        return self._complete(on_sentence)   # latest_demos, or a route we can't serve
+
     def _hermes_note(self) -> str:
         """Live Hermes job state for this turn, so "is Hermes done?" gets a true
         answer instead of an invented one."""
@@ -582,11 +589,6 @@ class ChatBrain:
             for chunk, score in scored
             if score >= self._rag_min_score
         ]
-        if RECENT_DEMOS.search(question):
-            # Similarity search can't rank by date (and "latest" matches the demo
-            # titled "Latest AI News Feed"), so hand over the date-sorted list.
-            catalogue = self._tool_list_demos({"limit": 5}).removeprefix("newest first: ")
-            blocks.insert(0, "[Demos, newest first]\n" + catalogue.replace("; ", "\n"))
         return "\n\n".join(blocks)
 
     def _retrieve_memories(self, vector: list[float]) -> str:
@@ -1072,6 +1074,13 @@ class _ToolCall:
         self.id = call_id
         self.type = "function"
         self.function = _ToolFunction(name, arguments)
+
+
+class _Rerouted(Exception):
+    """The router picked a non-chat route: abandon the normal answer."""
+
+
+_ROUTER_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="router")
 
 
 class _StreamedMessage:

@@ -20,6 +20,10 @@ def chat() -> None:
     if store.doc_count() == 0:
         typer.echo("Knowledge base is empty - run 'reachy-vec ingest <path>' first.")
         raise typer.Exit(code=1)
+    from reachy_vec.brain.router import Router
+
+    client = make_llm_client()
+    thinking_off = uses_local_llm() and settings.llm_disable_thinking
     hermes = make_hermes(store)  # None unless REACHY_VEC_HERMES_ENABLED and hermes is installed
     brain = ChatBrain(
         k=settings.rag_k,
@@ -28,12 +32,16 @@ def chat() -> None:
         embedder=BgeEmbedder(
             settings.embedding_model, query_prefix=settings.embedding_query_prefix
         ),
-        client=make_llm_client(),
+        client=client,
         model=settings.llm_model,
         reasoning_effort=settings.llm_reasoning_effort,
         web_search=settings.web_search,
-        disable_thinking=uses_local_llm() and settings.llm_disable_thinking,
+        disable_thinking=thinking_off,
         hermes=hermes,
+        router=Router(client, settings.llm_model,
+                      llm_kwargs={"extra_body": {"chat_template_kwargs":
+                                                 {"enable_thinking": False}}}
+                      if thinking_off else None),
     )
     try:
         chat_loop(brain=brain)

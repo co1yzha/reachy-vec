@@ -126,11 +126,15 @@ class FakeLLMClient:
 class FakeBrain:
     """Scripted ChatBrain stand-in: echoes questions, records lifecycle."""
 
-    def __init__(self, fail: bool = False):
+    def __init__(self, fail: bool = False, routes: dict | None = None):
+        from reachy_vec.brain.router import CHAT
+
         self.begun: list[tuple[str | None, str | None]] = []
         self.ended = 0
         self.asked: list[tuple[str, str | None]] = []
         self._fail = fail
+        self._routes = routes or {}   # question -> route name (like the Router decides)
+        self.last_route = CHAT
 
     def begin_conversation(self, person_id, name) -> None:
         self.begun.append((person_id, name))
@@ -139,6 +143,11 @@ class FakeBrain:
         self.ended += 1
 
     def respond(self, question: str, identity=None, on_sentence=None) -> str:
+        from reachy_vec.brain.router import Route
+
+        self.last_route = Route(self._routes.get(question, "chat"))
+        if self.last_route.name == "remember_me":
+            return ""                  # ChatBrain steps aside; the Oracle enrolls
         if self._fail:
             raise RuntimeError("api down")
         self.asked.append((question, identity))
@@ -311,3 +320,18 @@ class FakeAgent:
         if isinstance(result, Exception):
             raise result
         return result
+
+
+class FakeRouter:
+    """Router stand-in: question -> Route from a dict (default chat); records calls."""
+
+    def __init__(self, routes: dict | None = None):
+        self._routes = routes or {}
+        self.calls: list[str] = []
+
+    def route(self, text: str):
+        from reachy_vec.brain.router import Route
+
+        self.calls.append(text)
+        value = self._routes.get(text, "chat")
+        return value if isinstance(value, Route) else Route(value)
