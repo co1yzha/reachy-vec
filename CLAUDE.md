@@ -30,7 +30,8 @@ uv run reachy-vec run                # full Oracle loop (mic; say "Reachy" to st
 #   TTS: REACHY_VEC_TTS_BACKEND=say (default, macOS) | kokoro (fast presets, KOKORO_VOICE)
 #        | qwen-tts (cloned voice, needs REACHY_VEC_VOICE_SAMPLE=<wav>)
 #   STT: REACHY_VEC_STT_BACKEND=local (faster-whisper, default) | parakeet | openai
-uv run reachy-vec dashboard          # local web UI to browse the LanceDB store
+#   --dashboard (or REACHY_VEC_DASHBOARD=true): also serve the dashboard, open its Live page
+uv run reachy-vec dashboard          # local web UI: LanceDB store (/) + live run log (/live; --live opens it)
 
 # optional extras (the lock can't resolve them here; install without re-locking):
 uv pip install --python .venv/bin/python parakeet-mlx    # STT_BACKEND=parakeet

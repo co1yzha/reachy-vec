@@ -128,17 +128,56 @@ uv run reachy-vec ingest <path>      # add .md/.txt docs to the knowledge base
 uv run reachy-vec record-voice       # record a voice sample for the cloned TTS
 uv run reachy-vec run                # full Oracle loop: say "Reachy" to start (mic + robot/sim)
 #   --source auto|robot|mac: whose camera/mic/speaker (see "Running on the real robot")
+#   --dashboard: also open the Live view (or REACHY_VEC_DASHBOARD=true in .env)
 uv run reachy-vec dashboard          # browse the LanceDB store in the browser
+#   --live: open the Live conversation page instead
 ```
 
-### Store dashboard
+### Dashboard (store + live conversation)
 
 `uv run reachy-vec dashboard` serves a local web UI at http://127.0.0.1:8400
-(opens automatically; `--port`/`--no-open` to override) showing live contents
-of every LanceDB table — docs, people, voices, greetings, memories, and
-messages. Handy for checking what the robot ingested, who is enrolled, and
-which memories/messages it has stored. Localhost-only by default; the data
-includes transcripts and embeddings of enrolled teammates, so keep it that way.
+and opens it in the browser (`--port` / `--no-open` to override). It has two
+pages:
+
+- **Store** (`/`) — live contents of every LanceDB table: docs, people,
+  voices, greetings, memories, and messages. Handy for checking what the robot
+  ingested, who is enrolled, and which memories/messages it has stored.
+- **Live** (`/live`) — follows the current `reachy-vec run` (it starts at
+  that run's "run started" line, not the whole history) by tailing
+  `data/reachy.log`: what it heard, the route it chose, its reply, opened
+  pages, Hermes tasks, barge-ins, and errors, with each step's latency since
+  the words were heard. Conversation ends and sleep appear as full-width
+  banners ("Conversation ended", a dark "Asleep" bar). A status bar shows listening / thinking / asleep, turns
+  red when a turn gets no reply for 30 s (a stuck turn), and shows **which mic
+  is listening** (e.g. `Mac input 'Wireless Microphone RX'` or `robot mic`).
+  It only reads the log, so it can't slow down or break the robot, and it can
+  be started before or after `run`.
+- **Ports** (a panel on the Live page) — the services Reachy depends on, each
+  with its host:port and whether it answers: robot daemon (8000), LLM / oMLX
+  (8001), Hermes gateway (8642), and the dashboard itself. "Everything
+  listening on this Mac" lists every listening TCP port with its process.
+  Each local process has a **Kill** button — handy for a crashed daemon or
+  server still holding its port. It asks first, sends a normal stop
+  (SIGTERM, not `kill -9`), and only works on a process `lsof` shows
+  listening on that port right now. It can't stop the robot's own daemon (use
+  its restart endpoint) or the dashboard itself, and requests from other
+  websites are rejected.
+
+Ways to get to the Live page:
+
+```bash
+uv run reachy-vec run --dashboard    # run + Live view in one command
+uv run reachy-vec dashboard --live   # separate terminal, opens /live directly
+```
+
+To always start it with `run`, set `REACHY_VEC_DASHBOARD=true` in `.env`
+(`REACHY_VEC_DASHBOARD_PORT` changes the port, default 8400). If the port is
+already taken (say, a dashboard is open in another terminal), `run` simply
+carries on without starting a second one.
+
+Localhost-only by default: the store holds transcripts and embeddings of
+enrolled teammates, and the log holds everything said near the robot — keep it
+that way.
 
 ## Layout
 
@@ -156,6 +195,6 @@ src/reachy_vec/
   audio/           # audio front-end and output (say / qwen-tts voice clone)
     listen.py, speak.py
   cli/             # entry points, one file per command
-    chat.py, ingest.py, run.py, sync.py, dashboard.py, record_voice.py
+    chat.py, ingest.py, run.py, sync.py, dashboard.py (store + Live pages), record_voice.py
 tests/
 ```

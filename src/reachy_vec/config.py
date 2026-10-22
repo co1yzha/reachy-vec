@@ -133,6 +133,8 @@ class Settings(BaseSettings):
     # (the mic hearing the robot's own voice can't) | speech: any sustained speech
     barge_in_min_speech_s: float = 0.7  # sustained speech needed to fire (raise if false triggers)
     speech_wobble: bool = True  # audio-synced head sway while the robot speaker plays
+    dashboard: bool = False  # run also serves the dashboard and opens its Live page
+    dashboard_port: int = 8400  # (localhost only; same as `reachy-vec dashboard`)
     ack_enabled: bool = True  # speak a short filler while the LLM reads the prompt
     ack_fillers: list[str] = ["Mm.", "Right.", "Okay.", "Let me see."]
     # pre-generated at startup (qwen-tts), so they play instantly

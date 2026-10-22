@@ -191,6 +191,8 @@ def make_camera_tools(media, *, client, body, speak, llm_kwargs=None, camera_cls
     when disabled, without robot media, or if no frame arrives (the Mac mini has
     no webcam)."""
     if not settings.camera_tools or media is None:
+        logger.info("camera: off (%s)", "CAMERA_TOOLS=false" if not settings.camera_tools
+                    else "no robot media")
         return {}
     from reachy_vec.brain.chat import default_opener
     from reachy_vec.perception.camera import RobotCamera
@@ -199,8 +201,10 @@ def make_camera_tools(media, *, client, body, speak, llm_kwargs=None, camera_cls
     camera = (camera_cls or RobotCamera)(media)
     if wait_for_frame(camera, timeout_s=frame_timeout_s) is None:
         typer.echo("No frame from the robot camera - camera tools are off.", err=True)
+        logger.warning("camera: off (no frame from the robot camera)")
         return {}
     model = settings.vision_model or settings.llm_model
+    logger.info("camera: robot camera on (photos in %s)", settings.photos_dir)
     return {
         "look_fn": make_look_fn(camera, client, model=model, max_px=settings.vision_image_max_px,
                                 body=body, llm_kwargs=llm_kwargs),
@@ -307,6 +311,12 @@ def run(
         None,
         "--source",
         help="Media source: auto | robot | mac (default: REACHY_VEC_MEDIA_SOURCE).",
+    ),
+    dashboard: bool = typer.Option(
+        None,
+        "--dashboard/--no-dashboard",
+        help="Also serve the dashboard and open its Live page "
+        "(default: REACHY_VEC_DASHBOARD).",
     ),
 ) -> None:
     """Run the Oracle: say "Reachy" to start a voice Q&A; people are known by voice."""
@@ -447,6 +457,12 @@ def run(
         name_extractor=brain.extract_name,  # LLM reads the name from the answer
         auto_offer=settings.enroll_auto_offer,
     )
+    if settings.dashboard if dashboard is None else dashboard:
+        from reachy_vec.cli.dashboard import start_dashboard
+
+        if start_dashboard(store, "127.0.0.1", settings.dashboard_port, page="/live"):
+            typer.echo(f"Live view at http://127.0.0.1:{settings.dashboard_port}/live")
+    logger.info("run started: source=%s, mic=%s, tts=%s", chosen, mic, settings.tts_backend)
     typer.echo('Oracle running - say "Reachy" to start. Ctrl+C to stop.')
     try:
         loop.run_forever()

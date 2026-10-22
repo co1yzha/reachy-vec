@@ -74,6 +74,8 @@ keys are ignored.
 | `WAKE_LISTEN_S` | `5` | idle listen window; loops forever between windows |
 | `IDLE_SLEEP_S` | `300` | not woken for this long → sleep motion; wakes on the next "Reachy" |
 | `BARGE_IN` | `true` | let someone talk over a reply to interrupt it; the current sentence stops and their utterance becomes the next turn. `false` = reply always plays to the end |
+| `DASHBOARD` | `false` | `run` also serves the dashboard on localhost and opens its Live page (same as `run --dashboard`); skipped if the port is taken |
+| `DASHBOARD_PORT` | `8400` | port for that dashboard |
 | `ACK_ENABLED` | `true` | speak a short filler ("Mm.") the moment a question is heard, while the LLM reads the prompt; it hides the wait rather than removing it. Skipped for a question asked with the wake word right after a greeting |
 | `ACK_FILLERS` | `["Mm.", "Right.", "Okay.", "Let me see."]` | the fillers, picked at random; pre-generated at startup with `qwen-tts` so they play instantly (JSON list in env) |
 | `BARGE_IN_MIN_SPEECH_S` | `0.7` | sustained speech needed to trigger an interrupt; raise if a loud room false-triggers (no echo cancellation — the robot's own speaker near its mic is the usual culprit) |
