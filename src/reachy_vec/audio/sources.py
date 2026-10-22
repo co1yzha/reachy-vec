@@ -9,7 +9,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from reachy_vec.audio.listen import SAMPLE_RATE
+from reachy_vec.audio.listen import SAMPLE_RATE, note_mic
 from reachy_vec.audio.resample import to_mono_16k
 
 
@@ -21,6 +21,7 @@ class RobotAudioSource:
         self._target_rate = target_rate
 
     def frames(self, chunk_samples: int) -> Iterator[np.ndarray]:
+        note_mic("robot mic")
         src_rate = self._media.get_input_audio_samplerate()
         # The daemon buffers mic audio while nobody reads it; whatever is
         # queued when a listener attaches is stale — typically the robot's

@@ -82,6 +82,19 @@ class AudioSource(Protocol):
         ...
 
 
+_current_mic: str | None = None
+
+
+def note_mic(description: str) -> None:
+    """Log which mic is listening ("mic: ...") when it changes - every reply's
+    barge-in monitor reopens it, and macOS can switch the default input
+    mid-run. The dashboard's Live tab shows the latest one."""
+    global _current_mic
+    if description != _current_mic:
+        _current_mic = description
+        logger.info("mic: %s", description)
+
+
 class MicSource:
     """Default AudioSource: the Mac's default mic via sounddevice, 16 kHz mono."""
 
@@ -94,6 +107,10 @@ class MicSource:
         with sd.InputStream(
             samplerate=self._sample_rate, channels=1, dtype="float32"
         ) as stream:
+            try:
+                note_mic(f"Mac input {sd.query_devices(stream.device)['name']!r}")
+            except Exception:
+                note_mic("Mac input (unknown device)")
             while True:
                 data, _overflow = stream.read(chunk_samples)
                 yield data[:, 0].copy()

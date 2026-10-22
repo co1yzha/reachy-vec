@@ -439,3 +439,18 @@ def test_parakeet_transcribe_audio_for_barge_in():
     t = ParakeetTranscriber(transcribe=lambda audio: " Reachy, stop. ")
     t._load = lambda: None
     assert t.transcribe_audio(np.zeros(8000, dtype=np.float32)) == "Reachy, stop."
+
+
+def test_note_mic_logs_only_when_the_mic_changes(caplog, monkeypatch):
+    import logging
+
+    from reachy_vec.audio import listen
+
+    monkeypatch.setattr(listen, "_current_mic", None)
+    with caplog.at_level(logging.INFO, logger="reachy_vec.audio.listen"):
+        listen.note_mic("Mac input 'Wireless Microphone RX'")
+        listen.note_mic("Mac input 'Wireless Microphone RX'")   # barge-in reopens it
+        listen.note_mic("Mac input 'Mac mini Microphone'")
+    mics = [r.getMessage() for r in caplog.records if r.getMessage().startswith("mic:")]
+    assert mics == ["mic: Mac input 'Wireless Microphone RX'",
+                    "mic: Mac input 'Mac mini Microphone'"]

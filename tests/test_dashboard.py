@@ -97,3 +97,86 @@ def test_server_serves_page_and_live_json(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+# -- Live tab: tailing data/reachy.log ---------------------------------------------
+
+LOG = """\
+2026-10-22 14:15:53,799 reachy_vec.audio.listen INFO heard (parakeet): 'Can you play music?'
+2026-10-22 14:15:55,561 reachy_vec.brain.router INFO route open ('https://youtube.com') for 'x'
+2026-10-22 14:15:55,664 reachy_vec.brain.chat INFO open_url: https://youtube.com
+2026-10-22 14:15:56,500 reachy_vec.brain.chat INFO reply to Yang: "I've opened YouTube."
+2026-10-22 14:16:00,000 reachy_vec.brain.oracle ERROR brain.respond failed
+Traceback (most recent call last):
+  File "chat.py", line 1
+2026-10-22 14:17:23,203 reachy_vec.audio.listen INFO barge-in fired: 0.7s of speech
+"""
+
+
+def test_parse_log_classifies_events_and_folds_tracebacks():
+    from reachy_vec.cli.dashboard import parse_log
+
+    events = parse_log(LOG)
+    assert [e["kind"] for e in events] == ["heard", "route", "action", "reply", "error", "barge"]
+    assert events[0] == {"time": "2026-10-22 14:15:53", "level": "INFO", "kind": "heard",
+                         "source": "audio.listen",
+                         "text": "heard (parakeet): 'Can you play music?'"}
+    assert "Traceback" in events[4]["text"] and "chat.py" in events[4]["text"]
+
+
+def test_mic_lines_are_their_own_kind():
+    from reachy_vec.cli.dashboard import parse_log
+
+    line = ("2026-10-22 14:00:00,000 reachy_vec.audio.listen INFO "
+            "mic: Mac input 'Wireless Microphone RX'\n")
+    assert parse_log(line)[0]["kind"] == "mic"
+
+
+def test_read_log_returns_only_new_lines(tmp_path):
+    from reachy_vec.cli.dashboard import read_log
+
+    path = tmp_path / "reachy.log"
+    path.write_text(LOG)
+    first = read_log(path, offset=-1)
+    assert len(first["events"]) == 6
+    with path.open("a") as f:
+        f.write("2026-10-22 14:18:00,000 reachy_vec.brain.oracle INFO wake word heard: 'Reachy'\n")
+    second = read_log(path, offset=first["offset"])
+    assert [e["kind"] for e in second["events"]] == ["wake"]
+    assert read_log(path, offset=second["offset"])["events"] == []
+
+
+def test_read_log_holds_back_a_half_written_line(tmp_path):
+    from reachy_vec.cli.dashboard import read_log
+
+    path = tmp_path / "reachy.log"
+    path.write_text(LOG + "2026-10-22 14:18:00,000 reachy_vec.x INFO partial")
+    result = read_log(path, offset=-1)
+    assert len(result["events"]) == 6
+    assert result["offset"] == len(LOG.encode())
+
+
+def test_read_log_restarts_when_the_log_is_truncated_or_missing(tmp_path):
+    from reachy_vec.cli.dashboard import read_log
+
+    path = tmp_path / "reachy.log"
+    assert read_log(path, offset=-1) == {"offset": 0, "events": [], "reset": True}
+    path.write_text(LOG)
+    result = read_log(path, offset=10**9)       # file was deleted and restarted
+    assert result["reset"] and len(result["events"]) == 6
+
+
+def test_server_serves_live_page_and_log(tmp_path):
+    log = tmp_path / "reachy.log"
+    log.write_text(LOG)
+    server = make_server(seeded_store(tmp_path), "127.0.0.1", 0, log_path=log)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        page = urllib.request.urlopen(f"{base}/live").read().decode()
+        assert "Reachy live" in page
+        data = json.loads(urllib.request.urlopen(f"{base}/api/log?offset=-1").read())
+        assert [e["kind"] for e in data["events"]][:2] == ["heard", "route"]
+    finally:
+        server.shutdown()
+        server.server_close()
