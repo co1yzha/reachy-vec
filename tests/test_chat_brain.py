@@ -1391,3 +1391,17 @@ def test_play_counts_as_an_explicit_ask(tmp_path):
     ])
     make_brain(tmp_path, client, opener=opened.append).respond("play some jazz")
     assert opened == [target]
+
+
+def test_a_rerouted_answer_closes_its_stream(tmp_path):
+    # an abandoned stream is closed later by the GC - inside httpcore's pool
+    # lock on the next request, which deadlocked the whole loop
+    from reachy_vec.brain.router import Route
+    from tests.conftest import FakeRouter
+
+    client = FakeLLMClient(reply="Sure, opening it now! Enjoy the tunes.")
+    brain = make_brain(tmp_path, client, opener=lambda url: None, router=FakeRouter(
+        {"play some jazz": Route("open", "https://www.youtube.com/results?search_query=jazz")}))
+    brain.respond("play some jazz", identity=YANG, on_sentence=lambda s: None)
+    assert all(stream.closed for stream in client.chat.completions.streams[:-1])
+    assert client.chat.completions.streams[0].closed

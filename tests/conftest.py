@@ -84,7 +84,24 @@ def _message_to_stream(message: FakeChoiceMessage):
         text = message.content
         for start in range(0, len(text), 8):
             chunks.append(FakeStreamChunk(FakeDelta(content=text[start:start + 8])))
-    return iter(chunks)
+    return FakeStream(chunks)
+
+
+class FakeStream:
+    """Iterable of chunks with close(), like openai's Stream (records closing)."""
+
+    def __init__(self, chunks):
+        self._it = iter(chunks)
+        self.closed = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self._it)
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class FakeCompletions:
@@ -93,6 +110,7 @@ class FakeCompletions:
     def __init__(self, messages: list[FakeChoiceMessage]):
         self._messages = messages
         self.calls: list[dict] = []
+        self.streams: list[FakeStream] = []
 
     @property
     def last_kwargs(self) -> dict | None:
@@ -103,7 +121,8 @@ class FakeCompletions:
         index = min(len(self.calls) - 1, len(self._messages) - 1)
         message = self._messages[index]
         if kwargs.get("stream"):
-            return _message_to_stream(message)
+            self.streams.append(_message_to_stream(message))
+            return self.streams[-1]
         return FakeResponse(message)
 
 

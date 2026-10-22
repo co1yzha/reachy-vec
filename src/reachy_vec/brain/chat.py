@@ -800,9 +800,13 @@ class ChatBrain:
             if not tool_calls and buffer.strip():
                 on_sentence(buffer.strip())
         except SpeechInterrupted:
-            if hasattr(stream, "close"):
-                stream.close()
+            _close(stream)
             return _StreamedMessage(content, {}, interrupted=True)
+        except BaseException:
+            # e.g. _Rerouted: an abandoned stream gets closed by the GC later -
+            # inside httpcore's pool lock on the next request, deadlocking it
+            _close(stream)
+            raise
         return _StreamedMessage(content, tool_calls)
 
     def _execute_tool(self, call) -> dict:
@@ -1165,6 +1169,11 @@ class _Rerouted(Exception):
 
 
 _ROUTER_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="router")
+
+
+def _close(stream) -> None:
+    if hasattr(stream, "close"):
+        stream.close()
 
 
 def _to_url(target: str) -> str | None:
