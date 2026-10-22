@@ -123,7 +123,7 @@ mid-sentence.
 
 ### 6. Local LLM + Hermes (V1 smoke test)
 
-Needs oMLX serving `Qwen3.6-35B-A3B-oQ6e-mtp` at `http://127.0.0.1:8001/v1`
+Needs oMLX serving `Qwen3.6-35B-A3B-4bit` at `http://127.0.0.1:8001/v1`
 (`REACHY_VEC_LLM_BASE_URL`, `REACHY_VEC_LLM_MODEL`, `REACHY_VEC_LLM_API_KEY`
 in `.env`) and, for smoke steps 6-7 of this section, `REACHY_VEC_HERMES_ENABLED=true` with the
 `hermes` CLI on PATH and its `reachy` profile configured. Run on the robot:

@@ -8,7 +8,7 @@ Current as of Phase 4 (wake word, voice-only identity, local LLM, Hermes). Compa
 
 | Role | Model | Where it runs | Code | Configurable via |
 |---|---|---|---|---|
-| Chat / RAG answers, tool calls, memory distillation | `Qwen3.6-35B-A3B-oQ6e-mtp` (MoE, ~3B active, oQ6e) on oMLX at `http://127.0.0.1:8001/v1`; OpenAI `gpt-5-mini` when `LLM_BASE_URL` is unset | local server (or cloud) | `brain/chat.py`, `brain/llm.py` | `REACHY_VEC_LLM_MODEL`, `REACHY_VEC_LLM_BASE_URL`, `REACHY_VEC_LLM_API_KEY`, `REACHY_VEC_LLM_DISABLE_THINKING`, `REACHY_VEC_LLM_TIMEOUT_S` |
+| Chat / RAG answers, tool calls, memory distillation | `Qwen3.6-35B-A3B-4bit` (MoE, ~3B active, 4-bit) on oMLX at `http://127.0.0.1:8001/v1`; OpenAI `gpt-5-mini` when `LLM_BASE_URL` is unset | local server (or cloud) | `brain/chat.py`, `brain/llm.py` | `REACHY_VEC_LLM_MODEL`, `REACHY_VEC_LLM_BASE_URL`, `REACHY_VEC_LLM_API_KEY`, `REACHY_VEC_LLM_DISABLE_THINKING`, `REACHY_VEC_LLM_TIMEOUT_S` |
 | Delegated multi-step tasks (`ask_hermes`) | the Hermes CLI, `reachy` profile (its own model; also the local model by default) | local subprocess | `brain/hermes.py` | `REACHY_VEC_HERMES_*` |
 | Text embeddings (docs, memories, queries) | `BAAI/bge-small-en-v1.5`, 384-dim normalized; queries get the BGE instruction prefix (`REACHY_VEC_EMBEDDING_QUERY_PREFIX`) | local (sentence-transformers) | `store/embeddings.py` | `REACHY_VEC_EMBEDDING_MODEL` |
 | Speech-to-text (default) | faster-whisper `base.en`, int8 | local | `audio/listen.py:MicTranscriber` | `REACHY_VEC_STT_MODEL` |

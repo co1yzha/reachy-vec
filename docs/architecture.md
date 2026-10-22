@@ -67,7 +67,7 @@ THINKING (ChatBrain): embed question (BGE query prefix) → hybrid LanceDB
   │   knowledge answer with a casual not-from-our-docs signal (none for
   │   chit-chat). Follow-ups work via history. Replies STREAM: each
   │   sentence is spoken as it generates (~1s to first sentence).
-  │   LLM: local oMLX (`Qwen3.6-35B-A3B-oQ6e-mtp`, thinking off) at LLM_BASE_URL.
+  │   LLM: local oMLX (`Qwen3.6-35B-A3B-4bit`, thinking off) at LLM_BASE_URL.
   │   Tools (second LLM round-trip, actions only): open_url (browser,
   │   http(s) only; runs only when the user's turn has an explicit
   │   open/show/... word), save_note (remember about this person),

@@ -28,7 +28,7 @@ keys are ignored.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `LLM_MODEL` | `gpt-5-mini` | chat model for answers, tools, and memory distillation; for the local server use `Qwen3.6-35B-A3B-oQ6e-mtp` |
+| `LLM_MODEL` | `gpt-5-mini` | chat model for answers, tools, and memory distillation; for the local server use `Qwen3.6-35B-A3B-4bit` |
 | `LLM_BASE_URL` | unset | OpenAI-compatible server; `http://127.0.0.1:8001/v1` = local oMLX. Unset = OpenAI cloud |
 | `LLM_API_KEY` | unset | key for that server (`REACHY_VEC_LLM_API_KEY`, prefixed); set it in `.env`, never commit or log it |
 | `LLM_DISABLE_THINKING` | `true` | local only: sends `enable_thinking=False` so replies start fast |
