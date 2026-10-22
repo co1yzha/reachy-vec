@@ -718,3 +718,49 @@ def test_auto_offer_is_paused_after_a_decline(tmp_path):
     offers_before = sum("remember your voice" in s for s in speaker.spoken)
     loop.run_once()
     assert sum("remember your voice" in s for s in speaker.spoken) == offers_before
+
+
+# -- message delivery: condensed and interruptible --------------------------------
+
+
+def _queue(store, text, frm="Hermes"):
+    store.add_message(MessageRow(message_id=f"m{abs(hash(text)) % 10**6}", from_person="x",
+                                 from_name=frm, to_person="p1", to_name="Alice", text=text,
+                                 created_at="2026-10-22T00:00:00+00:00", delivered_at=""))
+
+
+def test_long_messages_are_condensed_for_speech(tmp_path):
+    store = Store(tmp_path / "db")
+    _queue(store, "**VEC Team:**\n- **Yang** leads data\n- **David** builds demos\n" * 5)
+
+    class CondensingBrain(FakeBrain):
+        def condense_for_speech(self, text):
+            return "The team is Yang on data and David on demos."
+
+    loop, speaker, *_ = make_loop(tmp_path, utterances=[said("Reachy")], voices=[ALICE_VOICE],
+                                  store=store, brain=CondensingBrain())
+    loop.run_once()
+    spoken = " ".join(speaker.spoken)
+    assert "Hermes left you a message: The team is Yang on data and David on demos." in spoken
+    assert "**" not in spoken
+    assert store.pending_messages_for("p1") == []
+
+
+def test_message_delivery_can_be_interrupted(tmp_path):
+    store = Store(tmp_path / "db")
+    _queue(store, "First news item. Second news item. Third news item.")
+    monitor = FakeBargeInMonitor()
+
+    class TrippingSpeaker(FakeSpeaker):
+        def speak(self, text):
+            super().speak(text)
+            if "First news item" in text:
+                monitor.trip()          # "Reachy, stop" while the message plays
+
+    loop, _, *_ = make_loop(tmp_path, utterances=[said("Reachy")], voices=[ALICE_VOICE],
+                            store=store, barge_in_factory=lambda: monitor)
+    speaker = TrippingSpeaker()
+    loop._speaker = speaker
+    loop.run_once()
+    assert not any("Third news item" in s for s in speaker.spoken)
+    assert store.pending_messages_for("p1") == []           # heard enough: delivered

@@ -693,7 +693,7 @@ def test_open_url_not_executed_without_explicit_request(tmp_path):
     assert reply == "Food Mapping maps food deserts."  # still answers
     tool_results = [m for m in client.chat.completions.calls[1]["messages"]
                     if m.get("role") == "tool"]
-    assert "didn't ask" in tool_results[0]["content"]
+    assert "not requested" in tool_results[0]["content"]
 
 
 @pytest.mark.parametrize(
@@ -1233,3 +1233,39 @@ def test_no_router_means_no_routing(tmp_path):
                                                         identity=YANG)
     assert hermes.asked == []
 
+
+
+def test_condense_for_speech_uses_the_llm(tmp_path):
+    client = FakeLLMClient(reply="**Two** short sentences. Done!")
+    out = make_brain(tmp_path, client).condense_for_speech("- long\n- markdown\n" * 20)
+    assert out == "Two short sentences. Done!"
+    assert "spoken" in client.chat.completions.last_kwargs["messages"][0]["content"]
+
+
+def test_condense_for_speech_short_text_skips_the_llm(tmp_path):
+    client = FakeLLMClient(reply="x")
+    assert make_brain(tmp_path, client).condense_for_speech("Meeting moved to 3.") == \
+        "Meeting moved to 3."
+    assert client.chat.completions.calls == []
+
+
+def test_condense_for_speech_falls_back_to_first_sentences(tmp_path):
+    class Down:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kw):
+                    raise ConnectionError("down")
+
+    text = "**One.** Two is here. Three is long. " + "More. " * 50
+    out = make_brain(tmp_path, Down()).condense_for_speech(text)
+    assert out == "One. Two is here." and "**" not in out
+
+
+def test_open_url_guard_note_does_not_invite_an_explanation(tmp_path):
+    tool_call = FakeToolCall("open_url", json.dumps({"url": "https://example.org/x"}))
+    client = FakeLLMClient(messages=[FakeChoiceMessage(None, tool_calls=[tool_call]),
+                                     FakeChoiceMessage("It maps food access.")])
+    make_brain(tmp_path, client).respond("tell me about the food demo", identity=YANG)
+    note = [m for m in client.chat.completions.calls[1]["messages"] if m.get("role") == "tool"]
+    assert "do not mention" in note[0]["content"].lower()

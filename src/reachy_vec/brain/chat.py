@@ -36,8 +36,10 @@ PERSONALITY = (
     "warm, upbeat and precise: friendly energy, plain words, no filler - an "
     "exclamation is welcome when something is genuinely good news or fun. You care "
     "about rigour - say what the evidence shows, separate fact from opinion, and "
-    "flag real uncertainty. A playful sense of humour shows now and then, never at "
-    "the expense of a straight answer. Your words are spoken aloud: answer in one or "
+    "flag real uncertainty. You're British: dry, understated wit and gentle "
+    "self-deprecation now and then, with British idiom (\"brilliant\", \"cheers\", "
+    "\"not bad at all\") used lightly - never at the expense of a straight answer. "
+    "Your words are spoken aloud: answer in one or "
     "two short sentences, leading with a brief one (it is voiced first), with no "
     "lists, markdown or URLs.\n\n"
     "Each turn may include retrieved team knowledge and notes about this person. "
@@ -186,6 +188,24 @@ ASK_HERMES_TOOL = {
         },
     },
 }
+
+CONDENSE_PROMPT = (
+    "Rewrite this message so it can be spoken aloud by a robot in at most two short "
+    "sentences. Keep the most important facts. No markdown, lists, URLs or headings."
+)
+
+
+def _plain_text(text: str) -> str:
+    """Markdown -> one plain line (bold/italics/headings/bullets/links removed)."""
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text or "")
+    text = re.sub(r"(\*\*|__|`|^#+\s*)", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[-*•]\s+", "", text, flags=re.MULTILINE)
+    return " ".join(text.split())
+
+
+def _sentences(text: str) -> list[str]:
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+
 
 NAME_EXTRACTION_PROMPT = (
     "You read one speech-to-text transcript: a person answering a robot's question "
@@ -634,6 +654,27 @@ class ChatBrain:
             prompt += LOOK_AROUND_HINT
         return prompt
 
+    def condense_for_speech(self, text: str) -> str:
+        """A message (e.g. a long markdown Hermes result) as at most two short
+        spoken sentences; short plain text passes through unchanged."""
+        clean = _plain_text(text)
+        if len(clean) <= 200 and len(_sentences(clean)) <= 2:
+            return clean
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=[{"role": "system", "content": CONDENSE_PROMPT},
+                          {"role": "user", "content": text}],
+                max_completion_tokens=90,
+                **self._llm_kwargs,
+            )
+            short = _plain_text(_strip_think(response.choices[0].message.content or ""))
+            if short:
+                return short
+        except Exception:
+            logger.warning("condensing failed; using the first sentences", exc_info=True)
+        return " ".join(_sentences(clean)[:2])
+
     def extract_name(self, answer: str) -> str | None:
         """The person's name from their spoken answer to "What's your name?",
         via the LLM (any phrasing, corrections, spelled-out letters); falls
@@ -780,7 +821,8 @@ class ChatBrain:
         if not self._open_url_pattern.search(self._question):
             # local models over-eagerly open demos; only an explicit ask counts
             logger.info("open_url suppressed - not requested: %r", self._question)
-            return "not opened: the user didn't ask to open anything - just answer them"
+            return ("not opened (not requested). Do not mention opening or links - "
+                    "just answer their question.")
         url = args.get("url", "")
         if not url.startswith(("http://", "https://")):
             return f"refused: {url!r} is not an http(s) URL"

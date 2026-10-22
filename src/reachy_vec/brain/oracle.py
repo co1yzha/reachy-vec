@@ -457,16 +457,38 @@ class OracleLoop:
         return True
 
     def _deliver_messages(self, person_id: str) -> bool:
-        """Speak pending messages; True if any were delivered."""
-        delivered = False
-        for msg in self._store.pending_messages_for(person_id):
-            self._speaker.speak(
-                f"By the way, {msg.from_name} left you a message: {msg.text}"
-            )
+        """Speak pending messages - condensed for speech (a long Hermes result
+        was read out verbatim, markdown and all) and interruptible like a reply.
+        True if any were delivered."""
+        messages = self._store.pending_messages_for(person_id)
+        if not messages:
+            return False
+        condense = getattr(self._brain, "condense_for_speech", None)
+        lines = []
+        for msg in messages:
+            text = condense(msg.text) if condense else msg.text
+            lines.append(f"By the way, {msg.from_name} left you a message: {text}")
             self._store.mark_delivered(msg.message_id)
             logger.info("delivered message %s to %s", msg.message_id, msg.to_name)
-            delivered = True
-        return delivered
+        self._speak_interruptibly(lines)
+        return True
+
+    def _speak_interruptibly(self, lines: list[str]) -> bool:
+        """Speak lines sentence by sentence with barge-in on ("Reachy, stop"
+        drops the rest). True if interrupted."""
+        speech = SpeechPipeline(self._speaker)
+        monitor = self._barge_in_factory() if self._barge_in_factory else None
+        if monitor is not None:
+            monitor.start(on_fire=speech.stop)
+        try:
+            for line in lines:
+                for sentence in re.split(r"(?<=[.!?])\s+", line):
+                    speech.say(sentence)
+        finally:
+            speech.wait()
+            if monitor is not None:
+                monitor.stop()
+        return monitor is not None and monitor.fired
 
     # -- wake/sleep --------------------------------------------------------
 
