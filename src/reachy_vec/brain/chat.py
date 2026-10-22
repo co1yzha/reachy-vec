@@ -17,6 +17,7 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from urllib.parse import urlencode
 
 from reachy_vec.brain.hermes import HermesJobs
 from reachy_vec.brain.router import CHAT, Route
@@ -75,7 +76,9 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "url": {"type": "string", "description": "http(s) URL to open"},
+                    "url": {"type": "string", "description": (
+                        "http(s) URL to open, or search words (opens a web search); "
+                        "for music or videos, a YouTube search URL")},
                     "title": {"type": "string", "description": "what is being opened"},
                 },
                 "required": ["url"],
@@ -589,6 +592,11 @@ class ChatBrain:
             task = route.task or self._question
             return _StreamedMessage("", {0: {"id": "call_hermes", "name": "ask_hermes",
                                              "arguments": json.dumps({"task": task})}})
+        if route.name == "open" and route.task:
+            # the local model claims "opening it now!" without calling the
+            # tool; the router's pick opens it instead (the ask guard still applies)
+            return _StreamedMessage("", {0: {"id": "call_open_url", "name": "open_url",
+                                             "arguments": json.dumps({"url": route.task})}})
         if route.name == "fix_body" and self._fix_body_fn is not None:
             return _StreamedMessage("", {0: {"id": "call_fix_body", "name": "fix_body",
                                              "arguments": "{}"}})
@@ -857,9 +865,9 @@ class ChatBrain:
             logger.info("open_url suppressed - not requested: %r", self._question)
             return ("not opened (not requested). Do not mention opening or links - "
                     "just answer their question.")
-        url = args.get("url", "")
-        if not url.startswith(("http://", "https://")):
-            return f"refused: {url!r} is not an http(s) URL"
+        url = _to_url(args.get("url", ""))
+        if url is None:
+            return f"refused: {args.get('url', '')!r} is not an http(s) URL"
         try:
             self._opener(url)
         except Exception as exc:
@@ -1157,6 +1165,21 @@ class _Rerouted(Exception):
 
 
 _ROUTER_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="router")
+
+
+def _to_url(target: str) -> str | None:
+    """An http(s) URL for open_url: URLs as given, bare sites ("youtube.com")
+    over https, anything else as a web search; other schemes are refused."""
+    target = target.strip()
+    if target.startswith(("http://", "https://")):
+        return target
+    if re.match(r"^[a-z][a-z0-9+.-]*:", target, re.IGNORECASE):
+        return None  # file:, javascript:, mailto: ...
+    if target and " " not in target and re.match(r"^[\w-]+(\.[\w-]+)+(/.*)?$", target):
+        return f"https://{target}"
+    if not target:
+        return None
+    return "https://www.google.com/search?" + urlencode({"q": target})
 
 
 class _StreamedMessage:

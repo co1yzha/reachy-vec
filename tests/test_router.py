@@ -11,6 +11,9 @@ from tests.conftest import FakeLLMClient
     ('{"route": "REMEMBER_ME", "task": ""}', Route("remember_me", "")),
     ('{"route": "dance", "task": ""}', CHAT),          # unknown route
     ("hermes: find AI news", Route("hermes", "find AI news")),
+    ("open: youtube.com", Route("open", "youtube.com")),
+    ("open: https://www.youtube.com/results?search_query=jazz",
+     Route("open", "https://www.youtube.com/results?search_query=jazz")),
     ("chat", CHAT), ("fix_body", Route("fix_body", "")), ("latest_demos.", Route("latest_demos")),
     ("I think it's chat", CHAT),                       # rambling
     ('{"route": ', CHAT),                              # truncated

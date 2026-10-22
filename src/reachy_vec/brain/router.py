@@ -14,19 +14,21 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-ROUTES = ("chat", "hermes", "latest_demos", "fix_body", "remember_me")
+ROUTES = ("chat", "hermes", "latest_demos", "fix_body", "remember_me", "open")
+TASK_ROUTES = ("hermes", "open")  # routes that carry text after the colon
 
 
 @dataclass(frozen=True)
 class Route:
     name: str = "chat"
-    task: str = ""  # for "hermes": the task, phrased for Hermes
+    task: str = ""  # hermes: the task, phrased for Hermes; open: the URL or search
 
 
 CHAT = Route()
 
 ROUTER_PROMPT = """You route what someone said to Reachy, a desk robot assistant, to one action.
 Reply with ONLY the route name. For hermes, add a colon and the task: "hermes: <task>".
+For open, add a colon and the web address: "open: <url>".
 
 Routes:
 - hermes: a multi-step task for Hermes, the AI agent colleague (research, browsing,
@@ -37,15 +39,23 @@ Routes:
 - latest_demos: which team demos are newest / most recent / latest added.
 - fix_body: the robot's own body - lift its head, its motors, it is not moving or stuck.
 - remember_me: they want the robot to remember / learn their voice or name.
+- open: they ask to open, show, pull up or play a website, video or music in the
+  browser - but never one of the team's demos (that is chat). Give the page's URL;
+  for music or videos, a YouTube search URL
+  (https://www.youtube.com/results?search_query=<words joined with +>).
 - chat: everything else - conversation, questions about the team's demos or work,
-  general knowledge, weather, time, notes, messages to teammates, opening a page,
-  looking through the camera, taking a photo.
+  general knowledge, weather, time, notes, messages to teammates, opening a team
+  demo, looking through the camera, taking a photo.
 
 Examples:
 "what's the latest AI news" -> hermes: find today's top AI news
 "ask Hermes to research the SDK" -> hermes: research the SDK
 "what's the newest demo" -> latest_demos
 "can you get your head up" -> fix_body
+"open YouTube in the browser" -> open: https://www.youtube.com
+"play some jazz" -> open: https://www.youtube.com/results?search_query=jazz
+"pull up the BBC news site" -> open: https://www.bbc.co.uk/news
+"show me the food mapping demo" -> chat
 "I was reaching for my coffee" -> chat
 "remember my voice" -> remember_me
 "tell Bob the meeting moved" -> chat
@@ -84,7 +94,7 @@ class Router:
 
 
 def parse_route(raw: str) -> Route:
-    """"chat" / "fix_body" / "hermes: <task>" (JSON from older prompts is also
+    """"chat" / "fix_body" / "hermes: <task>" / "open: <url>" (JSON from older prompts is also
     accepted); unknown or malformed -> chat."""
     from reachy_vec.brain.chat import _strip_think
 
@@ -95,8 +105,8 @@ def parse_route(raw: str) -> Route:
             text = f"{data.get('route', '')}: {data.get('task') or ''}"
         except (ValueError, AttributeError):
             return CHAT
-    head, _, task = text.partition(":")
+    head, _, task = text.partition(":")  # "open: https://..." keeps the URL's colon
     name = head.strip().strip("\"'.").lower()
     if name not in ROUTES:
         return CHAT
-    return Route(name, task.strip().strip("\"'") if name == "hermes" else "")
+    return Route(name, task.strip().strip("\"'") if name in TASK_ROUTES else "")

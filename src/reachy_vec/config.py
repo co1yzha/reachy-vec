@@ -143,7 +143,7 @@ class Settings(BaseSettings):
 
     # Tools
     open_url_trigger_words: list[str] = [
-        "open", "show", "pull up", "bring up", "launch", "display", "load up",
+        "open", "show", "pull up", "bring up", "launch", "display", "load up", "play",
     ]  # open_url runs only if the user's turn contains one of these (whole words)
     web_search: bool = False  # enable the Tavily web_search tool (needs TAVILY_API_KEY)
 

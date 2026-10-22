@@ -80,13 +80,16 @@ def check_mic(mic: str, *, robot_media: bool, has_mac_input=_mac_has_input) -> s
     raise typer.Exit(code=1)
 
 
-def make_barge_in_factory(chosen: str, media, is_self_voice=None, transcribe=None):
+def make_barge_in_factory(chosen: str, media, is_self_voice=None, transcribe=None,
+                          is_echo=None):
     """Zero-arg factory building a fresh BargeInMonitor per reply, or None.
 
     barge_in_mode=keyword (default): talking over a reply only interrupts when
     it says Reachy's name or a stop word ("Reachy, stop") - checked by
     transcribing the overlapping speech - so the mic hearing the robot's own
     voice can't cut replies short. speech: any sustained speech interrupts.
+    is_echo(text) vetoes a keyword hit that is just the reply heard back
+    (off-robot mics have no echo cancellation).
     """
     if not settings.barge_in:
         return None
@@ -104,6 +107,9 @@ def make_barge_in_factory(chosen: str, media, is_self_voice=None, transcribe=Non
         def confirm(audio) -> bool:
             text = transcribe(audio)
             hit = is_interrupt(text, settings.wake_words)
+            if hit and is_echo is not None and is_echo(text):
+                logger.info("barge-in ignored - echo of the reply: %r", text)
+                return False
             if hit:
                 logger.info("barge-in phrase heard: %r", text)
             return hit
@@ -381,6 +387,9 @@ def run(
         from reachy_vec.body.sway import SpeakingSway, SwayingSpeaker
 
         speaker = SwayingSpeaker(speaker, SpeakingSway(body))
+    from reachy_vec.audio.echo import EchoGuard
+
+    speaker = EchoGuard(speaker)  # barge-in ignores the mic hearing the reply
     hermes = make_hermes(store)
     thinking_off = uses_local_llm() and settings.llm_disable_thinking
     camera_tools = make_camera_tools(
@@ -431,7 +440,7 @@ def run(
         enroll_phrases=settings.enroll_voice_phrases,
         barge_in_factory=make_barge_in_factory(
             mic, media, is_self_voice=make_self_voice_checker(store),
-            transcribe=interrupt_stt,
+            transcribe=interrupt_stt, is_echo=speaker.is_echo,
         ),
         settle_s=settings.post_speech_settle_s,
         ack_fillers=fillers,

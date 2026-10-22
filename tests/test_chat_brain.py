@@ -1332,3 +1332,62 @@ def test_interrupting_a_progress_update_stops_waiting(tmp_path):
     make_brain(tmp_path, client, hermes=SlowHermes()).respond(
         "research X", identity=YANG, on_sentence=on_sentence)
     assert results == [False]
+
+
+# -- opening pages: the open route and searches -----------------------------------
+
+
+def test_open_route_opens_the_page_without_the_model_choosing_the_tool(tmp_path):
+    from reachy_vec.brain.router import Route
+    from tests.conftest import FakeRouter
+
+    opened = []
+    # the chat model would only *claim* it opened YouTube - the route acts instead
+    client = FakeLLMClient(reply="Opened YouTube for you.")
+    brain = make_brain(tmp_path, client, opener=opened.append, router=FakeRouter(
+        {"can you open YouTube": Route("open", "https://www.youtube.com")}))
+    sentences = []
+    reply = brain.respond("can you open YouTube", identity=YANG, on_sentence=sentences.append)
+    assert opened == ["https://www.youtube.com"]
+    assert reply == "Opened YouTube for you."
+    tool = [m for m in client.chat.completions.last_kwargs["messages"] if m.get("role") == "tool"]
+    assert tool[0]["content"] == "opened https://www.youtube.com in the browser"
+
+
+def test_open_route_still_needs_an_explicit_ask(tmp_path):
+    from reachy_vec.brain.router import Route
+    from tests.conftest import FakeRouter
+
+    opened = []
+    client = FakeLLMClient(reply="It's a mapping demo.")
+    brain = make_brain(tmp_path, client, opener=opened.append, router=FakeRouter(
+        {"tell me about food mapping": Route("open", "https://example.org/food")}))
+    brain.respond("tell me about food mapping", identity=YANG, on_sentence=lambda s: None)
+    assert opened == []
+
+
+@pytest.mark.parametrize(("target", "url"), [
+    ("https://example.org/x", "https://example.org/x"),
+    ("youtube.com", "https://youtube.com"),
+    ("www.bbc.co.uk/news", "https://www.bbc.co.uk/news"),
+    ("lofi beats", "https://www.google.com/search?q=lofi+beats"),
+])
+def test_open_url_accepts_sites_and_searches(tmp_path, target, url):
+    opened = []
+    client = FakeLLMClient(messages=[
+        FakeChoiceMessage(None, tool_calls=[FakeToolCall("open_url", json.dumps({"url": target}))]),
+        FakeChoiceMessage("Done."),
+    ])
+    make_brain(tmp_path, client, opener=opened.append).respond("open it please")
+    assert opened == [url]
+
+
+def test_play_counts_as_an_explicit_ask(tmp_path):
+    opened = []
+    target = "https://www.youtube.com/results?search_query=jazz"
+    client = FakeLLMClient(messages=[
+        FakeChoiceMessage(None, tool_calls=[FakeToolCall("open_url", json.dumps({"url": target}))]),
+        FakeChoiceMessage("Here's some jazz."),
+    ])
+    make_brain(tmp_path, client, opener=opened.append).respond("play some jazz")
+    assert opened == [target]

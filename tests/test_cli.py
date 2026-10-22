@@ -453,3 +453,17 @@ def test_keyword_barge_in_without_transcriber_is_off(monkeypatch):
     monkeypatch.setattr(settings, "barge_in", True)
     monkeypatch.setattr(settings, "barge_in_mode", "keyword")
     assert make_barge_in_factory("mac", None, transcribe=None) is None
+
+
+def test_keyword_barge_in_ignores_reachys_own_reply_echoed(monkeypatch):
+    from reachy_vec.cli.run import make_barge_in_factory
+
+    monkeypatch.setattr(settings, "barge_in", True)
+    monkeypatch.setattr(settings, "barge_in_mode", "keyword")
+    heard = {"text": "But I'll stay quiet if you'd like to."}
+    said = "I can't switch myself off, but I'll stay quiet if you'd like some peace."
+    factory = make_barge_in_factory(
+        "mac", None, transcribe=lambda audio: heard["text"],
+        is_echo=lambda text: text == heard["text"] and "quiet" in said,
+    )
+    assert factory()._confirm(None) is False
