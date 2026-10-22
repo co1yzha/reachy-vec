@@ -186,3 +186,6 @@ data/
 
 # VS Code (personal editor settings; commit deliberately if the team wants shared ones)
 .vscode/
+
+# local .env backups (contain secrets)
+.env.bak*
