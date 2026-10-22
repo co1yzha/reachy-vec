@@ -1071,7 +1071,7 @@ class _StatusHermes:
     def status(self):
         return self._status
 
-    def ask(self, task, *, requester_id, requester_name):
+    def ask(self, task, *, requester_id, requester_name, on_progress=None):
         return "ok"
 
 
@@ -1108,7 +1108,7 @@ class _RecordingHermes(_StatusHermes):
         super().__init__(None)
         self.asked = []
 
-    def ask(self, task, *, requester_id, requester_name):
+    def ask(self, task, *, requester_id, requester_name, on_progress=None):
         self.asked.append((task, requester_name))
         return "Canberra."
 
@@ -1290,3 +1290,45 @@ def test_persona_allows_an_emoji_as_a_gesture():
     from reachy_vec.brain.chat import PERSONALITY
 
     assert "emoji" in PERSONALITY
+
+
+def test_hermes_wait_speaks_progress_updates(tmp_path):
+    from reachy_vec.brain.chat import HERMES_PROGRESS_LINES
+
+    class SlowHermes(_RecordingHermes):
+        def ask(self, task, *, requester_id, requester_name, on_progress=None):
+            on_progress()
+            on_progress()
+            return "Found it."
+
+    tool_call = FakeToolCall("ask_hermes", json.dumps({"task": "research X"}))
+    client = FakeLLMClient(messages=[FakeChoiceMessage(None, tool_calls=[tool_call]),
+                                     FakeChoiceMessage("Here it is.")])
+    sentences = []
+    make_brain(tmp_path, client, hermes=SlowHermes()).respond(
+        "research X", identity=YANG, on_sentence=sentences.append)
+    assert sentences[0] == "Let me look into that."
+    assert sum(s in HERMES_PROGRESS_LINES for s in sentences) == 2
+    assert sentences[-1] == "Here it is."
+
+
+def test_interrupting_a_progress_update_stops_waiting(tmp_path):
+    from reachy_vec.brain.chat import SpeechInterrupted
+
+    results = []
+
+    class SlowHermes(_RecordingHermes):
+        def ask(self, task, *, requester_id, requester_name, on_progress=None):
+            results.append(on_progress())        # the spoken update gets interrupted
+            return "still working; tell the user you'll let them know when it's ready"
+
+    def on_sentence(s):
+        if s != "Let me look into that.":
+            raise SpeechInterrupted()
+
+    tool_call = FakeToolCall("ask_hermes", json.dumps({"task": "research X"}))
+    client = FakeLLMClient(messages=[FakeChoiceMessage(None, tool_calls=[tool_call]),
+                                     FakeChoiceMessage("ok")])
+    make_brain(tmp_path, client, hermes=SlowHermes()).respond(
+        "research X", identity=YANG, on_sentence=on_sentence)
+    assert results == [False]

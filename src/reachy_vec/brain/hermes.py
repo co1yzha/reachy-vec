@@ -263,9 +263,11 @@ class HermesJobs:
         wait_anonymous_s: float | None = None,
         task_timeout_s: float,
         clock=time.monotonic,
+        progress_s: float = 12.0,
     ):
         self._agent = agent
         self._clock = clock
+        self._progress_s = progress_s  # how often on_progress fires while waiting
         self._task: str | None = None
         self._started = 0.0
         self._store = store
@@ -311,17 +313,30 @@ class HermesJobs:
         logger.info("hermes result after %.1fs: %r", time.monotonic() - start, result)
         return result
 
-    def ask(self, task: str, *, requester_id: str | None, requester_name: str | None) -> str:
+    def ask(self, task: str, *, requester_id: str | None, requester_name: str | None,
+            on_progress=None) -> str:
+        """Run the task; wait up to the wait limit, calling on_progress() every
+        progress_s (Reachy says "still digging..."). on_progress returning
+        False (the user interrupted) stops waiting: the result is handed off."""
         if self.busy:
             return BUSY
         self._task, self._started = task, self._clock()
         future = self._pool.submit(self._run, task, requester_name, requester_id)
         self._future = future
+        wait = self._wait_s if requester_id else self._wait_anonymous_s
+        deadline = time.monotonic() + wait
         try:
-            wait = self._wait_s if requester_id else self._wait_anonymous_s
-            return future.result(timeout=wait).strip()
-        except FutureTimeout:
-            pass
+            while True:
+                step = min(self._progress_s, deadline - time.monotonic())
+                if step <= 0:
+                    break
+                try:
+                    return future.result(timeout=step).strip()
+                except FutureTimeout:
+                    if time.monotonic() >= deadline:
+                        break
+                    if on_progress is not None and on_progress() is False:
+                        break
         except Exception:
             return FAILED
         future.add_done_callback(

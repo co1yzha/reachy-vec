@@ -260,3 +260,20 @@ def test_recognised_requester_keeps_the_short_wait(tmp_path):
     jobs = HermesJobs(FakeAgent(["late"], delay_s=0.15), Store(tmp_path / "db"),
                       wait_s=0.05, wait_anonymous_s=1.0, task_timeout_s=5)
     assert jobs.ask("x", requester_id="p1", requester_name="Yang").startswith("still working")
+
+
+def test_progress_updates_while_waiting(tmp_path):
+    ticks = []
+    jobs = HermesJobs(FakeAgent(["Done."], delay_s=0.35), Store(tmp_path / "db"),
+                      wait_s=2.0, task_timeout_s=5, progress_s=0.1)
+    out = jobs.ask("t", requester_id="p1", requester_name="Yang",
+                   on_progress=lambda: ticks.append(1) or True)
+    assert out == "Done." and len(ticks) >= 2
+
+
+def test_progress_callback_can_stop_the_wait(tmp_path):
+    jobs = HermesJobs(FakeAgent(["late"], delay_s=0.5), Store(tmp_path / "db"),
+                      wait_s=5.0, task_timeout_s=5, progress_s=0.05)
+    out = jobs.ask("t", requester_id="p1", requester_name="Yang", on_progress=lambda: False)
+    assert out.startswith("still working")          # handed off at once
+    wait_until(lambda: Store(tmp_path / "db").pending_messages_for("p1"))

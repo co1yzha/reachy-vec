@@ -10,6 +10,7 @@ three memories about the person into the store.
 import json
 import logging
 import os
+import random
 import re
 import subprocess
 import uuid
@@ -215,6 +216,14 @@ NAME_EXTRACTION_PROMPT = (
     "spelled letter by letter (\"Y, A, N, G\"), join the letters (\"Yang\"). If "
     "it corrects an earlier name (\"No, it's Yang\"), give the corrected name. If "
     "there is no name in it (\"no\", \"yes\", \"not sure\"), reply NONE."
+)
+
+HERMES_PROGRESS_LINES = (
+    "Still digging...",
+    "Hermes is still on it.",
+    "Bear with me - this one's a big search.",
+    "Nearly there, I think.",
+    "Still working on it!",
 )
 
 FIX_BODY_TOOL = {
@@ -824,8 +833,22 @@ class ChatBrain:
                 self._on_sentence(HERMES_HOLDING_LINE)
             except SpeechInterrupted:
                 pass  # barge-in on the holding line: still wait for the answer
+        lines = iter(random.sample(HERMES_PROGRESS_LINES, len(HERMES_PROGRESS_LINES)) * 10)
+
+        def progress() -> bool:
+            """A short spoken update during a long Hermes task; False (stop
+            waiting, hand the result off) if the user talks over it."""
+            if not self._on_sentence:
+                return True
+            try:
+                self._on_sentence(next(lines))
+            except SpeechInterrupted:
+                return False
+            return True
+
         return self._hermes.ask(
-            task, requester_id=self._turn.person_id, requester_name=self._turn.name
+            task, requester_id=self._turn.person_id, requester_name=self._turn.name,
+            on_progress=progress,
         )
 
     def _tool_open_url(self, args: dict) -> str:
