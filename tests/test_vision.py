@@ -185,6 +185,7 @@ def test_selfie_saves_file_and_opens_it(tmp_path):
     assert len(saved) == 1
     assert opened == [str(saved[0])]
     assert "photo" in result.lower()
+    assert saved[0].name in result and "saved" in result   # so "where is it?" is answerable
 
 
 def test_selfie_ceremony_order(tmp_path):

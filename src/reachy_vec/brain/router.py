@@ -14,14 +14,15 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-ROUTES = ("chat", "hermes", "latest_demos", "fix_body", "remember_me", "open")
-TASK_ROUTES = ("hermes", "open")  # routes that carry text after the colon
+ROUTES = ("chat", "hermes", "latest_demos", "fix_body", "remember_me", "open",
+          "selfie", "look", "look_around")
+TASK_ROUTES = ("hermes", "open", "look")  # routes that carry text after the colon
 
 
 @dataclass(frozen=True)
 class Route:
     name: str = "chat"
-    task: str = ""  # hermes: the task, phrased for Hermes; open: the URL or search
+    task: str = ""  # hermes: the task for Hermes; open: the URL; look: the question
 
 
 CHAT = Route()
@@ -29,6 +30,7 @@ CHAT = Route()
 ROUTER_PROMPT = """You route what someone said to Reachy, a desk robot assistant, to one action.
 Reply with ONLY the route name. For hermes, add a colon and the task: "hermes: <task>".
 For open, add a colon and the web address: "open: <url>".
+For look, add a colon and what to look for: "look: <question>".
 
 Routes:
 - hermes: a multi-step task for Hermes, the AI agent colleague (research, browsing,
@@ -43,9 +45,12 @@ Routes:
   browser - but never one of the team's demos (that is chat). Give the page's URL;
   for music or videos, a YouTube search URL
   (https://www.youtube.com/results?search_query=<words joined with +>).
+- selfie: take a photo / picture / selfie of them.
+- look: look through the camera at something in front of the robot and answer.
+- look_around: look around the room and say what is there.
 - chat: everything else - conversation, questions about the team's demos or work,
   general knowledge, weather, time, notes, messages to teammates, opening a team
-  demo, looking through the camera, taking a photo.
+  demo.
 
 Examples:
 "what's the latest AI news" -> hermes: find today's top AI news
@@ -56,6 +61,9 @@ Examples:
 "play some jazz" -> open: https://www.youtube.com/results?search_query=jazz
 "pull up the BBC news site" -> open: https://www.bbc.co.uk/news
 "show me the food mapping demo" -> chat
+"can you take a picture of us" -> selfie
+"what am I holding?" -> look: what am I holding
+"look around and tell me what you see" -> look_around
 "I was reaching for my coffee" -> chat
 "remember my voice" -> remember_me
 "tell Bob the meeting moved" -> chat

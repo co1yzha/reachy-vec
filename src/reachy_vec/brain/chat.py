@@ -597,6 +597,12 @@ class ChatBrain:
             # tool; the router's pick opens it instead (the ask guard still applies)
             return _StreamedMessage("", {0: {"id": "call_open_url", "name": "open_url",
                                              "arguments": json.dumps({"url": route.task})}})
+        if route.name in ("selfie", "look", "look_around"):
+            # same: the model "takes" photos and describes rooms without the
+            # camera; the tool answers truthfully even with no camera
+            args = {"question": route.task or self._question} if route.name == "look" else {}
+            return _StreamedMessage("", {0: {"id": f"call_{route.name}", "name": route.name,
+                                             "arguments": json.dumps(args)}})
         if route.name == "fix_body" and self._fix_body_fn is not None:
             return _StreamedMessage("", {0: {"id": "call_fix_body", "name": "fix_body",
                                              "arguments": "{}"}})

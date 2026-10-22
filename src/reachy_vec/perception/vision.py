@@ -185,11 +185,13 @@ def make_selfie_fn(
         except Exception:
             logger.exception("selfie save failed")
             return "I couldn't save the photo just now."
+        shown = "opened it on the screen"
         try:
             open_file(str(path))
         except Exception:
             logger.exception("selfie open failed; photo is still saved")
+            shown = "couldn't open it on the screen"
         logger.info("selfie -> %s", path)
-        return "took a photo and popped it up"
+        return f"took a photo, saved it as {path} and {shown}"
 
     return selfie

@@ -1405,3 +1405,44 @@ def test_a_rerouted_answer_closes_its_stream(tmp_path):
     brain.respond("play some jazz", identity=YANG, on_sentence=lambda s: None)
     assert all(stream.closed for stream in client.chat.completions.streams[:-1])
     assert client.chat.completions.streams[0].closed
+
+
+# -- camera routes: the local model fakes photos and sights, so the router acts -----
+
+
+@pytest.mark.parametrize(("route", "kw", "expected"), [
+    ("selfie", "selfie_fn", "saved data/photos/x.jpg and opened it"),
+    ("look_around", "look_around_fn", "left: a window; right: a door"),
+])
+def test_camera_routes_call_the_camera(tmp_path, route, kw, expected):
+    from reachy_vec.brain.router import Route
+
+    calls = []
+    client = FakeLLMClient(reply="Here you go!")
+    brain = _routed_brain(tmp_path, client, Route(route),
+                          **{kw: lambda: calls.append(1) or expected})
+    brain.respond("q", identity=YANG, on_sentence=lambda s: None)
+    assert calls == [1]
+    tool = [m for m in client.chat.completions.last_kwargs["messages"] if m.get("role") == "tool"]
+    assert tool[0]["content"] == expected
+
+
+def test_look_route_passes_the_question(tmp_path):
+    from reachy_vec.brain.router import Route
+
+    seen = []
+    client = FakeLLMClient(reply="A red mug.")
+    _routed_brain(tmp_path, client, Route("look", "what am I holding"),
+                  look_fn=lambda q: seen.append(q) or "a red mug"
+                  ).respond("q", identity=YANG, on_sentence=lambda s: None)
+    assert seen == ["what am I holding"]
+
+
+def test_camera_route_without_a_camera_says_so_instead_of_inventing(tmp_path):
+    from reachy_vec.brain.router import Route
+
+    client = FakeLLMClient(reply="Sorry, my camera isn't available.")
+    _routed_brain(tmp_path, client, Route("selfie")).respond(
+        "q", identity=YANG, on_sentence=lambda s: None)
+    tool = [m for m in client.chat.completions.last_kwargs["messages"] if m.get("role") == "tool"]
+    assert tool[0]["content"] == "I can't take a photo right now."
