@@ -430,6 +430,8 @@ def run(
         ),
         settle_s=settings.post_speech_settle_s,
         ack_fillers=fillers,
+        name_extractor=brain.extract_name,  # LLM reads the name from the answer
+        auto_offer=settings.enroll_auto_offer,
     )
     typer.echo('Oracle running - say "Reachy" to start. Ctrl+C to stop.')
     try:

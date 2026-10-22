@@ -185,6 +185,15 @@ ASK_HERMES_TOOL = {
     },
 }
 
+NAME_EXTRACTION_PROMPT = (
+    "You read one speech-to-text transcript: a person answering a robot's question "
+    "\"What's your name?\" (or confirming / correcting it). Reply with ONLY their "
+    "first name, or first and last name if both are given - nothing else. If it is "
+    "spelled letter by letter (\"Y, A, N, G\"), join the letters (\"Yang\"). If "
+    "it corrects an earlier name (\"No, it's Yang\"), give the corrected name. If "
+    "there is no name in it (\"no\", \"yes\", \"not sure\"), reply NONE."
+)
+
 FIX_BODY_TOOL = {
     "type": "function",
     "function": {
@@ -622,6 +631,32 @@ class ChatBrain:
         if self._look_around_fn:
             prompt += LOOK_AROUND_HINT
         return prompt
+
+    def extract_name(self, answer: str) -> str | None:
+        """The person's name from their spoken answer to "What's your name?",
+        via the LLM (any phrasing, corrections, spelled-out letters); falls
+        back to rules if the LLM is unreachable. None if there is no name."""
+        from reachy_vec.brain.oracle import _rule_name
+
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": NAME_EXTRACTION_PROMPT},
+                    {"role": "user", "content": answer},
+                ],
+                max_completion_tokens=12,
+                **self._llm_kwargs,
+            )
+            name = _strip_think(response.choices[0].message.content or "").strip(" .,!?\"'")
+        except Exception:
+            logger.warning("LLM name extraction failed; using rules", exc_info=True)
+            return _rule_name(answer)
+        if not name or name.upper() == "NONE":
+            return None
+        if len(name.split()) > 3 or not re.fullmatch(r"[A-Za-z][A-Za-z' -]*", name):
+            return None  # not a bare name - don't greet anyone as a sentence
+        return name.title()
 
     def warm_up(self) -> bool:
         """Prime the LLM (connection + prompt cache) with the real system prompt

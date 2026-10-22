@@ -230,7 +230,7 @@ def test_barge_in_stops_speaker_and_skips_nod(tmp_path):
 
 def test_unknown_voice_enrolls_on_yes_and_confirm(tmp_path):
     loop, speaker, body, store, brain = make_loop(
-        tmp_path,
+        tmp_path, auto_offer=True,
         utterances=[
             said("Hi Reachy, I'm new here"),   # wake: stranger's voice
             said("yes please"), said("Bob"), said("yes"),
@@ -251,7 +251,8 @@ def test_unknown_voice_enrolls_on_yes_and_confirm(tmp_path):
 
 def test_unknown_voice_declines_enrollment(tmp_path):
     loop, _, _, store, _ = make_loop(
-        tmp_path, utterances=[said("Reachy"), said("no thanks")], voices=[UNKNOWN_VOICE]
+        tmp_path, auto_offer=True, utterances=[said("Reachy"), said("no thanks")],
+        voices=[UNKNOWN_VOICE],
     )
     assert loop.run_once() == "enroll-declined"
     assert store.match_voice(VOICE_VEC) is None
@@ -259,7 +260,7 @@ def test_unknown_voice_declines_enrollment(tmp_path):
 
 def test_enrollment_fails_without_any_usable_voice(tmp_path):
     loop, speaker, _, store, _ = make_loop(
-        tmp_path,
+        tmp_path, auto_offer=True,
         utterances=[said("Reachy"), said("yes"), said("Bob"), said("yes")],  # then silence
         voices=[UNKNOWN_VOICE],
         embedding=None,  # too short / model broken
@@ -271,7 +272,7 @@ def test_enrollment_fails_without_any_usable_voice(tmp_path):
 
 def test_stranger_after_bare_wake_is_offered_enrollment_once(tmp_path):
     loop, speaker, _, store, _ = make_loop(
-        tmp_path,
+        tmp_path, auto_offer=True,
         utterances=[said("Reachy"), said("what's the weather?"), said("no"), said("thanks")],
         voices=[None, UNKNOWN_VOICE, UNKNOWN_VOICE],
     )
@@ -632,3 +633,88 @@ def test_recognised_speaker_asking_to_be_remembered_goes_to_the_brain(tmp_path):
     )
     loop.run_once()
     assert [q for q, _ in brain.asked] == ["remember me"]
+
+
+# -- enrollment: assistant first, names extracted, spelling fallback -----------
+
+
+@pytest.mark.parametrize(("text", "name"), [
+    ("My name is Yang.", "Yang"), ("I'm Yang", "Yang"), ("it's Hannah Smith", "Hannah Smith"),
+    ("call me Dave", "Dave"), ("Yang", "Yang"), ("No, it's Yang.", "Yang"),
+    ("no", None), ("Nope.", None), ("", None),
+])
+def test_extract_name(text, name):
+    from reachy_vec.brain.oracle import extract_name
+
+    assert extract_name(text) == name
+
+
+@pytest.mark.parametrize(("text", "name"), [
+    ("Y, A, N, G.", "Yang"), ("Y-A-N-G", "Yang"), ("why a n g", "Yang"),
+    ("H A N N A H", "Hannah"), ("it's Yang", None),
+])
+def test_spelled_name(text, name):
+    from reachy_vec.brain.oracle import spelled_name
+
+    assert spelled_name(text) == name
+
+
+def test_strangers_are_just_answered_no_unasked_offer(tmp_path):
+    loop, speaker, _, store, brain = make_loop(
+        tmp_path, utterances=[said("Reachy, what's the time?")], voices=[UNKNOWN_VOICE])
+    assert loop.run_once() == "conversation"
+    assert not any("remember your voice" in s for s in speaker.spoken)
+    assert [q for q, _ in brain.asked] == ["what's the time?"]
+
+
+def test_asked_enrollment_extracts_name_and_spells_after_a_mishearing(tmp_path):
+    loop, speaker, _, store, _ = make_loop(
+        tmp_path,
+        utterances=[said("Reachy, remember me"),
+                    said("My name is Jan."), said("No."),          # misheard
+                    said("Y, A, N, G."), said("Yes."),             # spelled, confirmed
+                    said("I work on data"), said("and I like tea")],
+        voices=[UNKNOWN_VOICE],
+    )
+    loop.run_once()
+    assert store.match_voice(VOICE_VEC)[1] == "Yang"
+    assert any("spell" in s.lower() for s in speaker.spoken)
+    assert not any("My Name Is" in s for s in speaker.spoken)
+
+
+def test_correction_in_the_no_answer_is_used(tmp_path):
+    loop, _, _, store, _ = make_loop(
+        tmp_path,
+        utterances=[said("Reachy, remember me"), said("I'm Young"), said("No, it's Yang."),
+                    said("yes"), said("one sentence"), said("two sentences")],
+        voices=[UNKNOWN_VOICE],
+    )
+    loop.run_once()
+    assert store.match_voice(VOICE_VEC)[1] == "Yang"
+
+
+def test_failed_enrollment_keeps_the_conversation_going(tmp_path):
+    loop, speaker, _, _, brain = make_loop(
+        tmp_path,
+        utterances=[said("Reachy, remember me"), said("mumble"), said("no"),
+                    said("not sure"), said("no"), said("forget it"), said("no"),
+                    said("what's the weather?")],
+        voices=[UNKNOWN_VOICE],
+    )
+    loop.run_once()
+    assert "what's the weather?" in [q for q, _ in brain.asked]   # carried on
+    assert any("remember me" in s for s in speaker.spoken)          # told how to retry
+
+
+def test_auto_offer_is_paused_after_a_decline(tmp_path):
+    now = {"t": 1000.0}
+    loop, speaker, _, _, _ = make_loop(
+        tmp_path, utterances=[said("Reachy"), said("no thanks")], voices=[UNKNOWN_VOICE],
+        auto_offer=True, clock=lambda: now["t"])
+    loop.run_once()
+    loop._transcriber = FakeTranscriber([said("Reachy, hi")])
+    loop._speaker_id = FakeSpeakerIdentifier([UNKNOWN_VOICE], embedding=VOICE_VEC)
+    now["t"] = 1300.0                                    # 5 min later: still paused
+    offers_before = sum("remember your voice" in s for s in speaker.spoken)
+    loop.run_once()
+    assert sum("remember your voice" in s for s in speaker.spoken) == offers_before

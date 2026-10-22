@@ -1240,3 +1240,29 @@ def test_fix_body_tool_offered_only_with_a_body(tmp_path):
     c2 = FakeLLMClient(reply="ok")
     make_brain(tmp_path, c2, fix_body_fn=lambda: "x").respond("hi")
     assert "fix_body" not in names(c1) and "fix_body" in names(c2)
+
+
+@pytest.mark.parametrize(("llm_says", "expected"), [
+    ("Yang", "Yang"), ("  yang. ", "Yang"), ("NONE", None), ("hannah smith", "Hannah Smith"),
+    ("<think>hm</think>Yang", "Yang"),
+    ("I think the name is probably Yang but not sure", None),   # rambling -> rejected
+])
+def test_extract_name_uses_the_llm(tmp_path, llm_says, expected):
+    client = FakeLLMClient(reply=llm_says)
+    brain = make_brain(tmp_path, client)
+    assert brain.extract_name("whatever was heard") == expected
+    sent = client.chat.completions.last_kwargs["messages"]
+    assert "whatever was heard" in sent[-1]["content"]
+
+
+def test_extract_name_falls_back_to_rules_when_llm_fails(tmp_path):
+    class Down:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kw):
+                    raise ConnectionError("oMLX down")
+
+    brain = make_brain(tmp_path, Down())
+    assert brain.extract_name("My name is Yang.") == "Yang"
+    assert brain.extract_name("Y, A, N, G.") == "Yang"

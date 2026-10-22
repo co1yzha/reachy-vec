@@ -41,8 +41,50 @@ def _is_yes(utterance) -> bool:
     return utterance is not None and "yes" in utterance.text.lower()
 
 
-def _clean_name(text: str) -> str:
-    return text.strip().strip(".!?,").title()
+_NAME_PREFIX = re.compile(
+    r"^(?:no|nope|yes|yeah|um+|uh+|oh|well|sorry)?[\s,.!-]*"
+    r"(?:my name is|my name's|name's|i am|i'm|it's|it is|this is|call me)\s+",
+    re.IGNORECASE,
+)
+_NOT_A_NAME = {"no", "nope", "yes", "yeah", "nah", "not", "sure", "okay", "ok", "um",
+               "uh", "mumble", "forget", "it", "never", "mind", "sorry"}
+
+
+def extract_name(text: str) -> str | None:
+    """The name in an answer: "My name is Yang." / "I'm Yang" / "No, it's Yang"
+    -> "Yang"; None for a bare no/yes/filler. (The whole sentence used to be
+    taken as the name: "Nice to meet you, My Name Is Jan".)"""
+    text = (text or "").strip()
+    match = _NAME_PREFIX.search(text)
+    rest = text[match.end():] if match else text
+    words = [w for w in re.sub(r"[^\w' -]", " ", rest).split() if w]
+    if not words or not match and any(w.lower() in _NOT_A_NAME for w in words):
+        return None
+    return " ".join(words[:3]).title()
+
+
+_LETTER_WORDS = {
+    "why": "y", "you": "u", "are": "r", "see": "c", "sea": "c", "bee": "b", "be": "b",
+    "eye": "i", "oh": "o", "pea": "p", "pee": "p", "queue": "q", "cue": "q", "tea": "t",
+    "tee": "t", "jay": "j", "kay": "k", "ell": "l", "em": "m", "en": "n", "ex": "x",
+    "zed": "z", "zee": "z", "gee": "g", "aitch": "h", "dee": "d", "ee": "e", "eff": "f",
+    "ess": "s", "vee": "v", "ay": "a",
+}
+
+
+def _rule_name(text: str) -> str | None:
+    """Fallback name extraction without the LLM: spelled letters, else phrasing."""
+    return spelled_name(text) or extract_name(text)
+
+
+def spelled_name(text: str) -> str | None:
+    """A spelled-out name: "Y, A, N, G." / "Y-A-N-G" / "why a n g" -> "Yang";
+    None unless (nearly) every token is a single letter."""
+    tokens = [t for t in re.split(r"[^a-zA-Z]+", text or "") if t]
+    letters = [t.lower() if len(t) == 1 else _LETTER_WORDS.get(t.lower()) for t in tokens]
+    if len(letters) < 2 or any(letter is None for letter in letters):
+        return None
+    return "".join(letters).title()
 
 
 def split_wake(text: str, wake_words=DEFAULT_WAKE_WORDS) -> str | None:
@@ -100,6 +142,9 @@ class OracleLoop:
         ack_fillers=None,
         settle_s: float = 0.0,
         sleep=time.sleep,
+        auto_offer: bool = False,
+        enroll_cooldown_s: float = 600.0,
+        name_extractor=None,
     ):
         self._transcriber = transcriber
         self._speaker = speaker
@@ -114,6 +159,12 @@ class OracleLoop:
         self._barge_in_factory = barge_in_factory  # None = barge-in disabled
         # short lines ("Mm.") played while the LLM reads the prompt; empty = off
         self._ack_fillers = list(ack_fillers or [])
+        self._auto_offer = auto_offer  # offer enrollment unasked to strangers
+        self._enroll_cooldown_s = enroll_cooldown_s
+        self._declined_at: float | None = None
+        # answer text -> the name in it, or None. run passes the LLM-backed
+        # ChatBrain.extract_name; the rule-based extract_name is the fallback
+        self._extract_name = name_extractor or _rule_name
         # Pause before opening the mic so the reverb tail of the robot's own
         # speech isn't captured as the next utterance.
         self._settle_s = settle_s
@@ -144,11 +195,14 @@ class OracleLoop:
         logger.info("wake word heard: %r", heard.text)
         woke_speaking = self._note_wake()
         voice_obs = self._identify_voice(heard.audio)
-        if voice_obs is not None and voice_obs.person_id is None:
+        if voice_obs is not None and voice_obs.person_id is None and self._may_offer():
             event, person = self._offer_enroll(first_audio=heard.audio)
             if person is not None:
                 # "Ask me anything" - keep listening
                 self._converse(person, just_spoke=True)
+                return event
+            # declined or failed: still an assistant - answer them anyway
+            self._converse(None, first_question=rest, just_spoke=True)
             return event
         self._converse(voice_obs, first_question=rest, just_spoke=woke_speaking)
         return "conversation"
@@ -199,7 +253,7 @@ class OracleLoop:
                     and (turn_voice is None or turn_voice.person_id is None)):
                 # the LLM would just promise "I'll remember you" - enroll for real
                 offered = True
-                _event, enrolled = self._offer_enroll(first_audio=audio)
+                _event, enrolled = self._offer_enroll(first_audio=audio, asked=True)
                 owner = enrolled or owner
                 continue
             if self._reply(text, turn_voice, ack=ack):
@@ -211,7 +265,7 @@ class OracleLoop:
                 # messages queued mid-conversation reach whoever just spoke
                 self._deliver_messages(turn_voice.person_id)
             if owner is None and not offered and turn_voice is not None \
-                    and turn_voice.person_id is None:
+                    and turn_voice.person_id is None and self._may_offer():
                 # a stranger woke us with a bare "Reachy"; now we know
                 offered = True
                 _event, owner = self._offer_enroll(first_audio=audio)
@@ -324,30 +378,59 @@ class OracleLoop:
             source=source,
         )
 
-    def _offer_enroll(self, first_audio=None) -> tuple[str, Observation | None]:
-        """Offer voice enrollment; returns (event, the new person or None)."""
-        self._speaker.speak(OFFER)
-        if not _is_yes(self._listen(10)):
-            self._speaker.speak("No problem! Just say Reachy if you need me.")
-            return "enroll-declined", None
-        for _attempt in range(2):
-            self._speaker.speak("Great! What's your name?")
-            heard = self._listen(10)
-            if heard is None:
-                continue
-            name = _clean_name(heard.text)
+    def _may_offer(self) -> bool:
+        """Unasked enrollment offers: off by default (Reachy is an assistant
+        first), and paused for enroll_cooldown_s after a decline."""
+        if not self._auto_offer:
+            return False
+        return (self._declined_at is None
+                or self._clock() - self._declined_at >= self._enroll_cooldown_s)
+
+    def _offer_enroll(self, first_audio=None, asked: bool = False):
+        """Voice enrollment; returns (event, the new person or None).
+
+        asked: the person requested it ("remember me") - skip the yes/no offer.
+        The name comes from extract_name(); a "no" leads to a correction
+        ("No, it's Yang") or to spelling it out, which STT gets right far
+        more often than an unusual name.
+        """
+        if not asked:
+            self._speaker.speak(OFFER)
+            if not _is_yes(self._listen(10)):
+                self._declined_at = self._clock()
+                self._speaker.speak("No problem! What can I help you with?")
+                return "enroll-declined", None
+        self._speaker.speak("Sure! What's your name?" if asked else "Great! What's your name?")
+        heard = self._listen(10)
+        name = self._extract_name(heard.text) if heard is not None else None
+        for _attempt in range(3):
+            if name is None:
+                self._speaker.speak("Sorry, could you spell your name for me?")
+                heard = self._listen(10)
+                name = self._extract_name(heard.text) if heard is not None else None
+                if name is None:
+                    continue
             self._speaker.speak(f"Nice to meet you, {name} - did I get that right?")
-            if _is_yes(self._listen(10)):
-                person_id = f"person-{uuid.uuid4().hex[:8]}"
-                if not self._capture_voice(person_id, name, extra_audio=[first_audio]):
-                    self._speaker.speak("I couldn't catch your voice - let's try another time.")
-                    return "enroll-declined", None
-                self._record_greeting(person_id)
-                self._speaker.speak(f"All set, {name}! Ask me anything.")
-                self._body.perform("greet")
-                return "enrolled", Observation(person_id=person_id, name=name, score=1.0)
-        self._speaker.speak("Let's try again another time.")
+            answer = self._listen(10)
+            if _is_yes(answer):
+                return self._enroll(name, first_audio)
+            # "No, it's Yang" carries the correction; a bare "no" -> spell it
+            name = self._extract_name(answer.text) if answer is not None else None
+        self._declined_at = self._clock()
+        self._speaker.speak("Sorry, I didn't catch your name. Let's carry on - say "
+                            "'Reachy, remember me' any time to try again.")
         return "enroll-declined", None
+
+    def _enroll(self, name: str, first_audio) -> tuple[str, Observation | None]:
+        person_id = f"person-{uuid.uuid4().hex[:8]}"
+        if not self._capture_voice(person_id, name, extra_audio=[first_audio]):
+            self._declined_at = self._clock()
+            self._speaker.speak("I couldn't catch your voice - let's try another time.")
+            return "enroll-declined", None
+        self._record_greeting(person_id)
+        self._speaker.speak(f"All set, {name}! Ask me anything.")
+        self._body.perform("greet")
+        return "enrolled", Observation(person_id=person_id, name=name, score=1.0)
 
     def _capture_voice(self, person_id: str, name: str, extra_audio=()) -> bool:
         """Record a few spoken sentences as the enrolled voice profile.

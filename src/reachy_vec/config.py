@@ -123,6 +123,8 @@ class Settings(BaseSettings):
     # transcript words that start a conversation (incl. common STT mishearings);
     # env form: REACHY_VEC_WAKE_WORDS='["reachy","richie"]'
     wake_listen_s: float = 5.0  # idle listen window; loops forever between windows
+    enroll_auto_offer: bool = False  # offer enrollment unasked to unknown voices; off =
+    # assistant first - people say "Reachy, remember me" when they want it
     enroll_voice_phrases: int = 2  # sentences recorded when enrolling a new voice
     post_speech_settle_s: float = 0.3  # mic opens this long after the robot stops
     # talking, so the echo tail of its own voice isn't heard as an utterance
