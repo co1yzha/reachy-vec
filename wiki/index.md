@@ -2,7 +2,7 @@
 
 > Content catalog. Every wiki page listed under its type with a one-line summary.
 > Read this first to find relevant pages for any query.
-> Last updated: 2026-10-19 | Total pages: 23
+> Last updated: 2026-10-22 | Total pages: 24
 
 ## Entities
 
@@ -16,6 +16,7 @@
 - [[qwen3-tts]] — Qwen3-TTS 0.6B (via mlx-audio, fully local) is the **voice-clone** TTS
 - [[reachy-mini]] — The Reachy Mini is the robot "body". It is **wireless**: the USB-C port is
 - [[silero-vad]] — silero-vad (16 kHz, 512-sample frames, local) in `audio/listen.py:_AudioCapture`
+- [[kokoro]] — Kokoro-82M (via mlx-audio, preset voices, no cloning, ~25x faster than real time) is the **preset** TTS backend. Voices prefixed `a…` = US, `b…` = UK — e.g. `af_heart`, `bf_alice`, `bf_emma`, `am_michael`, `bm_george`. Needs `misaki[en]`.
 
 ## Concepts
 
@@ -33,8 +34,8 @@
 
 ## Comparisons
 
-- [[stt-backends]] — Two STT backends, selected by `REACHY_VEC_STT_BACKEND`:
-- [[tts-backends]] — Two TTS backends, selected by `REACHY_VEC_TTS_BACKEND`:
+- [[stt-backends]] — Three STT backends, selected by `REACHY_VEC_STT_BACKEND`:
+- [[tts-backends]] — Three TTS backends, selected by `REACHY_VEC_TTS_BACKEND`:
 
 ## Queries
 

@@ -6,8 +6,8 @@ remembers who said what, and relays messages — all vectors (docs, memories,
 voices) in one embedded LanceDB store.
 
 **Architecture:** the robot (Raspberry Pi 5) is a thin body streaming
-audio/video over WiFi; the brain runs on a Mac (Apple silicon) — speaker ID (ECAPA), STT (faster-whisper), RAG via the OpenAI
-API, and voice-cloned TTS (Qwen3-TTS via mlx-audio) back out through the
+audio/video over WiFi; the brain runs on a Mac (Apple silicon) — speaker ID (ECAPA), STT (Parakeet on Apple GPU), RAG via the local oMLX server
+(`Qwen3.6-35B-A3B-4bit`), and voice via Kokoro preset voices (bf_alice) through the
 robot's speaker.
 
 Docs:
@@ -118,6 +118,18 @@ voice (fully local, Qwen3-TTS on MLX):
    auto-transcription is needed).
 3. `uv run reachy-vec run` — the first run downloads the model
    (~1.5 GB); expect 1–3 s of synthesis per sentence.
+
+### Kokoro preset voices (alternative)
+
+Kokoro-82M provides preset voices (no cloning needed) at ~25× real-time speed.
+Install with `uv pip install --python .venv/bin/python "misaki[en]"`, then set:
+
+```bash
+REACHY_VEC_TTS_BACKEND=kokoro
+REACHY_VEC_KOKORO_VOICE=bf_alice   # British female; try bf_emma, am_michael, etc.
+```
+
+Voice prefixes: `a…` = US, `b…` = UK. See `docs/configuration.md` for the full list.
 
 ## Usage
 

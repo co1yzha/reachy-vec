@@ -24,8 +24,20 @@
 - Re-lint: 22 pages, 0 broken links, 0 orphans, 0 pages below link minimum, index complete
 
 ## [2026-10-19] update | Layered configuration (profile .env)
-- Change: config.py now loads (profile .env, repo .env) — repo .env overrides, profile .env = deployment home for shared secrets/defaults
-- Files: src/reachy_vec/config.py, tests/test_config.py (test_env_file_layering), docs/configuration.md, .env.example
-- Verified: ruff clean, 292 tests pass, live smoke test (env_file shows both layers)
-- Wiki: new page [[configuration]] (concepts/)
-- Note: working tree was mid-refactor by a concurrent session (face recognition removed, wake words added) — pre-existing wiki pages on face ID may be stale until that lands
+|- Change: config.py now loads (profile .env, repo .env) — repo .env overrides, profile .env = deployment home for shared secrets/defaults
+|- Files: src/reachy_vec/config.py, tests/test_config.py (test_env_file_layering), docs/configuration.md, .env.example
+|- Verified: ruff clean, 292 tests pass, live smoke test (env_file shows both layers)
+|- Wiki: new page [[configuration]] (concepts/)
+|- Note: working tree was mid-refactor by a concurrent session (face recognition removed, wake words added) — pre-existing wiki pages on face ID may be stale until that lands
+
+## [2026-10-22] update | STT backend → Parakeet, TTS backend → Kokoro, expanded config
+|- STT: switched from `local` (faster-whisper) to `parakeet` (NVIDIA Parakeet TDT on Apple GPU); current active: `parakeet`
+|- TTS: switched from `qwen-tts` (voice clone) to `kokoro` (preset voices, no cloning); current active: `kokoro`, voice: `bf_alice`
+|- LLM: confirmed `Qwen3.6-35B-A3B-4bit` on oMLX at `http://127.0.0.1:8001/v1`
+|- Hermes transport: switched from `cli` to `gateway` (current active: `gateway`)
+|- Wake words: expanded from 13 to 20+ entries (added `riachi`, `riyachi`, `ryachi`, `haruchi`, `wake up`, `hey robot`)
+|- Barge-in: enabled (`true`)
+|- Mic source: `mac` (Mac USB mic, robot speaker)
+|- Min utterance RMS: lowered to 0.002 (quiet far-field mic)
+|- Face recognition: removed (confirmed in CLAUDE.md)
+|- Files updated: wiki/comparisons/stt-backends.md, wiki/comparisons/tts-backends.md, wiki/index.md, wiki/entities/kokoro.md (new), docs/pipelines.md, docs/configuration.md, README.md

@@ -8,6 +8,8 @@ Team Familiar: an embodied team assistant on a Reachy Mini robot. The robot wake
 
 **Remaining gaps (see `docs/architecture.md` → Known gaps):** `say` TTS has no on-robot output (renders Mac-side; `qwen-tts` and `kokoro` play on the robot); far-field mic gain is untuned; robot media does not hot-recover from a stream drop (soft-degrades until it returns — no live media→Mac fallback). Answers need the local oMLX server (`Qwen3.6-35B-A3B-4bit` at `http://127.0.0.1:8001/v1`), or OpenAI if `LLM_BASE_URL` is unset; there is no fallback between them.
 
+**Current local setup (this Mac's `.env`; code defaults differ):** STT `parakeet`, TTS `kokoro` with `KOKORO_VOICE=bf_alice`, `HERMES_TRANSPORT=gateway`. `skills/` holds Hermes skills (e.g. `skills/web/agent-reach`) for the Hermes `reachy` profile — not Claude Code skills, and not part of the Python package.
+
 ## Commands
 
 ```bash

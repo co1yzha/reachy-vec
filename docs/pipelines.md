@@ -13,9 +13,10 @@ Current as of Phase 4 (wake word, voice-only identity, local LLM, Hermes). Compa
 | Text embeddings (docs, memories, queries) | `BAAI/bge-small-en-v1.5`, 384-dim normalized; queries get the BGE instruction prefix (`REACHY_VEC_EMBEDDING_QUERY_PREFIX`) | local (sentence-transformers) | `store/embeddings.py` | `REACHY_VEC_EMBEDDING_MODEL` |
 | Speech-to-text (default) | faster-whisper `base.en`, int8 | local | `audio/listen.py:MicTranscriber` | `REACHY_VEC_STT_MODEL` |
 | Speech-to-text (alternative) | `gpt-4o-transcribe` (OpenAI API) | cloud | `audio/listen.py:OpenAITranscriber` | `REACHY_VEC_STT_BACKEND=openai` |
+| Speech-to-text (alternative) | Parakeet TDT `mlx-community/parakeet-tdt-0.6b-v2` | local (Apple GPU) | `audio/listen.py:ParakeetTranscriber` | `REACHY_VEC_STT_BACKEND=parakeet` |
 | Voice activity detection | silero-vad (16 kHz, 512-sample frames) | local | `audio/listen.py:_AudioCapture` | not configurable |
 | Speaker ID | speechbrain ECAPA-TDNN `spkrec-ecapa-voxceleb`, 192-dim | local | `perception/voice.py` | `REACHY_VEC_VOICE_THRESHOLD` |
-| Text-to-speech | macOS `say` or Qwen3-TTS 0.6B voice clone (mlx-audio) | local | `audio/speak.py` | `REACHY_VEC_TTS_BACKEND`, `REACHY_VEC_TTS_MODEL`, `REACHY_VEC_VOICE_SAMPLE`; clone clarity/loudness (see below): `REACHY_VEC_TTS_TARGET_RMS`, `REACHY_VEC_TTS_PRESENCE_DB`, `REACHY_VEC_TTS_PRESENCE_HZ` |
+| Text-to-speech | macOS `say`, Qwen3-TTS 0.6B voice clone (mlx-audio), or Kokoro-82M preset voices (mlx-audio) | local | `audio/speak.py` | `REACHY_VEC_TTS_BACKEND`, `REACHY_VEC_TTS_MODEL`, `REACHY_VEC_VOICE_SAMPLE`; clone clarity/loudness (see below): `REACHY_VEC_TTS_TARGET_RMS`, `REACHY_VEC_TTS_PRESENCE_DB`, `REACHY_VEC_TTS_PRESENCE_HZ`; Kokoro voice: `REACHY_VEC_KOKORO_VOICE`, speed: `REACHY_VEC_TTS_SPEED` |
 
 All local models lazy-load on first use; `reachy-vec run` warms them (plus
 the OpenAI TLS connection) at startup so the first conversation isn't slow. A one-token LLM warm-up call (`ChatBrain.warm_up`) checks the server is reachable.
