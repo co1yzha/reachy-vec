@@ -426,6 +426,13 @@ LIVE_PAGE = """<!doctype html>
                  font-size: 0.76rem; }
   .ev.info .b { color: var(--muted); }
   .quiet .ev.info { display: none; }
+  /* where one day's log ends and the next begins */
+  .ev.day {
+    display: flex; align-items: center; gap: 0.7rem; margin: 0.6rem 0;
+    border: none; color: var(--muted); font-size: 0.78rem; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .ev.day::before, .ev.day::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
   /* session boundaries: full-width banners, hard to miss */
   .ev.banner {
     display: flex; align-items: center; gap: 0.7rem; margin: 0.9rem 0;
@@ -504,6 +511,7 @@ LIVE_PAGE = """<!doctype html>
     }
     const div = document.createElement("div");
     div.className = `ev ${e.kind}`;
+    div.dataset.day = e.time.slice(0, 10);
     if (BANNER[e.kind]) {
       div.classList.add("banner");
       div.innerHTML = `<span class="b">${BANNER[e.kind](e.text)}</span>
@@ -512,6 +520,15 @@ LIVE_PAGE = """<!doctype html>
     }
     div.innerHTML = `<span class="t">${esc(e.time.slice(11))}</span>
       <span class="b"><span class="k">${LABEL[e.kind] || e.kind}</span>${esc(e.text)}${lat}</span>`;
+    return div;
+  }
+
+  function dayDivider(day) {     // "Tue 28 Oct", shown where the date changes
+    const div = document.createElement("div");
+    div.className = "ev day";
+    div.dataset.day = day;
+    div.textContent = new Date(`${day}T12:00`).toLocaleDateString(undefined,
+      { weekday: "short", day: "numeric", month: "short", year: "numeric" });
     return div;
   }
 
@@ -547,7 +564,11 @@ LIVE_PAGE = """<!doctype html>
       }
       offset = data.offset;
       if (data.events.length) document.getElementById("empty")?.remove();
-      for (const e of data.events) { box.appendChild(render(e)); track(e); }
+      for (const e of data.events) {
+        const day = e.time.slice(0, 10), prev = box.lastElementChild?.dataset.day;
+        if (prev && prev !== day) box.appendChild(dayDivider(day));
+        box.appendChild(render(e)); track(e);
+      }
       while (box.querySelectorAll(".ev").length > 3000) box.querySelector(".ev").remove();
       if (data.events.length && follow.getAttribute("aria-pressed") === "true") {
         window.scrollTo(0, document.body.scrollHeight);
@@ -572,11 +593,18 @@ LIVE_PAGE = """<!doctype html>
       const keep = anchor ? anchor.getBoundingClientRect().top : 0;
       const frag = document.createDocumentFragment();
       let lh = null;
+      let day = null;
       for (const e of data.events) {             // latencies within that older run
+        const d = e.time.slice(0, 10);
+        if (day && d !== day) frag.appendChild(dayDivider(d)).classList.add("hist");
+        day = d;
         if (e.kind === "heard") lh = toDate(e.time);
         const saved = lastHeard; lastHeard = lh;
         frag.appendChild(render(e)).classList.add("hist");
         lastHeard = saved;
+      }
+      if (day && anchor?.dataset.day && anchor.dataset.day !== day) {
+        frag.appendChild(dayDivider(anchor.dataset.day)).classList.add("hist");
       }
       document.getElementById("empty")?.remove();
       earlierBtn.after(frag);
