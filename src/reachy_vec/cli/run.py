@@ -1,4 +1,5 @@
 import logging
+import logging.handlers
 from pathlib import Path
 
 import typer
@@ -11,11 +12,14 @@ logger = logging.getLogger(__name__)
 def _setup_logging() -> None:
     """INFO-level reachy_vec logs (heard utterances, opened URLs, errors)
     to console and data/reachy.log. Transcripts of everyone who talks to
-    the robot end up in this file - delete it to forget."""
+    the robot end up in this file - delete it to forget. It rolls over at
+    midnight into reachy.log.YYYY-MM-DD; old days are kept, never deleted."""
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     handlers = [
         logging.StreamHandler(),
-        logging.FileHandler(settings.data_dir / "reachy.log"),
+        logging.handlers.TimedRotatingFileHandler(
+            settings.data_dir / "reachy.log", when="midnight", backupCount=0
+        ),
     ]
     formatter = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
     app_logger = logging.getLogger("reachy_vec")

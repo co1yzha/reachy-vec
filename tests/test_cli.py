@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from typer.testing import CliRunner
 
@@ -467,3 +469,29 @@ def test_keyword_barge_in_ignores_reachys_own_reply_echoed(monkeypatch):
         is_echo=lambda text: text == heard["text"] and "quiet" in said,
     )
     assert factory()._confirm(None) is False
+
+
+def test_run_log_rotates_daily_and_keeps_history(tmp_path, monkeypatch):
+    import logging
+    import logging.handlers
+
+    from reachy_vec.cli import run as run_cli
+
+    monkeypatch.setattr(run_cli.settings, "data_dir", tmp_path)
+    app_logger = logging.getLogger("reachy_vec")
+    before = list(app_logger.handlers)
+    try:
+        run_cli._setup_logging()
+        added = [h for h in app_logger.handlers if h not in before]
+        files = [h for h in added if isinstance(h, logging.FileHandler)]
+        assert len(files) == 1
+        handler = files[0]
+        assert isinstance(handler, logging.handlers.TimedRotatingFileHandler)
+        assert handler.when == "MIDNIGHT"
+        assert handler.backupCount == 0  # never delete old days
+        assert Path(handler.baseFilename) == tmp_path / "reachy.log"
+    finally:
+        for h in app_logger.handlers[:]:
+            if h not in before:
+                app_logger.removeHandler(h)
+                h.close()

@@ -70,6 +70,6 @@ Configuration is all `pydantic-settings` in `config.py`: env vars with the `REAC
 
 - Modules map to roles: `store/` persistence, `brain/` reasoning (router, chat, Hermes), `perception/` identity + camera, `audio/` I/O, `body/` robot motions, `cli/` one file per command.
 - Heavy imports (torch, sentence-transformers, faster-whisper, mlx-audio, parakeet-mlx) are deferred to inside methods/functions so `import reachy_vec` and the test suite stay fast.
-- Everything the robot hears and says is logged to `data/reachy.log` — privacy-relevant; never commit `data/`.
+- Everything the robot hears and says is logged to `data/reachy.log` (rolls over at midnight to `reachy.log.YYYY-MM-DD`; old days are kept) — privacy-relevant; never commit `data/`.
 - New behavior gets a test against the fakes first; see `docs/testing.md` for the manual smoke-test checklist before claiming hardware-facing work done.
 - Cross-session task notes / deferred work live in Claude Code's auto-memory, relocated into the repo at `.claude/memory/` via `autoMemoryDirectory` in `.claude/settings.json` (one fact per file; `MEMORY.md` there is the index loaded each session). Note: `.claude/` is gitignored and auto-memory is machine-local — it is **not** committed or shared with teammates. The committed, team-shareable version of that durable knowledge is `docs/project-notes.md`; design specs and implementation plans live in `docs/superpowers/`.
