@@ -269,7 +269,8 @@ def test_prepare_fillers_on_pregenerates_them(monkeypatch):
 def test_default_fillers():
     from reachy_vec.config import Settings
 
-    assert Settings.model_fields["ack_fillers"].default == ["Mm.", "Right.", "Okay.", "Let me see."]
+    assert Settings.model_fields["ack_fillers"].default is None  # = the personality's
+    assert Settings.model_fields["personality"].default == "scouse"
     assert Settings.model_fields["ack_enabled"].default is True
 
 
@@ -495,3 +496,13 @@ def test_run_log_rotates_daily_and_keeps_history(tmp_path, monkeypatch):
             if h not in before:
                 app_logger.removeHandler(h)
                 h.close()
+
+
+def test_prepare_fillers_default_to_the_personality(monkeypatch):
+    from reachy_vec.brain.persona import STYLES
+    from reachy_vec.cli.run import prepare_fillers
+
+    monkeypatch.setattr(settings, "ack_enabled", True)
+    monkeypatch.setattr(settings, "ack_fillers", None)
+    monkeypatch.setattr(settings, "personality", "scouse")
+    assert prepare_fillers(FakeSpeaker()) == list(STYLES["scouse"]["lines"]["filler"])

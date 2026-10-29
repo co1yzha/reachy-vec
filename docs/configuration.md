@@ -40,6 +40,7 @@ keys are ignored.
 | `PARAKEET_MODEL` | `mlx-community/parakeet-tdt-0.6b-v2` | model for `STT_BACKEND=parakeet`; downloaded on first use |
 | `STT_MODEL` | `base.en` | faster-whisper size for the local backend; `small.en` = more accurate, slower |
 | `TTS_BACKEND` | `say` | `say` (macOS built-in), `qwen-tts` (voice clone, local MLX), or `kokoro` (preset voices, local MLX, ~25x faster than real time). Kokoro preset voices: prefix `a…` = US, `b…` = UK — e.g. `af_heart`, `bf_alice`, `bf_emma`, `am_michael`, `bm_george`. Needs `uv pip install --python .venv/bin/python "misaki[en]"`. `TTS_SPEED` is a real tempo change (pitch kept). Reachy patches an mlx-audio 0.4.4 length bug that crashed ~1 in 6 sentences. **Current active backend: `kokoro`, voice: `bf_alice`.** |
+| `PERSONALITY` | `scouse` | `plain` (original wording), `british` (dry, understated wit) or `scouse` (dry wit plus a light Liverpool touch: "boss", "made up", "ta"; neutral on Reds vs Blues). Adds a style paragraph with example exchanges to the system prompt and rewords the fixed lines (greetings, wake lines, apology, fillers). Defined in `brain/persona.py` |
 | `KOKORO_VOICE` | `af_heart` | voice for `TTS_BACKEND=kokoro` (Kokoro-82M via mlx-audio: preset voices, no cloning, ~25x faster than real time). Prefix sets the accent: `a…` US, `b…` UK — e.g. `af_heart`, `bf_emma`, `am_michael`, `bm_george`. Needs `uv pip install --python .venv/bin/python "misaki[en]"`. `TTS_SPEED` is a real tempo change here (pitch kept). Reachy patches an mlx-audio 0.4.4 length bug that crashed ~1 in 6 sentences |
 | `TTS_MODEL` | `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16` | mlx-audio model id for `qwen-tts`; swap for a 1.7B variant if clone quality disappoints |
 | `VOICE_SAMPLE` | unset | ~10 s clean WAV of the voice to clone; required for `qwen-tts` |
@@ -77,7 +78,7 @@ keys are ignored.
 | `DASHBOARD` | `false` | `run` also serves the dashboard on localhost and opens its Live page (same as `run --dashboard`); skipped if the port is taken |
 | `DASHBOARD_PORT` | `8400` | port for that dashboard |
 | `ACK_ENABLED` | `true` | speak a short filler ("Mm.") the moment a question is heard, while the LLM reads the prompt; it hides the wait rather than removing it. Skipped for a question asked with the wake word right after a greeting |
-| `ACK_FILLERS` | `["Mm.", "Right.", "Okay.", "Let me see."]` | the fillers, picked at random; pre-generated at startup with `qwen-tts` so they play instantly (JSON list in env) |
+| `ACK_FILLERS` | unset (= the `PERSONALITY` style's fillers) | the fillers, picked at random; pre-generated at startup with `qwen-tts` so they play instantly (JSON list in env) |
 | `BARGE_IN_MIN_SPEECH_S` | `0.7` | sustained speech needed to trigger an interrupt; raise if a loud room false-triggers (no echo cancellation — the robot's own speaker near its mic is the usual culprit) |
 
 ## Tools

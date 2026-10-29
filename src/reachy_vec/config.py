@@ -136,8 +136,10 @@ class Settings(BaseSettings):
     dashboard: bool = False  # run also serves the dashboard and opens its Live page
     dashboard_port: int = 8400  # (localhost only; same as `reachy-vec dashboard`)
     ack_enabled: bool = True  # speak a short filler while the LLM reads the prompt
-    ack_fillers: list[str] = ["Mm.", "Right.", "Okay.", "Let me see."]
+    ack_fillers: list[str] | None = None  # None = the personality's own fillers
     # pre-generated at startup (qwen-tts), so they play instantly
+    personality: str = "scouse"  # plain | british (dry wit) | scouse (light Liverpool
+    # touch): adds a style + examples to the prompt and rewords greetings/fillers
 
     # Weather (Open-Meteo, no API key); default: Liverpool, UK
     weather_lat: float = 53.4084

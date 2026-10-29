@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from urllib.parse import urlencode
 
 from reachy_vec.brain.hermes import HermesJobs
+from reachy_vec.brain.persona import Persona
 from reachy_vec.brain.router import CHAT, Route
 from reachy_vec.perception.fusion import ANONYMOUS, TurnIdentity
 from reachy_vec.store.db import Store
@@ -38,9 +39,7 @@ PERSONALITY = (
     "warm, upbeat and precise: friendly energy, plain words, no filler - an "
     "exclamation is welcome when something is genuinely good news or fun. You care "
     "about rigour - say what the evidence shows, separate fact from opinion, and "
-    "flag real uncertainty. You're British: dry, understated wit and gentle "
-    "self-deprecation now and then, with British idiom (\"brilliant\", \"cheers\", "
-    "\"not bad at all\") used lightly - never at the expense of a straight answer. "
+    "flag real uncertainty. "
     "Your words are spoken aloud: answer in one or "
     "two short sentences, leading with a brief one (it is voiced first), with no "
     "lists, markdown or URLs. One emoji may show a feeling - you act it out.\n\n"
@@ -415,7 +414,9 @@ class ChatBrain:
         fix_body_fn: Callable[[], str] | None = None,
         router=None,
         speech_sentences: int = 4,
+        persona: Persona | None = None,
     ):
+        self._persona = persona or Persona("plain")
         self._store = store
         self._embedder = embedder
         self._client = client
@@ -665,7 +666,7 @@ class ChatBrain:
         return tools
 
     def _system_prompt(self) -> str:
-        prompt = PERSONALITY
+        prompt = PERSONALITY + self._persona.style_prompt
         if self._web_search_fetch:
             prompt += WEB_SEARCH_HINT
         if self._hermes is not None:
@@ -1029,7 +1030,8 @@ class ChatBrain:
             response = self._client.chat.completions.create(
                 model=self._model,
                 messages=[
-                    {"role": "system", "content": PERSONALITY},
+                    {"role": "system",
+                     "content": PERSONALITY + self._persona.style_prompt},
                     *self._history,
                     {
                         "role": "user",

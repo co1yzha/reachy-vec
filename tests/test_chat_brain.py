@@ -1446,3 +1446,18 @@ def test_camera_route_without_a_camera_says_so_instead_of_inventing(tmp_path):
         "q", identity=YANG, on_sentence=lambda s: None)
     tool = [m for m in client.chat.completions.last_kwargs["messages"] if m.get("role") == "tool"]
     assert tool[0]["content"] == "I can't take a photo right now."
+
+
+def test_persona_style_is_added_to_the_system_prompt(tmp_path):
+    from reachy_vec.brain.persona import Persona
+
+    client = FakeLLMClient(reply="Twelve degrees and drizzle.")
+    make_brain(tmp_path, client, persona=Persona("scouse")).respond("weather?")
+    system = client.chat.completions.calls[0]["messages"][0]["content"]
+    assert system.startswith("You are Reachy") and "Liverpool" in system
+
+
+def test_plain_persona_adds_no_style(tmp_path):
+    client = FakeLLMClient(reply="Hello.")
+    make_brain(tmp_path, client).respond("hi")
+    assert "Liverpool" not in client.chat.completions.calls[0]["messages"][0]["content"]

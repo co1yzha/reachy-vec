@@ -2,6 +2,7 @@ import typer
 
 from reachy_vec.brain.chat import ChatBrain
 from reachy_vec.brain.loop import chat_loop
+from reachy_vec.brain.persona import Persona
 from reachy_vec.config import settings
 from reachy_vec.store.db import Store
 from reachy_vec.store.embeddings import BgeEmbedder
@@ -42,6 +43,7 @@ def chat() -> None:
                       llm_kwargs={"extra_body": {"chat_template_kwargs":
                                                  {"enable_thinking": False}}}
                       if thinking_off else None),
+        persona=Persona(settings.personality),
     )
     try:
         chat_loop(brain=brain)

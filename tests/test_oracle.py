@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 
 from reachy_vec.audio.listen import Utterance
-from reachy_vec.brain.oracle import WAKE_LINES, OracleLoop, split_wake
+from reachy_vec.brain.oracle import OracleLoop, split_wake
+from reachy_vec.brain.persona import STYLES
 from reachy_vec.perception.fusion import TurnIdentity
 from reachy_vec.perception.voice import Observation
 from reachy_vec.store.db import Store
@@ -16,6 +17,7 @@ from tests.conftest import (
     FakeTranscriber,
 )
 
+WAKE_LINES = STYLES["plain"]["lines"]["wake"]
 ALICE_VOICE = Observation(person_id="p1", name="Alice", score=0.9)
 BOB_VOICE = Observation(person_id="p2", name="Bob", score=0.5)
 BORDERLINE_ALICE = Observation(person_id="p1", name="Alice", score=0.32)  # just over 0.30
@@ -803,3 +805,16 @@ def test_delivered_message_full_text_goes_to_the_brain_context(tmp_path):
     loop.run_once()
     assert brain.context and "Long Hermes report" in brain.context[0][0]
     assert "Short version." in brain.context[0][1]
+
+
+def test_scouse_persona_greets_in_style(tmp_path):
+    from reachy_vec.brain.persona import Persona
+
+    loop, speaker, *_ = make_loop(
+        tmp_path,
+        utterances=[said("Hey Reachy"), said("when is standup?")],
+        voices=[ALICE_VOICE, ALICE_VOICE],
+        persona=Persona("scouse", choose=lambda options: options[0]),
+    )
+    loop.run_once()
+    assert "Alright Alice! What can I do for you?" in speaker.spoken

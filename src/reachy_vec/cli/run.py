@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 
+from reachy_vec.brain.persona import Persona
 from reachy_vec.config import settings
 
 logger = logging.getLogger(__name__)
@@ -183,10 +184,13 @@ def make_self_voice_checker(store, identifier=None, read_sample=None):
 def prepare_fillers(speaker) -> list[str]:
     """Acknowledgement fillers for OracleLoop, pre-generated on the speaker
     (instant playback with the cloned voice); [] when disabled."""
-    if not settings.ack_enabled or not settings.ack_fillers:
+    fillers = settings.ack_fillers
+    if fillers is None:
+        fillers = Persona(settings.personality).fillers()
+    if not settings.ack_enabled or not fillers:
         return []
-    speaker.precache(settings.ack_fillers)
-    return list(settings.ack_fillers)
+    speaker.precache(fillers)
+    return list(fillers)
 
 
 def make_camera_tools(media, *, client, body, speak, llm_kwargs=None, camera_cls=None,
@@ -427,6 +431,7 @@ def run(
                       llm_kwargs={"extra_body": {"chat_template_kwargs":
                                                  {"enable_thinking": False}}}
                       if thinking_off else None),  # what each turn is for
+        persona=Persona(settings.personality),
         **camera_tools,
     )
     if not brain.warm_up():
@@ -460,6 +465,7 @@ def run(
         ack_fillers=fillers,
         name_extractor=brain.extract_name,  # LLM reads the name from the answer
         auto_offer=settings.enroll_auto_offer,
+        persona=Persona(settings.personality),
     )
     if settings.dashboard if dashboard is None else dashboard:
         from reachy_vec.cli.dashboard import start_dashboard

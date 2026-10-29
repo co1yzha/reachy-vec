@@ -17,26 +17,19 @@ from datetime import UTC, datetime
 from reachy_vec.audio.pipeline import SpeechPipeline
 from reachy_vec.body.emotion import split_emojis
 from reachy_vec.brain.chat import SpeechInterrupted
+from reachy_vec.brain.persona import Persona
 from reachy_vec.perception.fusion import from_voice
 from reachy_vec.perception.voice import BORDERLINE_MARGIN, Observation
 from reachy_vec.store.schemas import VoiceRow
 
 logger = logging.getLogger(__name__)
 
-APOLOGY = "Sorry, my brain isn't responding right now."
 OFFER = "Hi! I don't think we've met. Would you like me to remember your voice? Say yes or no."
 DEFAULT_WAKE_WORDS = (
     "reachy", "reachie", "reechy", "reachi", "reache", "reachee", "reechie", "reechi",
     "rechy", "rachie", "richie", "ritchie", "ritchy", "riachi", "riyachi", "ryachi", "haruchi",
 )
 
-# Short lines spoken on waking from idle sleep, so a wake is unmissable.
-WAKE_LINES = (
-    "Mm — I'm up!",
-    "Oh! Hello again.",
-    "Yawn... I'm awake now.",
-    "Back with you!",
-)
 
 
 def _is_yes(utterance) -> bool:
@@ -143,7 +136,10 @@ class OracleLoop:
         spawn=None,
         enroll_cooldown_s: float = 600.0,
         name_extractor=None,
+        persona: Persona | None = None,
     ):
+        # greetings, wake lines and the apology, in the configured style
+        self._persona = persona or Persona("plain")
         self._transcriber = transcriber
         self._speaker = speaker
         self._body = body
@@ -227,7 +223,7 @@ class OracleLoop:
         if owner is not None:
             just_spoke = self._greet(owner) or just_spoke
         elif not first_question:
-            self._speaker.speak("Yes? What can I help you with?")
+            self._speaker.speak(self._persona.line("ready"))
             self._body.perform("acknowledge")
         pending = first_question  # question asked in the same breath as the wake word
         offered = False
@@ -278,7 +274,7 @@ class OracleLoop:
         """Greet (outside the cooldown) and deliver messages; True if spoken."""
         spoke = False
         if self._cooldown_expired(person.person_id):
-            self._speaker.speak(f"Hi {person.name}! What can I help you with?")
+            self._speaker.speak(self._persona.line("greet", name=person.name))
             self._body.perform("greet")
             self._record_greeting(person.person_id)
             spoke = True
@@ -315,7 +311,7 @@ class OracleLoop:
             self._brain.respond(text, identity=from_voice(voice_obs), on_sentence=on_sentence)
         except Exception:
             logger.exception("brain.respond failed")
-            speech.say(APOLOGY)
+            speech.say(self._persona.line("apology"))
         finally:
             speech.wait()
             if monitor is not None:
@@ -522,7 +518,7 @@ class OracleLoop:
             logger.info("wake word while asleep - waking up")
             self._body.perform("wake")
             self._body.perform("wakeup")
-            self._speaker.speak(random.choice(WAKE_LINES))
+            self._speaker.speak(self._persona.line("wake"))
             self._asleep = False
             return True
         return False
