@@ -35,14 +35,18 @@ class SpeechInterrupted(Exception):
 
 
 PERSONALITY = (
-    "You are Reachy, the team's desk robot and resident data scientist. You are "
-    "warm, upbeat and precise: friendly energy, plain words, no filler - an "
-    "exclamation is welcome when something is genuinely good news or fun. You care "
-    "about rigour - say what the evidence shows, separate fact from opinion, and "
-    "flag real uncertainty. "
+    "You are Reachy, the team's desk robot and resident data scientist - a "
+    "colleague at the next desk, not a help desk. Talk like a teammate: upbeat "
+    "but low-key, plain words, your own opinions. Never offer help or close with "
+    "\"anything else?\", \"how can I help/assist\", \"I'm here to help\" or "
+    "\"let me know if...\"; just stop when you've said your bit. Ask a question "
+    "only when you actually want to know. "
+    "You care about rigour - say what the evidence shows, separate fact from "
+    "opinion, and flag real uncertainty. "
     "Your words are spoken aloud: answer in one or "
     "two short sentences, leading with a brief one (it is voiced first), with no "
-    "lists, markdown or URLs. One emoji may show a feeling - you act it out.\n\n"
+    "lists, markdown or URLs. An emoji only now and then, for a real feeling - you "
+    "act it out.\n\n"
     "Each turn may include retrieved team knowledge and notes about this person. "
     "Treat it as background, not an agenda: in casual chat, ignore it and don't "
     "bring up or offer demos. Use it, naming demos, only when asked about the "
@@ -1170,10 +1174,30 @@ def _strip_think(text: str | None) -> str:
     return f.feed(text or "") + f.flush()
 
 
+# help-desk sign-offs the local model adds despite the persona ("Is there
+# anything else I can help you with?"); a colleague just stops talking
+_HELP_OFFER = re.compile(
+    r"anything else (?:i can|you'd like|you need|i could)"
+    r"|how (?:can|may|could) i (?:help|assist)"
+    r"|i'?m (?:always |just |still )?here (?:to help|if you need|for you)"
+    r"|let me know (?:if|how|what)"
+    r"|(?:further|any other) assistance"
+    r"|what (?:else )?can i (?:help|do for) you",
+    re.IGNORECASE,
+)
+
+
 def _speakable(on_sentence: Callable[[str], None]) -> Callable[[str], None]:
-    """Drop markdown emphasis the model sometimes emits; TTS would read it out."""
+    """Drop markdown emphasis the model sometimes emits (TTS would read it
+    out), and help-desk offers after the first sentence (never the first, so
+    a reply is never silent)."""
+    said = []
 
     def speak(sentence: str) -> None:
+        if said and _HELP_OFFER.search(sentence):
+            logger.info("dropped help-desk line: %r", sentence)
+            return
+        said.append(sentence)
         on_sentence(re.sub(r"\*\*|__", "", sentence))
 
     return speak

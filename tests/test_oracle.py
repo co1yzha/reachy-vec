@@ -817,4 +817,4 @@ def test_scouse_persona_greets_in_style(tmp_path):
         persona=Persona("scouse", choose=lambda options: options[0]),
     )
     loop.run_once()
-    assert "Alright Alice! What can I do for you?" in speaker.spoken
+    assert "Alright Alice! What's going on?" in speaker.spoken

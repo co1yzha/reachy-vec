@@ -773,10 +773,10 @@ def test_think_filter_passes_plain_text_and_lone_angle():
 
 
 def test_streamed_reasoning_is_never_spoken(tmp_path):
-    client = FakeLLMClient(reply="<think>I should greet.</think>Hello Yang. How can I help?")
+    client = FakeLLMClient(reply="<think>I should greet.</think>Hello Yang. Good weekend?")
     sentences = []
     reply = make_brain(tmp_path, client).respond("hi", identity=YANG, on_sentence=sentences.append)
-    assert sentences == ["Hello Yang.", "How can I help?"]
+    assert sentences == ["Hello Yang.", "Good weekend?"]
     assert "think" not in reply
 
 
@@ -1484,3 +1484,33 @@ def test_volume_tool_offered_only_with_a_volume_control(tmp_path):
     make_brain(tmp_path / "a", c1).respond("hi")
     make_brain(tmp_path / "b", c2, volume_fn=lambda c: "x").respond("hi")
     assert "set_volume" not in names(c1) and "set_volume" in names(c2)
+
+
+@pytest.mark.parametrize("offer", [
+    "I'm here to help!", "I'm always here to help.", "How can I assist you further?",
+    "Is there anything else I can help you with?", "Let me know if you need anything.",
+    "Let me know if you need further assistance!", "How can I help you today?",
+])
+def test_help_desk_offers_after_the_first_sentence_are_dropped(offer):
+    from reachy_vec.brain.chat import _speakable
+
+    spoken = []
+    speak = _speakable(spoken.append)
+    speak("Twelve degrees and drizzle.")
+    speak(offer)
+    assert spoken == ["Twelve degrees and drizzle."]
+
+
+def test_a_reply_that_is_only_an_offer_is_still_spoken():
+    from reachy_vec.brain.chat import _speakable
+
+    spoken = []
+    _speakable(spoken.append)("How can I help?")
+    assert spoken == ["How can I help?"]   # never leave the person in silence
+
+
+def test_persona_is_a_colleague_not_a_help_desk():
+    from reachy_vec.brain.chat import PERSONALITY
+
+    assert "colleague" in PERSONALITY
+    assert "anything else" in PERSONALITY   # named as a phrase to avoid

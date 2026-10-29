@@ -32,7 +32,7 @@ def test_scouse_prompt_is_light_and_neutral_on_football():
     assert "Liverpool" in prompt
     assert "Everton" in prompt          # stays neutral, says so
     assert "straight answer" in prompt  # humour never replaces the answer
-    assert len(prompt) < 1500           # re-read every turn
+    assert len(prompt) < 2000           # re-read every turn
 
 
 def test_unknown_style_falls_back_to_plain():
