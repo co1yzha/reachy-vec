@@ -1461,3 +1461,26 @@ def test_plain_persona_adds_no_style(tmp_path):
     client = FakeLLMClient(reply="Hello.")
     make_brain(tmp_path, client).respond("hi")
     assert "Liverpool" not in client.chat.completions.calls[0]["messages"][0]["content"]
+
+
+def test_volume_route_changes_the_volume_and_reports(tmp_path):
+    from reachy_vec.brain.router import Route
+
+    changes = []
+    client = FakeLLMClient(reply="That better?")
+    _routed_brain(tmp_path, client, Route("volume", "up"),
+                  volume_fn=lambda c: changes.append(c) or "Volume changed from 68 to 83"
+                  ).respond("q", identity=YANG, on_sentence=lambda s: None)
+    assert changes == ["up"]
+    tool = [m for m in client.chat.completions.last_kwargs["messages"] if m.get("role") == "tool"]
+    assert tool[0]["content"] == "Volume changed from 68 to 83"
+
+
+def test_volume_tool_offered_only_with_a_volume_control(tmp_path):
+    def names(c):
+        return [t["function"]["name"] for t in c.chat.completions.calls[0]["tools"]]
+
+    c1, c2 = FakeLLMClient(reply="hi"), FakeLLMClient(reply="hi")
+    make_brain(tmp_path / "a", c1).respond("hi")
+    make_brain(tmp_path / "b", c2, volume_fn=lambda c: "x").respond("hi")
+    assert "set_volume" not in names(c1) and "set_volume" in names(c2)

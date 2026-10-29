@@ -506,3 +506,16 @@ def test_prepare_fillers_default_to_the_personality(monkeypatch):
     monkeypatch.setattr(settings, "ack_fillers", None)
     monkeypatch.setattr(settings, "personality", "scouse")
     assert prepare_fillers(FakeSpeaker()) == list(STYLES["scouse"]["lines"]["filler"])
+
+
+def test_volume_control_follows_where_replies_play(monkeypatch):
+    from reachy_vec.audio.volume import MacVolume, RobotVolume
+    from reachy_vec.cli.run import make_volume_control
+
+    cfg = settings.model_copy(update={"robot_host": "10.0.0.5", "robot_port": 8000,
+                                      "tts_backend": "kokoro"})
+    robot = make_volume_control("robot", cfg)._volume
+    assert isinstance(robot, RobotVolume) and robot._base == "http://10.0.0.5:8000/api"
+    say = cfg.model_copy(update={"tts_backend": "say"})
+    assert isinstance(make_volume_control("robot", say)._volume, MacVolume)
+    assert isinstance(make_volume_control("mac", cfg)._volume, MacVolume)

@@ -403,3 +403,60 @@ def test_show_earlier_ignores_files_that_are_not_rotated_logs(tmp_path):
     (tmp_path / "reachy.log.bak").write_text(LOG)
     page = read_earlier_logs(path, "../secrets", before=0)   # unknown name = today
     assert page["file"] == "" and page["events"] == [] and page["more"] is False
+
+
+class _FakeVolume:
+    def __init__(self, level=68, fail=False):
+        self.level, self.fail = level, fail
+
+    def get(self):
+        if self.fail:
+            raise OSError("robot unreachable")
+        return self.level
+
+    def set(self, level):
+        self.level = level
+
+
+def _serve(tmp_path, volume):
+    server = make_server(seeded_store(tmp_path), "127.0.0.1", 0, volume=volume)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def _post_volume(base, level, origin=None):
+    req = urllib.request.Request(f"{base}/api/volume", method="POST",
+                                 data=json.dumps({"volume": level}).encode(),
+                                 headers={"Content-Type": "application/json",
+                                          "Origin": origin or base})
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as err:
+        return err.code, None
+
+
+def test_volume_slider_reads_and_sets_the_robot_volume(tmp_path):
+    volume = _FakeVolume(68)
+    server, base = _serve(tmp_path, volume)
+    try:
+        got = json.loads(urllib.request.urlopen(f"{base}/api/volume").read())
+        assert got == {"volume": 68}
+        assert _post_volume(base, 40) == (200, {"volume": 40})
+        assert volume.level == 40
+        assert _post_volume(base, 0) == (200, {"volume": 15})   # never fully silent
+        assert _post_volume(base, 40, origin="https://evil.example")[0] == 403
+        assert 'id="volume"' in urllib.request.urlopen(f"{base}/live").read().decode()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_volume_reports_an_unreachable_robot(tmp_path):
+    server, base = _serve(tmp_path, _FakeVolume(fail=True))
+    try:
+        got = json.loads(urllib.request.urlopen(f"{base}/api/volume").read())
+        assert got["volume"] is None and "unreachable" in got["error"]
+    finally:
+        server.shutdown()
+        server.server_close()

@@ -15,8 +15,8 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 ROUTES = ("chat", "hermes", "latest_demos", "fix_body", "remember_me", "open",
-          "selfie", "look", "look_around")
-TASK_ROUTES = ("hermes", "open", "look")  # routes that carry text after the colon
+          "selfie", "look", "look_around", "volume")
+TASK_ROUTES = ("hermes", "open", "look", "volume")  # routes that carry text after the colon
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,7 @@ ROUTER_PROMPT = """You route what someone said to Reachy, a desk robot assistant
 Reply with ONLY the route name. For hermes, add a colon and the task: "hermes: <task>".
 For open, add a colon and the web address: "open: <url>".
 For look, add a colon and what to look for: "look: <question>".
+For volume, add a colon and up, down, max, quiet or a level 0-100: "volume: up".
 
 Routes:
 - hermes: a multi-step task for Hermes, the AI agent colleague (research, browsing,
@@ -48,6 +49,9 @@ Routes:
 - selfie: take a photo / picture / selfie of them.
 - look: look through the camera at something in front of the robot and answer.
 - look_around: look around the room and say what is there.
+- volume: they want the robot's own voice louder or quieter (speak up, can't hear
+  you, too loud, turn it down, volume to 50). Asking to play music is open, even
+  loud music.
 - chat: everything else - conversation, questions about the team's demos or work,
   general knowledge, weather, time, notes, messages to teammates, opening a team
   demo.
@@ -64,6 +68,10 @@ Examples:
 "can you take a picture of us" -> selfie
 "what am I holding?" -> look: what am I holding
 "look around and tell me what you see" -> look_around
+"speak up, I can't hear you" -> volume: up
+"you're a bit loud" -> volume: down
+"set your volume to 40" -> volume: 40
+"play some loud rock music" -> open: https://www.youtube.com/results?search_query=loud+rock+music
 "I was reaching for my coffee" -> chat
 "remember my voice" -> remember_me
 "tell Bob the meeting moved" -> chat

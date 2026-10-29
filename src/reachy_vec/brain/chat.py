@@ -240,6 +240,23 @@ FIX_BODY_TOOL = {
     },
 }
 
+SET_VOLUME_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "set_volume",
+        "description": (
+            "Change your own speaker volume when asked to speak up, be quieter, or "
+            "set a level."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"change": {"type": "string", "description": (
+                "up, down, max, quiet, or a level 0-100")}},
+            "required": ["change"],
+        },
+    },
+}
+
 FIX_BODY_HINT = (
     " fix_body checks and repairs your motors and lifts your head - report what it "
     "says; never guess why you can't move."
@@ -415,7 +432,9 @@ class ChatBrain:
         router=None,
         speech_sentences: int = 4,
         persona: Persona | None = None,
+        volume_fn: Callable[[str], str] | None = None,
     ):
+        self._volume_fn = volume_fn  # "up"/"down"/"max"/"quiet"/"40" -> report; None = off
         self._persona = persona or Persona("plain")
         self._store = store
         self._embedder = embedder
@@ -607,6 +626,10 @@ class ChatBrain:
         if route.name == "fix_body" and self._fix_body_fn is not None:
             return _StreamedMessage("", {0: {"id": "call_fix_body", "name": "fix_body",
                                              "arguments": "{}"}})
+        if route.name == "volume" and self._volume_fn is not None:
+            change = json.dumps({"change": route.task or "up"})
+            return _StreamedMessage("", {0: {"id": "call_set_volume", "name": "set_volume",
+                                             "arguments": change}})
         if route.name == "remember_me":
             return None
         if route.name == "latest_demos":
@@ -657,6 +680,8 @@ class ChatBrain:
             tools.append(ASK_HERMES_TOOL)
         if self._fix_body_fn is not None:
             tools.append(FIX_BODY_TOOL)
+        if self._volume_fn is not None:
+            tools.append(SET_VOLUME_TOOL)
         if self._look_fn:
             tools.append(LOOK_TOOL)
         if self._selfie_fn:
@@ -831,6 +856,7 @@ class ChatBrain:
             "web_search": self._tool_web_search,
             "ask_hermes": self._tool_ask_hermes,
             "fix_body": self._tool_fix_body,
+            "set_volume": self._tool_set_volume,
             "look": self._tool_look,
             "selfie": self._tool_selfie,
             "look_around": self._tool_look_around,
@@ -905,6 +931,15 @@ class ChatBrain:
         except Exception:
             logger.exception("fix_body failed")
             return "I tried to fix my body but something went wrong."
+
+    def _tool_set_volume(self, args: dict) -> str:
+        if self._volume_fn is None:
+            return "I can't change my volume here."
+        try:
+            return self._volume_fn(str(args.get("change", "")))
+        except Exception:
+            logger.exception("set_volume failed")
+            return "I tried to change my volume but something went wrong."
 
     def _tool_list_demos(self, args: dict) -> str:
         try:

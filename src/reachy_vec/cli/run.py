@@ -181,6 +181,18 @@ def make_self_voice_checker(store, identifier=None, read_sample=None):
     return is_self_voice
 
 
+def make_volume_control(chosen: str, cfg=settings):
+    """Volume for "speak up"/"too loud": the robot's speaker when replies play
+    there (robot media, any TTS but `say`, which renders on the Mac), else
+    the Mac's output volume."""
+    from reachy_vec.audio.volume import MacVolume, RobotVolume, VolumeControl
+
+    if chosen == "robot" and cfg.tts_backend != "say":
+        host = cfg.robot_host or "localhost"
+        return VolumeControl(RobotVolume(f"http://{host}:{cfg.robot_port}/api"))
+    return VolumeControl(MacVolume())
+
+
 def prepare_fillers(speaker) -> list[str]:
     """Acknowledgement fillers for OracleLoop, pre-generated on the speaker
     (instant playback with the cloned voice); [] when disabled."""
@@ -432,6 +444,7 @@ def run(
                                                  {"enable_thinking": False}}}
                       if thinking_off else None),  # what each turn is for
         persona=Persona(settings.personality),
+        volume_fn=make_volume_control(chosen).change,  # "speak up" / "too loud"
         **camera_tools,
     )
     if not brain.warm_up():

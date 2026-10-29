@@ -16,6 +16,7 @@ from tests.conftest import FakeLLMClient
     ("look: what am I holding", Route("look", "what am I holding")),
     ("open: https://www.youtube.com/results?search_query=jazz",
      Route("open", "https://www.youtube.com/results?search_query=jazz")),
+    ("volume: up", Route("volume", "up")), ("volume: 40", Route("volume", "40")),
     ("chat", CHAT), ("fix_body", Route("fix_body", "")), ("latest_demos.", Route("latest_demos")),
     ("I think it's chat", CHAT),                       # rambling
     ('{"route": ', CHAT),                              # truncated

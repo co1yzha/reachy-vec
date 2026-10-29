@@ -368,6 +368,9 @@ LIVE_PAGE = """<!doctype html>
     padding: 0.05em 0.7em; background: var(--card);
   }
   .since { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .volume { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; }
+  .volume input { width: 6.5rem; accent-color: var(--accent); }
+  .volume span { min-width: 2ch; color: var(--muted); font-variant-numeric: tabular-nums; }
   .controls { margin-left: auto; display: flex; gap: 0.4rem; }
   .controls button {
     font: inherit; font-size: 0.78rem; color: var(--accent); background: var(--accent-soft);
@@ -468,6 +471,9 @@ LIVE_PAGE = """<!doctype html>
     <span class="dot"></span><span class="state" id="state">connecting&hellip;</span>
     <span class="since" id="since"></span>
     <span class="mic" id="mic" title="microphone in use">mic: unknown</span>
+    <label class="volume" title="robot speaker volume">&#x1F50A;
+      <input type="range" id="volume" min="15" max="100" step="5" disabled>
+      <span id="volume-val">&ndash;</span></label>
     <span class="controls">
       <button id="hide-earlier" type="button" hidden>Hide earlier</button>
       <button id="quiet" type="button" aria-pressed="true">Conversation only</button>
@@ -627,6 +633,27 @@ LIVE_PAGE = """<!doctype html>
   const follow = document.getElementById("follow");
   toggle(follow, () => {});
   toggle(document.getElementById("quiet"), (on) => box.classList.toggle("quiet", on));
+  const vol = document.getElementById("volume"), volVal = document.getElementById("volume-val");
+  function showVolume(data) {
+    const ok = data && data.volume != null;
+    vol.disabled = !ok;
+    if (ok) vol.value = data.volume;
+    volVal.textContent = ok ? data.volume : "\u2013";
+    vol.title = ok ? "" : `robot not reachable${data?.error ? ": " + data.error : ""}`;
+  }
+  async function readVolume() {
+    if (document.activeElement === vol) return;   // don't fight the user's drag
+    try { showVolume(await (await fetch("/api/volume")).json()); } catch (e) { showVolume(null); }
+  }
+  vol.addEventListener("input", () => { volVal.textContent = vol.value; });
+  vol.addEventListener("change", async () => {   // on release: one request, not dozens
+    try {
+      showVolume(await (await fetch("/api/volume", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ volume: Number(vol.value) }) })).json());
+    } catch (e) { showVolume(null); }
+  });
+  readVolume(); setInterval(readVolume, 10000);   // "speak up" by voice moves it too
   async function ports() {
     try {
       const data = await (await fetch("/api/ports")).json();
@@ -917,11 +944,23 @@ def render_page() -> str:
     return PAGE.replace("__META__", json.dumps(TABLE_META))
 
 
-def make_server(store, host: str, port: int, log_path: Path | None = None
-                ) -> ThreadingHTTPServer:
+def robot_volume():
+    """The robot speaker's volume (daemon REST API), for the Live page slider."""
+    from reachy_vec.audio.volume import RobotVolume
+
+    host = settings.robot_host or "localhost"
+    return RobotVolume(f"http://{host}:{settings.robot_port}/api")
+
+
+def make_server(store, host: str, port: int, log_path: Path | None = None,
+                volume=None) -> ThreadingHTTPServer:
     """HTTP server serving the dashboard page, a live JSON dump of `store`,
-    and the /live view of `log_path` (default data/reachy.log)."""
+    the /live view of `log_path` (default data/reachy.log) and the robot
+    volume slider (`volume`: get()/set(level), default the robot's)."""
+    from reachy_vec.audio.volume import CEILING, FLOOR
+
     log_path = log_path or settings.data_dir / "reachy.log"
+    volume = volume or robot_volume()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802 (http.server API)
@@ -939,6 +978,12 @@ def make_server(store, host: str, port: int, log_path: Path | None = None
                 port = self.server.server_address[1]
                 body = json.dumps({"services": reachy_services(port),
                                    "listening": listening_ports()}).encode()
+                content_type = "application/json"
+            elif url.path == "/api/volume":
+                try:
+                    body = json.dumps({"volume": volume.get()}).encode()
+                except Exception as exc:
+                    body = json.dumps({"volume": None, "error": str(exc)}).encode()
                 content_type = "application/json"
             elif url.path == "/api/log/earlier":
                 query = parse_qs(url.query)
@@ -966,7 +1011,8 @@ def make_server(store, host: str, port: int, log_path: Path | None = None
             self.wfile.write(body)
 
         def do_POST(self):  # noqa: N802 (http.server API)
-            if urlparse(self.path).path != "/api/ports/kill":
+            path = urlparse(self.path).path
+            if path not in ("/api/ports/kill", "/api/volume"):
                 self.send_error(404)
                 return
             # only this page may ask: blocks other sites posting to localhost
@@ -977,11 +1023,18 @@ def make_server(store, host: str, port: int, log_path: Path | None = None
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 data = json.loads(self.rfile.read(length))
-                result = kill_port(int(data["port"]), int(data["pid"]))
+                if path == "/api/volume":
+                    level = max(FLOOR, min(CEILING, int(data["volume"])))  # never silent
+                    volume.set(level)
+                    reply = {"volume": level}
+                else:
+                    reply = {"result": kill_port(int(data["port"]), int(data["pid"]))}
             except (ValueError, KeyError, TypeError):
                 self.send_error(400)
                 return
-            body = json.dumps({"result": result}).encode()
+            except OSError as exc:  # robot unreachable
+                reply = {"volume": None, "error": str(exc)}
+            body = json.dumps(reply).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
