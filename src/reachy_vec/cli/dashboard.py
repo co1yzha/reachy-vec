@@ -494,6 +494,7 @@ LIVE_PAGE = """<!doctype html>
   const toDate = (t) => new Date(t.replace(" ", "T"));
   let offset = -1, lastHeard = null, lastEvent = null, state = "idle", shownFrom = null;
   let runStart = null;  // where the current run begins; history sits above it
+  let shownFile = "", older = false;  // "" = today's log; older = earlier days exist
   const box = document.getElementById("events");
 
   function render(e) {
@@ -540,7 +541,8 @@ LIVE_PAGE = """<!doctype html>
       if (data.reset) {
         box.querySelectorAll(".ev").forEach((n) => n.remove());
         shownFrom = runStart = data.start ?? 0;
-        earlierBtn.hidden = shownFrom === 0;
+        shownFile = ""; older = !!data.older;
+        earlierBtn.hidden = shownFrom === 0 && !older;
         hideBtn.hidden = true;
       }
       offset = data.offset;
@@ -564,7 +566,8 @@ LIVE_PAGE = """<!doctype html>
   earlierBtn.addEventListener("click", async () => {
     earlierBtn.disabled = true;
     try {
-      const data = await (await fetch(`/api/log/earlier?before=${shownFrom}`)).json();
+      const q = `file=${encodeURIComponent(shownFile)}&before=${shownFrom}`;
+      const data = await (await fetch(`/api/log/earlier?${q}`)).json();
       const anchor = earlierBtn.nextElementSibling;   // keep the reading position
       const keep = anchor ? anchor.getBoundingClientRect().top : 0;
       const frag = document.createDocumentFragment();
@@ -578,7 +581,7 @@ LIVE_PAGE = """<!doctype html>
       document.getElementById("empty")?.remove();
       earlierBtn.after(frag);
       if (anchor) window.scrollBy(0, anchor.getBoundingClientRect().top - keep);
-      shownFrom = data.start;
+      shownFrom = data.start; shownFile = data.file;
       earlierBtn.hidden = !data.more;
       hideBtn.hidden = false;
       follow.setAttribute("aria-pressed", "false");  // reading history: stop jumping down
@@ -587,8 +590,8 @@ LIVE_PAGE = """<!doctype html>
   const hideBtn = document.getElementById("hide-earlier");
   hideBtn.addEventListener("click", () => {
     box.querySelectorAll(".ev.hist").forEach((n) => n.remove());
-    shownFrom = runStart;
-    earlierBtn.hidden = runStart === 0;
+    shownFrom = runStart; shownFile = "";
+    earlierBtn.hidden = runStart === 0 && !older;
     hideBtn.hidden = true;
     follow.setAttribute("aria-pressed", "true");
     window.scrollTo(0, document.body.scrollHeight);
@@ -703,6 +706,9 @@ def _current_run_start(path: Path, size: int) -> int:
     return start + data.rfind(b"\n", 0, at) + 1
 
 
+ROTATED_SUFFIX = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
 def read_log(path: Path, offset: int) -> dict:
     """Events written since byte `offset` (-1 = from the start of the current
     run). Stops at the last complete line; restarts from 0 if the log shrank."""
@@ -723,6 +729,7 @@ def read_log(path: Path, offset: int) -> dict:
     result = {"offset": offset + end, "events": events, "reset": reset}
     if reset:
         result["start"] = offset  # where the shown log begins, for "Show earlier"
+        result["older"] = bool(rotated_logs(path))  # earlier days to page back into
     return result
 
 
@@ -743,6 +750,34 @@ def read_earlier(path: Path, before: int, chunk_bytes: int = 256_000) -> dict:
             start = window + data.find(b"\n", start - window) + 1
     text = data[start - window:].decode("utf-8", errors="replace")
     return {"start": start, "events": parse_log(text), "more": start > 0}
+
+
+def rotated_logs(path: Path) -> list[Path]:
+    """Earlier days' logs (reachy.log.YYYY-MM-DD, from the midnight rollover),
+    oldest first."""
+    return sorted(p for p in path.parent.glob(path.name + ".*")
+                  if ROTATED_SUFFIX.fullmatch(p.name[len(path.name) + 1:]))
+
+
+def read_earlier_logs(path: Path, file: str, before: int) -> dict:
+    """read_earlier across the daily files: `file` is "" for today's log or a
+    rotated name; once a file is used up, page on into the day before it.
+    The reply's file/start are where the next "Show earlier" continues."""
+    days = rotated_logs(path)
+    names = [p.name for p in days]
+    if file not in names:
+        file = ""
+    older = days[:names.index(file)] if file else days
+    target = path.parent / file if file else path
+    if before <= 0 and older:              # this file is used up: step a day back
+        target, older = older[-1], older[:-1]
+        file, before = target.name, target.stat().st_size
+    if before <= 0 or not target.exists():
+        return {"file": file, "start": 0, "events": [], "more": False}
+    page = read_earlier(target, before)
+    page["file"] = file
+    page["more"] = page["more"] or bool(older)
+    return page
 
 
 def _is_open(host: str, port: int, timeout_s: float = 0.5) -> bool:
@@ -878,12 +913,13 @@ def make_server(store, host: str, port: int, log_path: Path | None = None
                                    "listening": listening_ports()}).encode()
                 content_type = "application/json"
             elif url.path == "/api/log/earlier":
+                query = parse_qs(url.query)
                 try:
-                    before = int(parse_qs(url.query).get("before", ["0"])[0])
+                    before = int(query.get("before", ["0"])[0])
                 except ValueError:
                     before = 0
-                body = json.dumps(read_earlier(log_path, before) if log_path.exists()
-                                  else {"start": 0, "events": [], "more": False}).encode()
+                body = json.dumps(read_earlier_logs(
+                    log_path, query.get("file", [""])[0], before)).encode()
                 content_type = "application/json"
             elif url.path == "/api/log":
                 try:

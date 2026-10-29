@@ -374,3 +374,32 @@ def test_show_earlier_without_markers_pages_back_in_chunks(tmp_path):
     page = read_earlier(path, before=size, chunk_bytes=len(LOG.encode()) + 10)
     assert 0 < page["start"] < size and page["more"] is True
     assert page["events"] and page["events"][0]["kind"] in ("heard", "route", "action")
+
+
+def test_show_earlier_continues_into_the_previous_days_file(tmp_path):
+    from reachy_vec.cli.dashboard import read_earlier_logs, read_log
+
+    path = tmp_path / "reachy.log"
+    (tmp_path / "reachy.log.2026-10-20").write_text(START.replace("14:15", "08:00") + LOG)
+    (tmp_path / "reachy.log.2026-10-21").write_text(START.replace("14:15", "09:00") + LOG)
+    path.write_text(START + LOG)
+    current = read_log(path, offset=-1)
+    assert current["start"] == 0 and current["older"] is True
+
+    page = read_earlier_logs(path, "", before=0)        # today is used up: go to 10-21
+    assert page["file"] == "reachy.log.2026-10-21"
+    assert page["events"][0]["time"].startswith("2026-10-22 09:00")
+    assert page["start"] == 0 and page["more"] is True
+
+    page = read_earlier_logs(path, page["file"], before=page["start"])
+    assert page["file"] == "reachy.log.2026-10-20" and page["more"] is False
+
+
+def test_show_earlier_ignores_files_that_are_not_rotated_logs(tmp_path):
+    from reachy_vec.cli.dashboard import read_earlier_logs
+
+    path = tmp_path / "reachy.log"
+    path.write_text(START + LOG)
+    (tmp_path / "reachy.log.bak").write_text(LOG)
+    page = read_earlier_logs(path, "../secrets", before=0)   # unknown name = today
+    assert page["file"] == "" and page["events"] == [] and page["more"] is False
